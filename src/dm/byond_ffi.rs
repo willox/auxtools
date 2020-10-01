@@ -67,11 +67,11 @@ pub fn byond_return(value: Option<Vec<u8>>) -> *const c_char {
 }
 
 #[macro_export]
-macro_rules! byond_fn {
+macro_rules! byond_ffi_fn {
     ($name:ident() $body:block) => {
         #[no_mangle]
         #[allow(clippy::missing_safety_doc)]
-        pub unsafe extern "C" fn $name(
+        pub extern "C" fn $name(
             _argc: ::std::os::raw::c_int, _argv: *const *const ::std::os::raw::c_char
         ) -> *const ::std::os::raw::c_char {
             let closure = || ($body);
@@ -82,10 +82,13 @@ macro_rules! byond_fn {
     ($name:ident($($arg:ident),* $(, ...$rest:ident)?) $body:block) => {
         #[no_mangle]
         #[allow(clippy::missing_safety_doc)]
-        pub unsafe extern "C" fn $name(
+        pub extern "C" fn $name(
             _argc: ::std::os::raw::c_int, _argv: *const *const ::std::os::raw::c_char
         ) -> *const ::std::os::raw::c_char {
-            let __args = $crate::byond_ffi::parse_args(_argc, _argv);
+            let __args;
+            unsafe {
+                __args = $crate::byond_ffi::parse_args(_argc, _argv);
+            }
 
             let mut __argn = 0;
             $(
