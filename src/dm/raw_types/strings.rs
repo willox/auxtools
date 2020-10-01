@@ -1,9 +1,8 @@
 use std::os::raw::c_char;
 
 #[repr(C)]
-pub struct StringRef {
-    index: u32,
-}
+#[derive(Copy, Clone)]
+pub struct StringRef (pub u32);
 
 #[repr(C)]
 pub struct StringEntry {
