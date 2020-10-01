@@ -1,0 +1,11 @@
+[package]
+name = "sigscan"
+version = "0.1.0"
+authors = ["William Wallace <me@wiox.me>"]
+edition = "2018"
+
+[lib]
+path = "lib.rs"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3.9", features = ["winuser", "libloaderapi", "psapi", "processthreadsapi"] }
