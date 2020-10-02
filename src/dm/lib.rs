@@ -6,11 +6,32 @@ use std::cell::RefCell;
 
 thread_local!(static GlobalState: RefCell<Option<State>> = RefCell::new(None));
 
-type GetProcArrayEntry = unsafe extern "cdecl" fn(raw_types::procs::ProcRef) -> *mut raw_types::procs::Proc;
 
 struct State {
     string_table: *mut raw_types::strings::StringTable,
-    fnGetProcArrayEntry: GetProcArrayEntry,
+    get_proc_array_entry: raw_types::funcs::GetProcArrayEntry,
+}
+
+pub struct Proc {
+    internal: *mut raw_types::procs::Proc,
+}
+
+pub struct DMContext {
+    state: &State,
+}
+
+impl DMContext {
+    fn GetProc(index: u32) -> Option<Proc> {
+        let ptr = (state.get_proc_array_entry)(raw_types::procs::ProcRef(index));
+
+        if ptr.is_null() {
+            return None
+        }
+
+        Some(Proc {
+            internal: ptr,
+        })
+    }
 }
 
 byond_ffi_fn! { auxtools_init(input) {
@@ -36,26 +57,21 @@ byond_ffi_fn! { auxtools_init(input) {
         return Some("FAILED (Couldn't find stringtable)")
     }
     
-    let fnGetProcArrayEntry: GetProcArrayEntry;
+    let get_proc_array_entry: raw_types::funcs::GetProcArrayEntry;
     if let Some(ptr) = byondcore.find(b"\xE8????\x8B\xC8\x8D\x45?\x6A\x01\x50\xFF\x76?\x8A\x46?\xFF\x76?\xFE\xC0") {
         unsafe {
             // TODO: Could be nulls
             let offset = *(ptr.offset(1) as *const isize);
-            fnGetProcArrayEntry = std::mem::transmute(ptr.offset(5).offset(offset) as *const ());
+            get_proc_array_entry = std::mem::transmute(ptr.offset(5).offset(offset) as *const ());
         }
     } else {
         return Some("FAILED (Couldn't find GetProcArrayEntry)")
     }
 
-    let x: *mut raw_types::procs::Proc;
-    unsafe {
-        x = fnGetProcArrayEntry(raw_types::procs::ProcRef(5));
-    }
-
     GlobalState.with(|state| { 
         *state.borrow_mut() = Some(State {
             string_table: string_table,
-            fnGetProcArrayEntry: fnGetProcArrayEntry,
+            get_proc_array_entry: get_proc_array_entry,
         });
     });
 
