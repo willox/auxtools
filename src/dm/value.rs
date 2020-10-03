@@ -1,12 +1,11 @@
-use super::raw_types::strings::StringRef;
-use super::raw_types::values::{RawValue, ValueData, ValueTag};
+use super::raw_types;
 use super::GLOBAL_STATE;
 use std::fmt;
 use std::marker::PhantomData;
 
 pub struct Value<'a> {
-	pub value: RawValue,
-	pub phantom: PhantomData<&'a RawValue>,
+	pub value: raw_types::values::Value,
+	pub phantom: PhantomData<&'a raw_types::values::Value>,
 }
 
 impl fmt::Display for Value<'_> {
@@ -15,9 +14,9 @@ impl fmt::Display for Value<'_> {
 	}
 }
 
-fn create_value<'a>(tag: ValueTag, data: ValueData) -> Value<'a> {
+fn create_value<'a>(tag: raw_types::values::ValueTag, data: raw_types::values::ValueData) -> Value<'a> {
 	Value {
-		value: RawValue { tag, data },
+		value: raw_types::values::Value { tag, data },
 		phantom: PhantomData {},
 	}
 }
@@ -27,9 +26,9 @@ fn value_from_string<'a>(s: &String) -> Value<'a> {
 	s.push(0x00 as char);
 	let id = unsafe { (GLOBAL_STATE.get().unwrap().get_string_id)(s.as_str(), true, false, true) };
 	create_value(
-		ValueTag::String,
-		ValueData {
-			string: StringRef(id),
+		raw_types::values::ValueTag::String,
+		raw_types::values::ValueData {
+			string: raw_types::strings::StringRef(id),
 		},
 	)
 }
@@ -48,27 +47,27 @@ impl From<&str> for Value<'_> {
 
 impl From<f32> for Value<'_> {
 	fn from(num: f32) -> Self {
-		create_value(ValueTag::Number, ValueData { number: num })
+		create_value(raw_types::values::ValueTag::Number, raw_types::values::ValueData { number: num })
 	}
 }
 
 impl From<i32> for Value<'_> {
 	fn from(num: i32) -> Self {
-		create_value(ValueTag::Number, ValueData { number: num as f32 })
+		create_value(raw_types::values::ValueTag::Number, raw_types::values::ValueData { number: num as f32 })
 	}
 }
 
 impl From<u32> for Value<'_> {
 	fn from(num: u32) -> Self {
-		create_value(ValueTag::Number, ValueData { number: num as f32 })
+		create_value(raw_types::values::ValueTag::Number, raw_types::values::ValueData { number: num as f32 })
 	}
 }
 
 impl From<bool> for Value<'_> {
 	fn from(b: bool) -> Self {
 		create_value(
-			ValueTag::Number,
-			ValueData {
+			raw_types::values::ValueTag::Number,
+			raw_types::values::ValueData {
 				number: if b { 1.0 } else { 0.0 },
 			},
 		)

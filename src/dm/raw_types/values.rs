@@ -40,12 +40,12 @@ pub union ValueData {
 }
 
 #[repr(C)]
-pub struct RawValue {
+pub struct Value {
 	pub tag: ValueTag,
 	pub data: ValueData,
 }
 
-impl fmt::Display for RawValue {
+impl fmt::Display for Value {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		if self.tag == ValueTag::Number {
 			write!(f, "({}, {})", self.tag, unsafe { self.data.number })

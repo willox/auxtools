@@ -5,8 +5,6 @@ mod value;
 extern crate once_cell;
 
 use once_cell::sync::OnceCell;
-use raw_types::procs::ExecutionContext;
-use raw_types::values::{RawValue, ValueData, ValueTag};
 use std::marker::PhantomData;
 use value::Value;
 
@@ -17,7 +15,7 @@ unsafe impl Send for State {}
 
 struct State {
 	get_proc_array_entry: raw_types::funcs::GetProcArrayEntry,
-	execution_context: *mut ExecutionContext,
+	execution_context: *mut raw_types::procs::ExecutionContext,
 	string_table: *mut raw_types::strings::StringTable,
 	get_string_id: raw_types::funcs::GetStringId,
 }
@@ -45,9 +43,9 @@ impl DMContext<'_> {
 
 	fn get_global<S: Into<String>>(&self, name: S) -> Value {
 		Value {
-			value: RawValue {
-				tag: ValueTag::Null,
-				data: ValueData { number: 0.0 },
+			value: raw_types::values::Value {
+				tag: raw_types::values::ValueTag::Null,
+				data: raw_types::values::ValueData { number: 0.0 },
 			},
 			phantom: PhantomData {},
 		}
