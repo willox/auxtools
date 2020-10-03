@@ -9,4 +9,5 @@ path = "lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
+once_cell = "1.4.1"
 sigscan = { path = "../sigscan" }
