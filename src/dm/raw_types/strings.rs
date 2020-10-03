@@ -6,10 +6,10 @@ pub struct StringRef(pub u32);
 
 #[repr(C)]
 pub struct StringEntry {
-	data: *mut c_char,
-	this: StringRef,
-	left: *mut StringEntry,
-	right: *mut StringEntry,
+	pub data: *mut c_char,
+	pub this: StringRef,
+	pub left: *mut StringEntry,
+	pub right: *mut StringEntry,
 	unk_0: u32,
 	unk_1: u32,
 	unk_2: u32,

@@ -1,12 +1,15 @@
 mod byond_ffi;
 mod raw_types;
 mod value;
+mod string;
 
 extern crate once_cell;
 
 use once_cell::sync::OnceCell;
 use std::marker::PhantomData;
+use std::ffi::CString;
 use value::Value;
+use string::StringRef;
 
 static GLOBAL_STATE: OnceCell<State> = OnceCell::new();
 
@@ -20,6 +23,7 @@ struct State {
 	get_string_id: raw_types::funcs::GetStringId,
 }
 
+// TODO: Bit of an assumption going on here. Procs are never destroyed... right?
 pub struct Proc {
 	internal: *mut raw_types::procs::Proc,
 }
@@ -28,7 +32,7 @@ pub struct DMContext<'a> {
 	state: &'a State,
 }
 
-impl DMContext<'_> {
+impl<'a> DMContext<'_> {
 	fn get_proc(&self, index: u32) -> Option<Proc> {
 		unsafe {
 			let ptr = (self.state.get_proc_array_entry)(raw_types::procs::ProcRef(index));
@@ -37,24 +41,26 @@ impl DMContext<'_> {
 				return None;
 			}
 
-			Some(Proc { internal: ptr })
+			Some(Proc {
+				internal: ptr,
+			})
 		}
 	}
 
-	fn get_global<S: Into<String>>(&self, name: S) -> Value {
-		Value {
-			value: raw_types::values::Value {
-				tag: raw_types::values::ValueTag::Null,
-				data: raw_types::values::ValueData { number: 0.0 },
-			},
-			phantom: PhantomData {},
-		}
+	fn get_global(&self, name: &str) -> Value {
+		Value::null()
 	}
 
-	fn get_string_id<S: Into<String>>(&self, string: S) -> u32 {
-		let mut s = string.into();
-		s.push(0x00 as char);
-		unsafe { (self.state.get_string_id)(s.as_str(), true, false, true) }
+	fn get_string(&self, string: &str) -> Option<StringRef> {
+		if let Ok(string) = CString::new(string) {
+			unsafe {
+				let index = (self.state.get_string_id)(string.as_ptr(), true, false, true);
+				let strings = (*self.state.string_table).strings;
+
+				return Some(StringRef::new(*strings.add(index as usize)));
+			}
+		}
+		None
 	}
 
 	fn new() -> Option<Self> {
@@ -117,11 +123,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("FAILED (Couldn't set state)".to_owned())
 	}
 
-	let _ctx = DMContext::new().unwrap();
-
-	let val = Value::from("hell");
-
-	Some(val.to_string())
+	return Some("SUCCESS".to_owned())
 } }
 
 #[cfg(test)]

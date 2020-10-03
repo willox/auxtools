@@ -8,6 +8,18 @@ pub struct Value<'a> {
 	pub phantom: PhantomData<&'a raw_types::values::Value>,
 }
 
+impl Value<'_> {
+	pub fn null() -> Value<'static> {
+		return Value {
+			value: raw_types::values::Value {
+				tag: raw_types::values::ValueTag::Null,
+				data: raw_types::values::ValueData { number: 0.0 },
+			},
+			phantom: PhantomData {},
+		}
+	}
+}
+
 impl fmt::Display for Value<'_> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(f, "{}", self.value)
@@ -21,6 +33,7 @@ fn create_value<'a>(tag: raw_types::values::ValueTag, data: raw_types::values::V
 	}
 }
 
+/*
 fn value_from_string<'a>(s: &String) -> Value<'a> {
 	let mut s = s.clone();
 	s.push(0x00 as char);
@@ -44,6 +57,7 @@ impl From<&str> for Value<'_> {
 		value_from_string(&s.to_owned())
 	}
 }
+*/
 
 impl From<f32> for Value<'_> {
 	fn from(num: f32) -> Self {
