@@ -1,6 +1,18 @@
+[package]
+name = "whatever"
+version = "0.0.1"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/dm/lib.rs"
+
 [workspace]
 members = [
     "src/dm",
 	"src/cli",
     "src/sigscan",
 ]
+
+[dependencies]
+once_cell = "1.4.1"
+sigscan = { path = "./src/sigscan" }
