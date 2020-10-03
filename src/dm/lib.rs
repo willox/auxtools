@@ -1,12 +1,14 @@
 mod byond_ffi;
 mod raw_types;
+mod value;
 
 extern crate once_cell;
 
 use once_cell::sync::OnceCell;
 use raw_types::procs::ExecutionContext;
-use raw_types::values::{RawValue, Value, ValueData, ValueTag};
+use raw_types::values::{RawValue, ValueData, ValueTag};
 use std::marker::PhantomData;
+use value::Value;
 
 static GLOBAL_STATE: OnceCell<State> = OnceCell::new();
 
@@ -17,6 +19,7 @@ struct State {
 	get_proc_array_entry: raw_types::funcs::GetProcArrayEntry,
 	execution_context: *mut ExecutionContext,
 	string_table: *mut raw_types::strings::StringTable,
+	get_string_id: raw_types::funcs::GetStringId,
 }
 
 pub struct Proc {
@@ -50,11 +53,17 @@ impl DMContext<'_> {
 		}
 	}
 
-	fn new() -> Self {
+	fn get_string_id<S: Into<String>>(&self, string: S) -> u32 {
+		let mut s = string.into();
+		s.push(0x00 as char);
+		unsafe { (self.state.get_string_id)(s.as_str(), true, false, true) }
+	}
+
+	fn new() -> Option<Self> {
 		if let Some(state) = GLOBAL_STATE.get() {
-			Self { state: &state }
+			Some(Self { state: &state })
 		} else {
-			panic!("Attempt to create context before initializing!")
+			None
 		}
 	}
 }
@@ -62,12 +71,12 @@ impl DMContext<'_> {
 byond_ffi_fn! { auxtools_init(_input) {
 	// Already initialized. Just succeed?
 	if GLOBAL_STATE.get().is_some() {
-		return Some("SUCCESS");
+		return Some("SUCCESS".to_owned());
 	}
 
 	let byondcore = match sigscan::Scanner::for_module("byondcore.dll") {
 		Some(v) => v,
-		None => return Some("FAILED (Couldn't create scanner for byondcore.dll)")
+		None => return Some("FAILED (Couldn't create scanner for byondcore.dll)".to_owned())
 	};
 
 	let string_table: *mut raw_types::strings::StringTable;
@@ -77,7 +86,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 			string_table = *(ptr.offset(1) as *mut *mut raw_types::strings::StringTable);
 		}
 	} else {
-		return Some("FAILED (Couldn't find stringtable)")
+		return Some("FAILED (Couldn't find stringtable)".to_owned())
 	}
 
 	let get_proc_array_entry: raw_types::funcs::GetProcArrayEntry;
@@ -88,18 +97,33 @@ byond_ffi_fn! { auxtools_init(_input) {
 			get_proc_array_entry = std::mem::transmute(ptr.offset(5).offset(offset) as *const ());
 		}
 	} else {
-		return Some("FAILED (Couldn't find GetProcArrayEntry)")
+		return Some("FAILED (Couldn't find GetProcArrayEntry)".to_owned())
 	}
 
-	assert!(GLOBAL_STATE.set(State {
+	let get_string_id: raw_types::funcs::GetStringId;
+		if let Some(ptr) = byondcore.find(b"\x55\x8B\xEC\x8B\x45?\x83\xEC?\x53\x56\x8B\x35") {
+		unsafe {
+			// TODO: Could be nulls
+			get_string_id = std::mem::transmute(ptr as *const ());
+		}
+	} else {
+		return Some("FAILED (Couldn't find GetStringId)".to_owned())
+	}
+
+	if GLOBAL_STATE.set(State {
 		get_proc_array_entry: get_proc_array_entry,
+		get_string_id: get_string_id,
 		execution_context: std::ptr::null_mut(),
 		string_table: string_table,
-	}).is_ok(), "Failed to set state during init!");
+	}).is_err() {
+		return Some("FAILED (Couldn't set state)".to_owned())
+	}
 
-	let ctx = DMContext::new();
+	let _ctx = DMContext::new().unwrap();
 
-	Some("SUCCESS")
+	let val = Value::from("hell");
+
+	Some(val.to_string())
 } }
 
 #[cfg(test)]

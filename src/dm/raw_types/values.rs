@@ -3,6 +3,7 @@ use std::fmt;
 use std::marker::PhantomData;
 
 #[repr(u8)]
+#[derive(PartialEq)]
 pub enum ValueTag {
 	Null,   // 0x00
 	Turf,   // 0x01
@@ -11,6 +12,8 @@ pub enum ValueTag {
 	Area,   // 0x04
 	Client, // 0x05
 	String, // 0x06
+
+	Number, // 0x2A
 }
 
 impl fmt::Display for ValueTag {
@@ -23,6 +26,7 @@ impl fmt::Display for ValueTag {
 			ValueTag::Area => write!(f, "Area"),
 			ValueTag::Client => write!(f, "Client"),
 			ValueTag::String => write!(f, "String"),
+			ValueTag::Number => write!(f, "Number"),
 			_ => write!(f, "Unknown-type"),
 		}
 	}
@@ -32,6 +36,7 @@ impl fmt::Display for ValueTag {
 pub union ValueData {
 	pub string: strings::StringRef,
 	pub number: f32,
+	pub id: u32,
 }
 
 #[repr(C)]
@@ -42,17 +47,10 @@ pub struct RawValue {
 
 impl fmt::Display for RawValue {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "({}, {})", self.tag, unsafe { self.data.number })
-	}
-}
-
-pub struct Value<'a> {
-	pub value: RawValue,
-	pub phantom: PhantomData<&'a RawValue>,
-}
-
-impl fmt::Display for Value<'_> {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "({})", self.value)
+		if self.tag == ValueTag::Number {
+			write!(f, "({}, {})", self.tag, unsafe { self.data.number })
+		} else {
+			write!(f, "({}, {})", self.tag, unsafe { self.data.id })
+		}
 	}
 }
