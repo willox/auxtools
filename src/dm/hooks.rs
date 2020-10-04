@@ -1,4 +1,5 @@
 use super::raw_types;
+use super::raw_types::procs::Proc;
 use super::value::Value;
 use super::DMContext;
 use super::GLOBAL_STATE;
@@ -10,7 +11,7 @@ pub fn init() -> Result<(), String> {
     let state = GLOBAL_STATE.get().unwrap();
 
     unsafe {
-        let x = PROC_HOOK_DETOUR.initialize(state.call_global_proc, CallGlobalProcHook);
+        let x = PROC_HOOK_DETOUR.initialize(state.call_proc_by_id, call_proc_by_id_hook);
         x.ok().unwrap().enable().unwrap();
     }
 
@@ -37,11 +38,11 @@ pub type ProcHook =
 
 thread_local!(static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcRef, ProcHook>> = RefCell::new(HashMap::new()));
 
-pub fn hook(proc: raw_types::procs::ProcRef, hook: ProcHook) {
-    PROC_HOOKS.with(|h| h.borrow_mut().insert(proc, hook));
+pub fn hook(proc: &Proc, hook: ProcHook) {
+    PROC_HOOKS.with(|h| h.borrow_mut().insert(proc.id, hook));
 }
 
-fn CallGlobalProcHook(
+fn call_proc_by_id_hook(
     usr_raw: raw_types::values::Value,
     proc_type: u32,
     proc_id: raw_types::procs::ProcRef,

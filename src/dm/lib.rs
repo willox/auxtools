@@ -23,22 +23,23 @@ struct State {
     execution_context: *mut raw_types::procs::ExecutionContext,
     string_table: *mut raw_types::strings::StringTable,
     get_string_id: raw_types::funcs::GetStringId,
-    call_global_proc: raw_types::funcs::CallGlobalProc,
+    get_string_table_entry: raw_types::funcs::GetStringTableEntry,
+    call_proc_by_id: raw_types::funcs::CallProcById,
     get_variable: raw_types::funcs::GetVariable,
     set_variable: raw_types::funcs::SetVariable,
 }
 
 // TODO: Bit of an assumption going on here. Procs are never destroyed... right?
-pub struct Proc {
+/*pub struct Proc {
     internal: *mut raw_types::procs::Proc,
-}
+}*/
 
 pub struct DMContext<'a> {
     state: &'a State,
 }
 
 impl<'a> DMContext<'_> {
-    fn get_proc(&self, index: u32) -> Option<Proc> {
+    /*fn get_proc(&self, index: u32) -> Option<Proc> {
         unsafe {
             let ptr = (self.state.get_proc_array_entry)(raw_types::procs::ProcRef(index));
 
@@ -46,9 +47,9 @@ impl<'a> DMContext<'_> {
                 return None;
             }
 
-            Some(Proc { internal: ptr })
+            Some(ProcEntry { internal: ptr })
         }
-    }
+    }*/
 
     fn get_global(&self, name: &str) -> Value {
         Value::null()
@@ -117,11 +118,11 @@ byond_ffi_fn! { auxtools_init(_input) {
         return Some("FAILED (Couldn't find GetStringId)".to_owned())
     }
 
-    let call_global_proc: raw_types::funcs::CallGlobalProc;
+    let call_proc_by_id: raw_types::funcs::CallProcById;
     if let Some(ptr) = byondcore.find(b"\x55\x8B\xEC\x81\xEC????\xA1????\x33\xC5\x89\x45?\x8B\x55?\x8B\x45") {
         unsafe {
             // TODO: Could be nulls
-            call_global_proc = std::mem::transmute(ptr as *const ());
+            call_proc_by_id = std::mem::transmute(ptr as *const ());
         }
     } else {
         return Some("FAILED (Couldn't find CallGlobalProc)".to_owned())
@@ -147,14 +148,26 @@ byond_ffi_fn! { auxtools_init(_input) {
         return Some("FAILED (Couldn't find SetVariable)".to_owned())
     }
 
+    let get_string_table_entry: raw_types::funcs::GetStringTableEntry;
+    if let Some(ptr) = byondcore.find(b"\x55\x8B\xEC\x8B\x4D\x08\x3B\x0D????\x73\x10\xA1") {
+        unsafe {
+            // TODO: Could be nulls
+            get_string_table_entry = std::mem::transmute(ptr as *const ());
+        }
+    } else {
+        return Some("FAILED (Couldn't find GetStringTableEntry)".to_owned())
+    }
+
     if GLOBAL_STATE.set(State {
         get_proc_array_entry: get_proc_array_entry,
         get_string_id: get_string_id,
         execution_context: std::ptr::null_mut(),
         string_table: string_table,
-        call_global_proc: call_global_proc,
+        call_proc_by_id: call_proc_by_id,
         get_variable: get_variable,
         set_variable: set_variable,
+        get_string_table_entry: get_string_table_entry,
+
     }).is_err() {
         panic!();
     }
@@ -163,7 +176,9 @@ byond_ffi_fn! { auxtools_init(_input) {
         return Some(error);
     }
 
-    hooks::hook(raw_types::procs::ProcRef(2), hello_proc_hook);
+    raw_types::procs::populate_procs();
+
+    hooks::hook(&raw_types::procs::get_proc("/proc/wew").unwrap(), hello_proc_hook);
 
     Some("SUCCESS".to_owned())
 } }
@@ -177,7 +192,6 @@ fn hello_proc_hook<'a>(
     let dat = args[0];
     dat.set("hello", &Value::from(5));
     let v = dat.get("hello").unwrap();
-    msgbox::create("fuck", &v.to_string(), msgbox::IconType::None);
     v
 }
 

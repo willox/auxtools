@@ -1,11 +1,12 @@
 use super::procs;
+use super::strings;
 use super::values;
 
 use std::os::raw::c_char;
 
-pub type GetProcArrayEntry = unsafe extern "cdecl" fn(procs::ProcRef) -> *mut procs::Proc;
+pub type GetProcArrayEntry = unsafe extern "cdecl" fn(procs::ProcRef) -> *mut procs::ProcEntry;
 pub type GetStringId = unsafe extern "cdecl" fn(*const c_char, bool, bool, bool) -> u32;
-pub type CallGlobalProc = unsafe extern "cdecl" fn(
+pub type CallProcById = unsafe extern "cdecl" fn(
     values::Value,
     u32,
     procs::ProcRef,
@@ -18,3 +19,4 @@ pub type CallGlobalProc = unsafe extern "cdecl" fn(
 ) -> values::Value;
 pub type GetVariable = unsafe extern "cdecl" fn(values::Value, u32) -> values::Value;
 pub type SetVariable = unsafe extern "cdecl" fn(values::Value, u32, values::Value);
+pub type GetStringTableEntry = unsafe extern "cdecl" fn(u32) -> *const strings::StringEntry;
