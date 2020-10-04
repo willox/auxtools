@@ -1,17 +1,26 @@
+#![cfg(all(windows, feature = "nightly"))]
+
 mod byond_ffi;
 mod raw_types;
-mod value;
 mod string;
+mod value;
 
+extern crate detour;
+extern crate msgbox;
 extern crate once_cell;
 
+use detour::static_detour;
 use once_cell::sync::OnceCell;
-use std::marker::PhantomData;
 use std::ffi::CString;
-use value::Value;
+use std::marker::PhantomData;
 use string::StringRef;
+use value::Value;
 
 static GLOBAL_STATE: OnceCell<State> = OnceCell::new();
+
+static_detour! {
+  static PROC_HOOK_DETOUR: raw_types::funcs::CallGlobalProc;
+}
 
 unsafe impl Sync for State {}
 unsafe impl Send for State {}
@@ -21,6 +30,7 @@ struct State {
 	execution_context: *mut raw_types::procs::ExecutionContext,
 	string_table: *mut raw_types::strings::StringTable,
 	get_string_id: raw_types::funcs::GetStringId,
+	call_global_proc: raw_types::funcs::CallGlobalProc,
 }
 
 // TODO: Bit of an assumption going on here. Procs are never destroyed... right?
@@ -41,9 +51,7 @@ impl<'a> DMContext<'_> {
 				return None;
 			}
 
-			Some(Proc {
-				internal: ptr,
-			})
+			Some(Proc { internal: ptr })
 		}
 	}
 
@@ -69,6 +77,25 @@ impl<'a> DMContext<'_> {
 		} else {
 			None
 		}
+	}
+}
+
+fn CallGlobalProcHook(
+	usr: raw_types::values::Value,
+	proc_type: u32,
+	proc_id: u32,
+	unknown1: u32,
+	src: raw_types::values::Value,
+	args: *mut values::Value,
+	num_args: usize,
+	unknown2: u32,
+	unknown3: u32,
+) -> raw_types::values::Value {
+	msgbox::create("woah", "it works!!");
+	unsafe {
+		PROC_HOOK_DETOUR.call(
+			usr, proc_type, proc_id, unknown1, src, args, num_args, unknown2, unknown3,
+		)
 	}
 }
 
@@ -114,14 +141,27 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("FAILED (Couldn't find GetStringId)".to_owned())
 	}
 
+	let call_global_proc: raw_types::funcs::CallGlobalProc;
+	if let Some(ptr) = byondcore.find(b"\x55\x8B\xEC\x81\xEC????\xA1????\x33\xC5\x89\x45?\x8B\x55?\x8B\x45") {
+		unsafe {
+			// TODO: Could be nulls
+			call_global_proc = std::mem::transmute(ptr as *const ());
+		}
+	} else {
+		return Some("FAILED (Couldn't find CallGlobalProc)".to_owned())
+	}
+
 	if GLOBAL_STATE.set(State {
 		get_proc_array_entry: get_proc_array_entry,
 		get_string_id: get_string_id,
 		execution_context: std::ptr::null_mut(),
 		string_table: string_table,
+		call_global_proc: call_global_proc,
 	}).is_err() {
 		return Some("FAILED (Couldn't set state)".to_owned())
 	}
+
+	PROC_HOOK_DETOUR.initialize(call_global_proc, CallGlobalProcHook);
 
 	return Some("SUCCESS".to_owned())
 } }

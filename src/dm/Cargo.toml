@@ -10,4 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 once_cell = "1.4.1"
+detour = "0.7.1"
+msgbox = "0.4.0"
 sigscan = { path = "../sigscan" }
