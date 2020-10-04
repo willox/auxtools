@@ -1,10 +1,5 @@
-use super::super::GLOBAL_STATE;
 use super::strings;
 use super::values;
-
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::ffi::CStr;
 
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -12,7 +7,7 @@ pub struct ProcRef(pub u32);
 
 #[repr(C)]
 pub struct ProcEntry {
-    path: strings::StringRef,
+    pub path: strings::StringRef,
     name: strings::StringRef,
     desc: strings::StringRef,
     category: strings::StringRef,
@@ -73,46 +68,4 @@ pub struct ExecutionContext {
     unk_8: [u8; 0x02],
     paused: u8,
     unk_9: [u8; 0x33],
-}
-
-#[derive(Clone)]
-pub struct Proc {
-    pub id: ProcRef,
-    entry: *mut ProcEntry,
-    path: String,
-}
-
-thread_local!(static PROCS_BY_NAME: RefCell<HashMap<String, Vec<Proc>>> = RefCell::new(HashMap::new()));
-
-pub fn populate_procs() {
-    let mut i: u32 = 0;
-    loop {
-        let proc_entry = unsafe { (GLOBAL_STATE.get().unwrap().get_proc_array_entry)(ProcRef(i)) };
-        if proc_entry.is_null() {
-            break;
-        }
-        let proc_name: String = unsafe {
-            CStr::from_ptr(
-                (*(GLOBAL_STATE.get().unwrap().get_string_table_entry)((*proc_entry).path.0)).data,
-            )
-            .to_string_lossy()
-            .into()
-        };
-        let proc = Proc {
-            id: ProcRef(i),
-            entry: proc_entry,
-            path: proc_name.clone(),
-        };
-
-        PROCS_BY_NAME.with(|h| {
-            h.borrow_mut().insert(proc_name, vec![proc]);
-        });
-
-        i += 1;
-    }
-}
-
-pub fn get_proc<S: Into<String> + Eq>(path: S) -> Option<Proc> {
-    let s: String = path.into();
-    Some(PROCS_BY_NAME.with(|h| h.borrow().get(&s).unwrap()[0].clone()))
 }

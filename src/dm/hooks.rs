@@ -1,5 +1,5 @@
+use super::proc::Proc;
 use super::raw_types;
-use super::raw_types::procs::Proc;
 use super::value::Value;
 use super::DMContext;
 use super::GLOBAL_STATE;

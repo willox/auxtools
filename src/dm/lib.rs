@@ -1,5 +1,6 @@
 mod byond_ffi;
 mod hooks;
+mod proc;
 mod raw_types;
 mod string;
 mod value;
@@ -176,9 +177,9 @@ byond_ffi_fn! { auxtools_init(_input) {
         return Some(error);
     }
 
-    raw_types::procs::populate_procs();
+    proc::populate_procs();
 
-    hooks::hook(&raw_types::procs::get_proc("/proc/wew").unwrap(), hello_proc_hook);
+    proc::get_proc("/proc/wew").unwrap().hook(hello_proc_hook);
 
     Some("SUCCESS".to_owned())
 } }
