@@ -1,8 +1,8 @@
 mod byond_ffi;
+mod hooks;
 mod raw_types;
 mod string;
 mod value;
-mod hooks;
 
 extern crate detour;
 extern crate msgbox;
@@ -10,13 +10,10 @@ extern crate once_cell;
 
 use once_cell::sync::OnceCell;
 use std::ffi::CString;
-use std::marker::PhantomData;
 use string::StringRef;
 use value::Value;
 
 static GLOBAL_STATE: OnceCell<State> = OnceCell::new();
-
-
 
 unsafe impl Sync for State {}
 unsafe impl Send for State {}
@@ -28,6 +25,7 @@ struct State {
     get_string_id: raw_types::funcs::GetStringId,
     call_global_proc: raw_types::funcs::CallGlobalProc,
     get_variable: raw_types::funcs::GetVariable,
+    set_variable: raw_types::funcs::SetVariable,
 }
 
 // TODO: Bit of an assumption going on here. Procs are never destroyed... right?
@@ -76,8 +74,6 @@ impl<'a> DMContext<'_> {
         }
     }
 }
-
-
 
 byond_ffi_fn! { auxtools_init(_input) {
     // Already initialized. Just succeed?
@@ -141,6 +137,16 @@ byond_ffi_fn! { auxtools_init(_input) {
         return Some("FAILED (Couldn't find GetVariable)".to_owned())
     }
 
+    let set_variable: raw_types::funcs::SetVariable;
+    if let Some(ptr) = byondcore.find(b"\x55\x8B\xEC\x8B\x4D\x08\x0F\xB6\xC1\x48\x57\x8B\x7D\x10\x83\xF8\x53\x0F?????\x0F\xB6\x80????\xFF\x24\x85????\xFF\x75\x18\xFF\x75\x14\x57\xFF\x75\x0C\xE8????\x83\xC4\x10\x5F\x5D\xC3") {
+        unsafe {
+            // TODO: Could be nulls
+            set_variable = std::mem::transmute(ptr as *const ());
+        }
+    } else {
+        return Some("FAILED (Couldn't find SetVariable)".to_owned())
+    }
+
     if GLOBAL_STATE.set(State {
         get_proc_array_entry: get_proc_array_entry,
         get_string_id: get_string_id,
@@ -148,6 +154,7 @@ byond_ffi_fn! { auxtools_init(_input) {
         string_table: string_table,
         call_global_proc: call_global_proc,
         get_variable: get_variable,
+        set_variable: set_variable,
     }).is_err() {
         panic!();
     }
@@ -155,7 +162,7 @@ byond_ffi_fn! { auxtools_init(_input) {
     if let Err(error) = hooks::init() {
         return Some(error);
     }
-    
+
     Some("SUCCESS".to_owned())
 } }
 

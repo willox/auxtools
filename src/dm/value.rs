@@ -32,15 +32,17 @@ impl<'b> Value<'b> {
     }
 
     fn get_by_id(&self, name_id: u32) -> Value<'b> {
-        let val = unsafe {
-            (GLOBAL_STATE.get().unwrap().get_variable)(
-                self.value.tag as u32,
-                std::mem::transmute(self.value.data),
-                name_id,
-            )
-        };
+        let val = unsafe { (GLOBAL_STATE.get().unwrap().get_variable)(self.value, name_id) };
+        unsafe { Self::from_raw(val) }
+    }
+
+    fn set_by_id(&self, name_id: u32, new_value: &Value) {
         unsafe {
-           Self::from_raw(val)
+            (GLOBAL_STATE.get().unwrap().set_variable)(
+                self.value,
+                name_id,
+                raw_types::values::Value::from(new_value),
+            )
         }
     }
 
@@ -52,6 +54,15 @@ impl<'b> Value<'b> {
             return Some(self.get_by_id(index));
         }
         None
+    }
+
+    pub fn set<S: Into<String>>(&self, name: S, new_value: &Value) {
+        if let Ok(string) = CString::new(name.into()) {
+            let index = unsafe {
+                (GLOBAL_STATE.get().unwrap().get_string_id)(string.as_ptr(), true, false, true)
+            };
+            self.set_by_id(index, new_value);
+        }
     }
 
     // blah blah lifetime is not verified with this so use at your peril

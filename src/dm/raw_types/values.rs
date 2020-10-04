@@ -1,10 +1,10 @@
 use super::super::value;
 use super::strings;
 use std::fmt;
-use std::marker::PhantomData;
 
 #[repr(u8)]
 #[derive(PartialEq, Copy, Clone)]
+#[allow(unused)]
 pub enum ValueTag {
     Null,   // 0x00
     Turf,   // 0x01
@@ -14,9 +14,10 @@ pub enum ValueTag {
     Client, // 0x05
     String, // 0x06
 
-    Number, // 0x2A
+    Number = 0x2A, // 0x2A
 }
 
+#[allow(unreachable_patterns)]
 impl fmt::Display for ValueTag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

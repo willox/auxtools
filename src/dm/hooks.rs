@@ -1,8 +1,8 @@
-use detour::static_detour;
 use super::raw_types;
-use super::DMContext;
 use super::value::Value;
+use super::DMContext;
 use super::GLOBAL_STATE;
+use detour::static_detour;
 
 pub fn init() -> Result<(), String> {
     let state = GLOBAL_STATE.get().unwrap();
@@ -43,7 +43,7 @@ fn CallGlobalProcHook(
 ) -> raw_types::values::Value {
     let ctx = DMContext::new().unwrap();
 
-    if proc_id == 1 {
+    if proc_id == 2 {
         let src;
         let usr;
         let args: Vec<Value>;
@@ -74,9 +74,8 @@ fn hello_proc_hook<'a>(
     args: Vec<Value<'a>>,
 ) -> Value<'a> {
     let dat = args[0];
-    let v;
-    {
-        v = dat.get("hello").unwrap();
-    }
+    dat.set("hello", &Value::from(5));
+    let v = dat.get("hello").unwrap();
+    msgbox::create("fuck", &v.to_string(), msgbox::IconType::None);
     v
 }
