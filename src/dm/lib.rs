@@ -163,8 +163,23 @@ byond_ffi_fn! { auxtools_init(_input) {
         return Some(error);
     }
 
+    hooks::hook(raw_types::procs::ProcRef(2), hello_proc_hook);
+
     Some("SUCCESS".to_owned())
 } }
+
+fn hello_proc_hook<'a>(
+    ctx: &'a DMContext,
+    src: Value<'a>,
+    usr: Value<'a>,
+    args: Vec<Value<'a>>,
+) -> Value<'a> {
+    let dat = args[0];
+    dat.set("hello", &Value::from(5));
+    let v = dat.get("hello").unwrap();
+    msgbox::create("fuck", &v.to_string(), msgbox::IconType::None);
+    v
+}
 
 #[cfg(test)]
 mod tests {

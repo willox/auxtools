@@ -3,6 +3,8 @@ use super::value::Value;
 use super::DMContext;
 use super::GLOBAL_STATE;
 use detour::static_detour;
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 pub fn init() -> Result<(), String> {
     let state = GLOBAL_STATE.get().unwrap();
@@ -20,7 +22,7 @@ static_detour! {
     static PROC_HOOK_DETOUR: unsafe extern "cdecl" fn(
         raw_types::values::Value,
         u32,
-        u32,
+        raw_types::procs::ProcRef,
         u32,
         raw_types::values::Value,
         *mut raw_types::values::Value,
@@ -30,10 +32,19 @@ static_detour! {
     ) -> raw_types::values::Value;
 }
 
+pub type ProcHook =
+    for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, Vec<Value<'a>>) -> Value<'a>;
+
+thread_local!(static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcRef, ProcHook>> = RefCell::new(HashMap::new()));
+
+pub fn hook(proc: raw_types::procs::ProcRef, hook: ProcHook) {
+    PROC_HOOKS.with(|h| h.borrow_mut().insert(proc, hook));
+}
+
 fn CallGlobalProcHook(
     usr_raw: raw_types::values::Value,
     proc_type: u32,
-    proc_id: u32,
+    proc_id: raw_types::procs::ProcRef,
     unknown1: u32,
     src_raw: raw_types::values::Value,
     args_ptr: *mut raw_types::values::Value,
@@ -41,41 +52,30 @@ fn CallGlobalProcHook(
     unknown2: u32,
     unknown3: u32,
 ) -> raw_types::values::Value {
-    let ctx = DMContext::new().unwrap();
+    return PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
+        Some(hook) => {
+            let ctx = DMContext::new().unwrap();
 
-    if proc_id == 2 {
-        let src;
-        let usr;
-        let args: Vec<Value>;
+            let src;
+            let usr;
+            let args: Vec<Value>;
 
-        unsafe {
-            src = Value::from_raw(src_raw);
-            usr = Value::from_raw(usr_raw);
-            args = std::slice::from_raw_parts(args_ptr, num_args)
-                .iter()
-                .map(|v| Value::from_raw(*v))
-                .collect();
+            unsafe {
+                src = Value::from_raw(src_raw);
+                usr = Value::from_raw(usr_raw);
+                args = std::slice::from_raw_parts(args_ptr, num_args)
+                    .iter()
+                    .map(|v| Value::from_raw(*v))
+                    .collect();
+            }
+
+            raw_types::values::Value::from(&hook(&ctx, src, usr, args))
         }
-
-        return raw_types::values::Value::from(&hello_proc_hook(&ctx, src, usr, args));
-    }
-
-    unsafe {
-        PROC_HOOK_DETOUR.call(
-            usr_raw, proc_type, proc_id, unknown1, src_raw, args_ptr, num_args, unknown2, unknown3,
-        )
-    }
-}
-
-fn hello_proc_hook<'a>(
-    ctx: &'a DMContext,
-    src: Value<'a>,
-    usr: Value<'a>,
-    args: Vec<Value<'a>>,
-) -> Value<'a> {
-    let dat = args[0];
-    dat.set("hello", &Value::from(5));
-    let v = dat.get("hello").unwrap();
-    msgbox::create("fuck", &v.to_string(), msgbox::IconType::None);
-    v
+        None => unsafe {
+            PROC_HOOK_DETOUR.call(
+                usr_raw, proc_type, proc_id, unknown1, src_raw, args_ptr, num_args, unknown2,
+                unknown3,
+            )
+        },
+    });
 }

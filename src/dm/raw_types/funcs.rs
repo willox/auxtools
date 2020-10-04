@@ -8,7 +8,7 @@ pub type GetStringId = unsafe extern "cdecl" fn(*const c_char, bool, bool, bool)
 pub type CallGlobalProc = unsafe extern "cdecl" fn(
     values::Value,
     u32,
-    u32,
+    procs::ProcRef,
     u32,
     values::Value,
     *mut values::Value,
