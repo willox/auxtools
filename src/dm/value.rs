@@ -4,12 +4,23 @@ use std::ffi::CString;
 use std::fmt;
 use std::marker::PhantomData;
 
+#[derive(Copy, Clone)]
 pub struct Value<'a> {
     pub value: raw_types::values::Value,
     pub phantom: PhantomData<&'a raw_types::values::Value>,
 }
 
-impl Value<'_> {
+impl<'b> Value<'b> {
+    pub unsafe fn new<'a>(
+        tag: raw_types::values::ValueTag,
+        data: raw_types::values::ValueData,
+    ) -> Value<'a> {
+        Value {
+            value: raw_types::values::Value { tag, data },
+            phantom: PhantomData {},
+        }
+    }
+
     pub fn null() -> Value<'static> {
         return Value {
             value: raw_types::values::Value {
@@ -20,7 +31,7 @@ impl Value<'_> {
         };
     }
 
-    fn get_by_id(&self, name_id: u32) -> Value {
+    fn get_by_id(&self, name_id: u32) -> Value<'b> {
         let val = unsafe {
             (GLOBAL_STATE.get().unwrap().get_variable)(
                 self.value.tag as u32,
@@ -28,10 +39,12 @@ impl Value<'_> {
                 name_id,
             )
         };
-        Self::from(val)
+        unsafe {
+           Self::from_raw(val)
+        }
     }
 
-    pub fn get<S: Into<String>>(&self, name: S) -> Option<Value> {
+    pub fn get<S: Into<String>>(&self, name: S) -> Option<Value<'b>> {
         if let Ok(string) = CString::new(name.into()) {
             let index = unsafe {
                 (GLOBAL_STATE.get().unwrap().get_string_id)(string.as_ptr(), true, false, true)
@@ -40,21 +53,16 @@ impl Value<'_> {
         }
         None
     }
+
+    // blah blah lifetime is not verified with this so use at your peril
+    pub unsafe fn from_raw(v: raw_types::values::Value) -> Self {
+        Value::new(v.tag, v.data)
+    }
 }
 
 impl fmt::Display for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.value)
-    }
-}
-
-pub fn create_value<'a>(
-    tag: raw_types::values::ValueTag,
-    data: raw_types::values::ValueData,
-) -> Value<'a> {
-    Value {
-        value: raw_types::values::Value { tag, data },
-        phantom: PhantomData {},
     }
 }
 
@@ -86,44 +94,46 @@ impl From<&str> for Value<'_> {
 
 impl From<f32> for Value<'_> {
     fn from(num: f32) -> Self {
-        create_value(
-            raw_types::values::ValueTag::Number,
-            raw_types::values::ValueData { number: num },
-        )
+        unsafe {
+            Value::new(
+                raw_types::values::ValueTag::Number,
+                raw_types::values::ValueData { number: num },
+            )
+        }
     }
 }
 
 impl From<i32> for Value<'_> {
     fn from(num: i32) -> Self {
-        create_value(
-            raw_types::values::ValueTag::Number,
-            raw_types::values::ValueData { number: num as f32 },
-        )
+        unsafe {
+            Value::new(
+                raw_types::values::ValueTag::Number,
+                raw_types::values::ValueData { number: num as f32 },
+            )
+        }
     }
 }
 
 impl From<u32> for Value<'_> {
     fn from(num: u32) -> Self {
-        create_value(
-            raw_types::values::ValueTag::Number,
-            raw_types::values::ValueData { number: num as f32 },
-        )
+        unsafe {
+            Value::new(
+                raw_types::values::ValueTag::Number,
+                raw_types::values::ValueData { number: num as f32 },
+            )
+        }
     }
 }
 
 impl From<bool> for Value<'_> {
     fn from(b: bool) -> Self {
-        create_value(
-            raw_types::values::ValueTag::Number,
-            raw_types::values::ValueData {
-                number: if b { 1.0 } else { 0.0 },
-            },
-        )
-    }
-}
-
-impl From<raw_types::values::Value> for Value<'_> {
-    fn from(v: raw_types::values::Value) -> Self {
-        create_value(v.tag, v.data)
+        unsafe {
+            Value::new(
+                raw_types::values::ValueTag::Number,
+                raw_types::values::ValueData {
+                    number: if b { 1.0 } else { 0.0 },
+                },
+            )
+        }
     }
 }

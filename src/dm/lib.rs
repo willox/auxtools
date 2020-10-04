@@ -2,34 +2,21 @@ mod byond_ffi;
 mod raw_types;
 mod string;
 mod value;
+mod hooks;
 
 extern crate detour;
 extern crate msgbox;
 extern crate once_cell;
 
-use detour::static_detour;
 use once_cell::sync::OnceCell;
 use std::ffi::CString;
 use std::marker::PhantomData;
 use string::StringRef;
-use value::create_value;
 use value::Value;
 
 static GLOBAL_STATE: OnceCell<State> = OnceCell::new();
 
-static_detour! {
-    static PROC_HOOK_DETOUR: unsafe extern "cdecl" fn(
-        raw_types::values::Value,
-        u32,
-        u32,
-        u32,
-        raw_types::values::Value,
-        *mut raw_types::values::Value,
-        usize,
-        u32,
-        u32
-    ) -> raw_types::values::Value;
-}
+
 
 unsafe impl Sync for State {}
 unsafe impl Send for State {}
@@ -90,52 +77,7 @@ impl<'a> DMContext<'_> {
     }
 }
 
-fn CallGlobalProcHook(
-    usr: raw_types::values::Value,
-    proc_type: u32,
-    proc_id: u32,
-    unknown1: u32,
-    src: raw_types::values::Value,
-    args: *mut raw_types::values::Value,
-    num_args: usize,
-    unknown2: u32,
-    unknown3: u32,
-) -> raw_types::values::Value {
-    let ctx = DMContext::new().unwrap();
 
-    let src_value = create_value(src.tag, src.data);
-    let usr_value = create_value(usr.tag, usr.data);
-    let mut arg_values = Vec::with_capacity(num_args);
-    for i in 0..num_args {
-        unsafe {
-            arg_values.push(create_value(
-                (*args.offset(i as isize)).tag,
-                (*args.offset(i as isize)).data,
-            ));
-        }
-    }
-
-    if proc_id == 2 {
-        raw_types::values::Value::from(&hello_proc_hook(&ctx, &src_value, &usr_value, &arg_values))
-    } else {
-        unsafe {
-            PROC_HOOK_DETOUR.call(
-                usr, proc_type, proc_id, unknown1, src, args, num_args, unknown2, unknown3,
-            )
-        }
-    }
-}
-
-fn hello_proc_hook<'a>(
-    ctx: &DMContext,
-    src: &Value,
-    usr: &Value,
-    args: &'a Vec<Value>,
-) -> Value<'a> {
-    let dat = &args[0];
-    let result = dat.get("hello").unwrap();
-    result
-}
 
 byond_ffi_fn! { auxtools_init(_input) {
     // Already initialized. Just succeed?
@@ -199,11 +141,6 @@ byond_ffi_fn! { auxtools_init(_input) {
         return Some("FAILED (Couldn't find GetVariable)".to_owned())
     }
 
-    unsafe {
-        let x = PROC_HOOK_DETOUR.initialize(call_global_proc, CallGlobalProcHook);
-        x.ok().unwrap().enable().unwrap();
-    }
-
     if GLOBAL_STATE.set(State {
         get_proc_array_entry: get_proc_array_entry,
         get_string_id: get_string_id,
@@ -212,12 +149,14 @@ byond_ffi_fn! { auxtools_init(_input) {
         call_global_proc: call_global_proc,
         get_variable: get_variable,
     }).is_err() {
-        return Some("FAILED (Couldn't set state)".to_owned())
+        panic!();
     }
 
-
-
-    return Some("SUCCESS".to_owned())
+    if let Err(error) = hooks::init() {
+        return Some(error);
+    }
+    
+    Some("SUCCESS".to_owned())
 } }
 
 #[cfg(test)]
