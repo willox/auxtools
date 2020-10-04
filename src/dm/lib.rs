@@ -1,5 +1,3 @@
-#![cfg(all(windows, feature = "nightly"))]
-
 mod byond_ffi;
 mod raw_types;
 mod string;
@@ -19,7 +17,17 @@ use value::Value;
 static GLOBAL_STATE: OnceCell<State> = OnceCell::new();
 
 static_detour! {
-  static PROC_HOOK_DETOUR: raw_types::funcs::CallGlobalProc;
+	static PROC_HOOK_DETOUR: unsafe extern "cdecl" fn(
+		raw_types::values::Value,
+		u32,
+		u32,
+		u32,
+		raw_types::values::Value,
+		*mut raw_types::values::Value,
+		usize,
+		u32,
+		u32
+	) -> raw_types::values::Value;
 }
 
 unsafe impl Sync for State {}
@@ -86,12 +94,13 @@ fn CallGlobalProcHook(
 	proc_id: u32,
 	unknown1: u32,
 	src: raw_types::values::Value,
-	args: *mut values::Value,
+	args: *mut raw_types::values::Value,
 	num_args: usize,
 	unknown2: u32,
 	unknown3: u32,
 ) -> raw_types::values::Value {
-	msgbox::create("woah", "it works!!");
+	let byondcore = sigscan::Scanner::for_module("byondcore.dll");
+
 	unsafe {
 		PROC_HOOK_DETOUR.call(
 			usr, proc_type, proc_id, unknown1, src, args, num_args, unknown2, unknown3,
@@ -151,6 +160,11 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("FAILED (Couldn't find CallGlobalProc)".to_owned())
 	}
 
+	unsafe {
+		let x = PROC_HOOK_DETOUR.initialize(call_global_proc, CallGlobalProcHook);
+		x.ok().unwrap().enable();
+	}
+
 	if GLOBAL_STATE.set(State {
 		get_proc_array_entry: get_proc_array_entry,
 		get_string_id: get_string_id,
@@ -161,7 +175,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("FAILED (Couldn't set state)".to_owned())
 	}
 
-	PROC_HOOK_DETOUR.initialize(call_global_proc, CallGlobalProcHook);
+
 
 	return Some("SUCCESS".to_owned())
 } }
