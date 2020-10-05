@@ -17,6 +17,16 @@ pub type CallProcById = unsafe extern "cdecl" fn(
     u32,
     u32,
 ) -> values::Value;
+pub type CallDatumProcByName = unsafe extern "cdecl" fn(
+    values::Value,
+    u32,
+    strings::StringId,
+    values::Value,
+    *mut values::Value,
+    usize,
+    u32,
+    u32,
+) -> values::Value;
 pub type GetVariable = unsafe extern "cdecl" fn(values::Value, u32) -> values::Value;
 pub type SetVariable = unsafe extern "cdecl" fn(values::Value, u32, values::Value);
 pub type GetStringTableEntry = unsafe extern "cdecl" fn(u32) -> *const strings::StringEntry;

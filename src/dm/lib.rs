@@ -28,6 +28,7 @@ struct State {
     call_proc_by_id: raw_types::funcs::CallProcById,
     get_variable: raw_types::funcs::GetVariable,
     set_variable: raw_types::funcs::SetVariable,
+    call_datum_proc_by_name: raw_types::funcs::CallDatumProcByName,
 }
 
 // TODO: Bit of an assumption going on here. Procs are never destroyed... right?
@@ -151,6 +152,16 @@ byond_ffi_fn! { auxtools_init(_input) {
         return Some("FAILED (Couldn't find GetStringTableEntry)".to_owned())
     }
 
+    let call_datum_proc_by_name: raw_types::funcs::CallDatumProcByName;
+    if let Some(ptr) = byondcore.find(b"\x55\x8B\xEC\x83\xEC\x0C\x53\x8B\x5D\x10\x8D\x45\xFF\x56\x8B\x75\x14\x57\x6A\x01\x50\xFF\x75\x1C\xC6\x45\xFF\x00\xFF\x75\x18\x6A\x00\x56\x53") {
+        unsafe {
+            // TODO: Could be nulls
+            call_datum_proc_by_name = std::mem::transmute(ptr as *const ());
+        }
+    } else {
+        return Some("FAILED (Couldn't find CallDatumProcByName)".to_owned())
+    }
+
     if GLOBAL_STATE.set(State {
         get_proc_array_entry: get_proc_array_entry,
         get_string_id: get_string_id,
@@ -160,6 +171,7 @@ byond_ffi_fn! { auxtools_init(_input) {
         get_variable: get_variable,
         set_variable: set_variable,
         get_string_table_entry: get_string_table_entry,
+        call_datum_proc_by_name: call_datum_proc_by_name,
 
     }).is_err() {
         panic!();
@@ -175,6 +187,27 @@ byond_ffi_fn! { auxtools_init(_input) {
 
     Some("SUCCESS".to_owned())
 } }
+/*
+macro_rules! vec {
+    () => (
+        $crate::vec::Vec::new()
+    );
+    ($elem:expr; $n:expr) => (
+        $crate::vec::from_elem($elem, $n)
+    );
+    ($($x:expr),+ $(,)?) => (
+        <[_]>::into_vec(box [$($x),+])
+    );
+}
+*/
+macro_rules! args {
+    () => {
+        None
+    };
+    ($($x:expr),+ $(,)?) => {
+        Some(vec![$(value::Fuck::from($x),)+])
+    };
+}
 
 fn hello_proc_hook<'a>(
     ctx: &'a DMContext,
@@ -185,7 +218,11 @@ fn hello_proc_hook<'a>(
     let dat = args[0];
     dat.set("hello", &ctx.get_string("Hewwo, wowd!"));
     let v = dat.get("hello").unwrap();
-    v
+    let bruh = dat.call(
+        "marchofprogress",
+        args![ctx.get_string("Hello"), Value::from(5)],
+    );
+    bruh
 }
 
 #[cfg(test)]

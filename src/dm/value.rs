@@ -1,6 +1,7 @@
 use super::raw_types;
 use super::string;
 use super::GLOBAL_STATE;
+use crate::raw_types::values::IntoRawValue;
 use std::ffi::CString;
 use std::fmt;
 use std::marker::PhantomData;
@@ -55,9 +56,75 @@ impl<'b> Value<'b> {
         }
     }
 
+    pub fn call<S: Into<string::StringRef>, R: Into<RawValueVector> + Default>(
+        &self,
+        procname: S,
+        args: Option<R>,
+    ) -> Value<'b> {
+        unsafe {
+            let mut args: Vec<raw_types::values::Value> = args.unwrap_or_default().into().0;
+
+            let result = (GLOBAL_STATE.get().unwrap().call_datum_proc_by_name)(
+                Value::null().into_raw_value(),
+                2,
+                (*procname.into().internal).this,
+                self.into_raw_value(),
+                args.as_mut_ptr(),
+                args.len(),
+                0,
+                0,
+            );
+            Value::from_raw(result)
+        }
+    }
+
     // blah blah lifetime is not verified with this so use at your peril
     pub unsafe fn from_raw(v: raw_types::values::Value) -> Self {
         Value::new(v.tag, v.data)
+    }
+}
+
+pub enum Fuck<'a> {
+    Val(Value<'a>),
+    Str(string::StringRef),
+}
+
+pub struct RawValueVector(pub Vec<raw_types::values::Value>);
+
+impl<'a> From<Vec<Fuck<'a>>> for RawValueVector {
+    fn from(v: Vec<Fuck>) -> Self {
+        RawValueVector(unsafe {
+            v.iter()
+                .map(|v| match v {
+                    Fuck::Val(v) => v.into_raw_value(),
+                    Fuck::Str(s) => s.into_raw_value(),
+                })
+                .collect()
+        })
+    }
+}
+
+impl Default for RawValueVector {
+    fn default() -> Self {
+        Self(vec![])
+    }
+}
+
+impl<'a> From<Value<'a>> for Fuck<'a> {
+    fn from(v: Value<'a>) -> Self {
+        Fuck::Val(v)
+    }
+}
+
+impl<'a> From<string::StringRef> for Fuck<'a> {
+    fn from(s: string::StringRef) -> Self {
+        Fuck::Str(s)
+    }
+}
+
+impl<'a> From<Vec<string::StringRef>> for RawValueVector {
+    fn from(v: Vec<string::StringRef>) -> Self {
+        RawValueVector(unsafe { v.iter().map(|v| v.into_raw_value()).collect() })
     }
 }
 
