@@ -69,3 +69,14 @@ impl Into<String> for StringRef {
         }
     }
 }
+
+impl raw_types::values::IntoRawValue for StringRef {
+    unsafe fn into_raw_value(&self) -> raw_types::values::Value {
+        raw_types::values::Value {
+            tag: raw_types::values::ValueTag::String,
+            data: raw_types::values::ValueData {
+                string: (*self.internal).this,
+            },
+        }
+    }
+}

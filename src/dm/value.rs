@@ -37,14 +37,8 @@ impl<'b> Value<'b> {
         unsafe { Self::from_raw(val) }
     }
 
-    fn set_by_id(&self, name_id: u32, new_value: &Value) {
-        unsafe {
-            (GLOBAL_STATE.get().unwrap().set_variable)(
-                self.value,
-                name_id,
-                raw_types::values::Value::from(new_value),
-            )
-        }
+    fn set_by_id(&self, name_id: u32, new_value: raw_types::values::Value) {
+        unsafe { (GLOBAL_STATE.get().unwrap().set_variable)(self.value, name_id, new_value) }
     }
 
     pub fn get<S: Into<String>>(&self, name: S) -> Option<Value<'b>> {
@@ -57,12 +51,12 @@ impl<'b> Value<'b> {
         None
     }
 
-    pub fn set<S: Into<String>>(&self, name: S, new_value: &Value) {
+    pub fn set<S: Into<String>, V: raw_types::values::IntoRawValue>(&self, name: S, new_value: &V) {
         if let Ok(string) = CString::new(name.into()) {
             let index = unsafe {
                 (GLOBAL_STATE.get().unwrap().get_string_id)(string.as_ptr(), true, false, true)
             };
-            self.set_by_id(index, new_value);
+            self.set_by_id(index, unsafe { new_value.into_raw_value() });
         }
     }
 
@@ -124,33 +118,8 @@ impl From<bool> for Value<'_> {
     }
 }
 
-impl From<string::StringRef> for Value<'_> {
-    fn from(s: string::StringRef) -> Self {
-        unsafe {
-            Value::new(
-                raw_types::values::ValueTag::String,
-                raw_types::values::ValueData {
-                    string: (*s.internal).this,
-                },
-            )
-        }
-    }
-}
-
-impl From<&String> for Value<'_> {
-    fn from(s: &String) -> Self {
-        string::StringRef::from(s.as_str()).into()
-    }
-}
-
-impl From<String> for Value<'_> {
-    fn from(s: String) -> Self {
-        string::StringRef::from(s.as_str()).into()
-    }
-}
-
-impl From<&str> for Value<'_> {
-    fn from(s: &str) -> Self {
-        string::StringRef::from(s).into()
+impl raw_types::values::IntoRawValue for Value<'_> {
+    unsafe fn into_raw_value(&self) -> raw_types::values::Value {
+        self.value
     }
 }

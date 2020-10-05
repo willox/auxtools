@@ -183,7 +183,7 @@ fn hello_proc_hook<'a>(
     args: Vec<Value<'a>>,
 ) -> Value<'a> {
     let dat = args[0];
-    dat.set("hello", &Value::from("Hello, world!"));
+    dat.set("hello", &ctx.get_string("Hewwo, wowd!"));
     let v = dat.get("hello").unwrap();
     v
 }

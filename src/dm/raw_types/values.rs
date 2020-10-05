@@ -71,3 +71,7 @@ impl From<&value::Value<'_>> for Value {
         }
     }
 }
+
+pub trait IntoRawValue {
+    unsafe fn into_raw_value(&self) -> Value;
+}
