@@ -41,22 +41,17 @@ impl<'b> Value<'b> {
         unsafe { (GLOBAL_STATE.get().unwrap().set_variable)(self.value, name_id, new_value) }
     }
 
-    pub fn get<S: Into<String>>(&self, name: S) -> Option<Value<'b>> {
-        if let Ok(string) = CString::new(name.into()) {
-            let index = unsafe {
-                (GLOBAL_STATE.get().unwrap().get_string_id)(string.as_ptr(), true, false, true)
-            };
-            return Some(self.get_by_id(index));
-        }
-        None
+    pub fn get<S: Into<string::StringRef>>(&self, name: S) -> Option<Value<'b>> {
+        unsafe { Some(self.get_by_id((*name.into().internal).this.0)) }
     }
 
-    pub fn set<S: Into<String>, V: raw_types::values::IntoRawValue>(&self, name: S, new_value: &V) {
-        if let Ok(string) = CString::new(name.into()) {
-            let index = unsafe {
-                (GLOBAL_STATE.get().unwrap().get_string_id)(string.as_ptr(), true, false, true)
-            };
-            self.set_by_id(index, unsafe { new_value.into_raw_value() });
+    pub fn set<S: Into<string::StringRef>, V: raw_types::values::IntoRawValue>(
+        &self,
+        name: S,
+        new_value: &V,
+    ) {
+        unsafe {
+            self.set_by_id((*name.into().internal).this.0, new_value.into_raw_value());
         }
     }
 
