@@ -3,6 +3,7 @@ use super::raw_types;
 use super::value::Value;
 use super::DMContext;
 use super::GLOBAL_STATE;
+use crate::raw_types::values::IntoRawValue;
 use detour::static_detour;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -70,7 +71,8 @@ fn call_proc_by_id_hook(
                     .collect();
             }
 
-            raw_types::values::Value::from(&hook(&ctx, src, usr, args))
+            let result = hook(&ctx, src, usr, args);
+            unsafe { result.into_raw_value() }
         }
         None => unsafe {
             PROC_HOOK_DETOUR.call(

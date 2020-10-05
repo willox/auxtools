@@ -63,15 +63,6 @@ impl fmt::Display for Value {
     }
 }
 
-impl From<&value::Value<'_>> for Value {
-    fn from(val: &value::Value) -> Self {
-        Value {
-            tag: val.value.tag,
-            data: val.value.data,
-        }
-    }
-}
-
 pub trait IntoRawValue {
     unsafe fn into_raw_value(&self) -> Value;
 }
