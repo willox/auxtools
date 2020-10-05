@@ -1,4 +1,5 @@
 use super::raw_types;
+use super::string;
 use super::GLOBAL_STATE;
 use std::ffi::CString;
 use std::fmt;
@@ -77,32 +78,6 @@ impl fmt::Display for Value<'_> {
     }
 }
 
-/*
-fn value_from_string<'a>(s: &String) -> Value<'a> {
-    let mut s = s.clone();
-    s.push(0x00 as char);
-    let id = unsafe { (GLOBAL_STATE.get().unwrap().get_string_id)(s.as_str(), true, false, true) };
-    create_value(
-        raw_types::values::ValueTag::String,
-        raw_types::values::ValueData {
-            string: raw_types::strings::StringRef(id),
-        },
-    )
-}
-
-impl From<&String> for Value<'_> {
-    fn from(s: &String) -> Self {
-        value_from_string(s)
-    }
-}
-
-impl From<&str> for Value<'_> {
-    fn from(s: &str) -> Self {
-        value_from_string(&s.to_owned())
-    }
-}
-*/
-
 impl From<f32> for Value<'_> {
     fn from(num: f32) -> Self {
         unsafe {
@@ -146,5 +121,36 @@ impl From<bool> for Value<'_> {
                 },
             )
         }
+    }
+}
+
+impl From<string::StringRef> for Value<'_> {
+    fn from(s: string::StringRef) -> Self {
+        unsafe {
+            Value::new(
+                raw_types::values::ValueTag::String,
+                raw_types::values::ValueData {
+                    string: (*s.internal).this,
+                },
+            )
+        }
+    }
+}
+
+impl From<&String> for Value<'_> {
+    fn from(s: &String) -> Self {
+        string::StringRef::from(s.as_str()).into()
+    }
+}
+
+impl From<String> for Value<'_> {
+    fn from(s: String) -> Self {
+        string::StringRef::from(s.as_str()).into()
+    }
+}
+
+impl From<&str> for Value<'_> {
+    fn from(s: &str) -> Self {
+        string::StringRef::from(s).into()
     }
 }

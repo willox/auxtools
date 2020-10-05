@@ -56,16 +56,8 @@ impl<'a> DMContext<'_> {
         Value::null()
     }
 
-    fn get_string(&self, string: &str) -> Option<StringRef> {
-        if let Ok(string) = CString::new(string) {
-            unsafe {
-                let index = (self.state.get_string_id)(string.as_ptr(), true, false, true);
-                let strings = (*self.state.string_table).strings;
-
-                return Some(StringRef::new(*strings.add(index as usize)));
-            }
-        }
-        None
+    fn get_string(&self, string: &str) -> StringRef {
+        StringRef::from(string)
     }
 
     fn new() -> Option<Self> {
@@ -191,7 +183,7 @@ fn hello_proc_hook<'a>(
     args: Vec<Value<'a>>,
 ) -> Value<'a> {
     let dat = args[0];
-    dat.set("hello", &Value::from(5));
+    dat.set("hello", &Value::from("Hello, world!"));
     let v = dat.get("hello").unwrap();
     v
 }

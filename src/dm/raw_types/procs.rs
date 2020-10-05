@@ -3,14 +3,14 @@ use super::values;
 
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct ProcRef(pub u32);
+pub struct ProcId(pub u32);
 
 #[repr(C)]
 pub struct ProcEntry {
-    pub path: strings::StringRef,
-    name: strings::StringRef,
-    desc: strings::StringRef,
-    category: strings::StringRef,
+    pub path: strings::StringId,
+    name: strings::StringId,
+    desc: strings::StringId,
+    category: strings::StringId,
     flags: u32,
     unk_1: u32,
 
@@ -22,7 +22,7 @@ pub struct ProcEntry {
 
 #[repr(C)]
 pub struct ProcInstance {
-    proc: ProcRef,
+    proc: ProcId,
     unk_0: u32,
     usr: values::Value,
     src: values::Value,
@@ -40,7 +40,7 @@ pub struct ProcInstance {
 pub struct ExecutionContext {
     proc_instance: *mut ProcInstance,
     parent_context: *mut ExecutionContext,
-    dbg_proc_file: strings::StringRef,
+    dbg_proc_file: strings::StringId,
     dbg_current_line: u32,
     bytecode: *mut u32,
     current_opcode: u16,

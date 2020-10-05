@@ -23,7 +23,7 @@ static_detour! {
     static PROC_HOOK_DETOUR: unsafe extern "cdecl" fn(
         raw_types::values::Value,
         u32,
-        raw_types::procs::ProcRef,
+        raw_types::procs::ProcId,
         u32,
         raw_types::values::Value,
         *mut raw_types::values::Value,
@@ -36,7 +36,7 @@ static_detour! {
 pub type ProcHook =
     for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, Vec<Value<'a>>) -> Value<'a>;
 
-thread_local!(static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcRef, ProcHook>> = RefCell::new(HashMap::new()));
+thread_local!(static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new()));
 
 pub fn hook(proc: &Proc, hook: ProcHook) {
     PROC_HOOKS.with(|h| h.borrow_mut().insert(proc.id, hook));
@@ -45,7 +45,7 @@ pub fn hook(proc: &Proc, hook: ProcHook) {
 fn call_proc_by_id_hook(
     usr_raw: raw_types::values::Value,
     proc_type: u32,
-    proc_id: raw_types::procs::ProcRef,
+    proc_id: raw_types::procs::ProcId,
     unknown1: u32,
     src_raw: raw_types::values::Value,
     args_ptr: *mut raw_types::values::Value,
