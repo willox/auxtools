@@ -216,8 +216,16 @@ fn hello_proc_hook<'a>(
     args: Vec<Value<'a>>,
 ) -> Value<'a> {
     let dat = args[0];
-    dat.set("hello", &ctx.get_string("Hewwo, wowd!"));
-    let v = dat.get("hello").unwrap();
+    //dat.set("hello", &ctx.get_string("Hewwo, wowd!"));
+    if let Some(s) = dat.get_float("hello") {
+        dat.set("hello", &Value::from(s * 10.0))
+    }
+
+    if let Some(mut s) = dat.get_string("stringy") {
+        s.push_str(" is a smarty pants");
+        dat.set("stringy", &ctx.get_string(s.as_str()));
+    }
+
     let bruh = dat.call(
         "marchofprogress",
         args![ctx.get_string("Hello"), Value::from(5)],

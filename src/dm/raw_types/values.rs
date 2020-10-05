@@ -18,6 +18,8 @@ pub enum ValueTag {
     Number = 0x2A, // 0x2A
 }
 
+pub type VType = ValueTag;
+
 #[allow(unreachable_patterns)]
 impl fmt::Display for ValueTag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

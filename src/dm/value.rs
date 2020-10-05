@@ -42,8 +42,28 @@ impl<'b> Value<'b> {
         unsafe { (GLOBAL_STATE.get().unwrap().set_variable)(self.value, name_id, new_value) }
     }
 
-    pub fn get<S: Into<string::StringRef>>(&self, name: S) -> Option<Value<'b>> {
+    pub fn get_untyped<S: Into<string::StringRef>>(&self, name: S) -> Option<Value<'b>> {
         unsafe { Some(self.get_by_id((*name.into().internal).this.0)) }
+    }
+
+    pub fn get_float<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {
+        let var = self.get_untyped(name).unwrap();
+        match var.value.tag {
+            raw_types::values::ValueTag::Number => Some(unsafe { var.value.data.number }),
+            _ => None,
+        }
+    }
+
+    pub fn get_string<S: Into<string::StringRef>>(&self, name: S) -> Option<String> {
+        let var = self.get_untyped(name).unwrap();
+        match var.value.tag {
+            raw_types::values::ValueTag::String => {
+                let id = unsafe { var.value.data.id };
+                let s = string::StringRef::from_id(id);
+                Some(s.into())
+            }
+            _ => None,
+        }
     }
 
     pub fn set<S: Into<string::StringRef>, V: raw_types::values::IntoRawValue>(
