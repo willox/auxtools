@@ -12,6 +12,7 @@ extern crate msgbox;
 extern crate once_cell;
 
 use once_cell::sync::OnceCell;
+use raw_types::values::{ValueData, ValueTag};
 use std::ffi::CString;
 use string::StringRef;
 use value::Value;
@@ -55,12 +56,19 @@ impl<'a> DMContext<'_> {
         }
     }*/
 
-    fn get_global(&self, name: &str) -> Value {
-        Value::null()
+    fn get_global<S: Into<string::StringRef>>(&self, name: S) -> Option<Value> {
+        unsafe {
+            Value::new(ValueTag::World, ValueData { id: 1 }).get(name)
+            // Tag World with value 1 means Global
+        }
     }
 
-    fn get_string(&self, string: &str) -> StringRef {
-        StringRef::from(string)
+    fn get_global_float<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {
+        unsafe { Value::new(ValueTag::World, ValueData { id: 1 }).get_float(name) }
+    }
+
+    fn get_global_string<S: Into<string::StringRef>>(&self, name: S) -> Option<String> {
+        unsafe { Value::new(ValueTag::World, ValueData { id: 1 }).get_string(name) }
     }
 
     fn new() -> Option<Self> {
@@ -185,12 +193,10 @@ byond_ffi_fn! { auxtools_init(_input) {
 
     proc::populate_procs();
 
-    match hooks::hook("/proc/nonexistent", hello_proc_hook) {
-            Ok(_) => (),
-            Err(e) => {
-                msgbox::create("Failed to hook!", e.to_string().as_str(), msgbox::IconType::Error);
-            }
+    hooks::hook("/proc/wew", hello_proc_hook).unwrap_or_else(|e| {
+            msgbox::create("Failed to hook!", e.to_string().as_str(), msgbox::IconType::Error)
         }
+    );
 
     Some("SUCCESS".to_owned())
 } }
@@ -218,6 +224,7 @@ fn hello_proc_hook<'a>(
 
     if let Some(mut s) = dat.get_string("stringy") {
         s.push_str(" is a smarty pants");
+        s.push_str(&ctx.get_global_string("flumpty").unwrap());
         dat.set("stringy", &s);
     }
 

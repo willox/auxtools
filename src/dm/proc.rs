@@ -16,6 +16,10 @@ pub struct Proc {
 
 thread_local!(static PROCS_BY_NAME: RefCell<HashMap<String, Vec<Proc>>> = RefCell::new(HashMap::new()));
 
+fn strip_path(p: String) -> String {
+    p.replace("/proc/", "/").replace("/verb/", "/")
+}
+
 pub fn populate_procs() {
     let mut i: u32 = 0;
     loop {
@@ -23,7 +27,7 @@ pub fn populate_procs() {
         if proc_entry.is_null() {
             break;
         }
-        let proc_name: String = unsafe { StringRef::from_id((*proc_entry).path.0).into() };
+        let proc_name = strip_path(unsafe { StringRef::from_id((*proc_entry).path.0).into() });
         let proc = Proc {
             id: ProcId(i),
             entry: proc_entry,
@@ -46,7 +50,7 @@ pub fn populate_procs() {
 }
 
 pub fn get_proc_override<S: Into<String>>(path: S, override_id: usize) -> Option<Proc> {
-    let s: String = path.into();
+    let s = strip_path(path.into());
     PROCS_BY_NAME.with(|h| match h.borrow().get(&s)?.get(override_id) {
         Some(p) => Some(p.clone()),
         None => None,

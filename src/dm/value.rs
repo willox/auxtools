@@ -76,18 +76,19 @@ impl<'b> Value<'b> {
         }
     }
 
-    pub fn call<S: Into<string::StringRef>, R: Into<RawValueVector> + Default>(
+    pub fn call<S: AsRef<str>, R: Into<RawValueVector> + Default>(
         &self,
         procname: S,
         args: Option<R>,
     ) -> Value<'b> {
         unsafe {
+            let procname = String::from(procname.as_ref()).replace("_", " ");
             let mut args: Vec<raw_types::values::Value> = args.unwrap_or_default().into().0;
 
             let result = (GLOBAL_STATE.get().unwrap().call_datum_proc_by_name)(
                 Value::null().into_raw_value(),
                 2,
-                (*procname.into().internal).this,
+                (*string::StringRef::from(procname).internal).this,
                 self.into_raw_value(),
                 args.as_mut_ptr(),
                 args.len(),

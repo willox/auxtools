@@ -4,7 +4,7 @@ use super::strings;
 use std::fmt;
 
 #[repr(u8)]
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 #[allow(unused)]
 #[non_exhaustive]
 pub enum ValueTag {
@@ -16,14 +16,22 @@ pub enum ValueTag {
     Client, // 0x05
     String, // 0x06
 
+    MobTypepath = 0x08, // 0x08
+    ObjTypepath,        // 0x09
+    TurfTypepath,       // 0x0A
+    AreaTypepath,       // 0x0B
+    Resource,           // 0x0C
+    Image,              // 0x0D
+    World,              // 0x0E
+    List,               // 0x0F
+
     Number = 0x2A, // 0x2A
 }
 
-pub type VType = ValueTag;
-
 impl fmt::Display for ValueTag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
+        write!(f, "{:?}", self)
+        /*match self {
             ValueTag::Null => write!(f, "Null"),
             ValueTag::Turf => write!(f, "Turf"),
             ValueTag::Obj => write!(f, "Obj"),
@@ -33,7 +41,7 @@ impl fmt::Display for ValueTag {
             ValueTag::String => write!(f, "String"),
             ValueTag::Number => write!(f, "Number"),
             _ => write!(f, "Unknown-type"),
-        }
+        }*/
     }
 }
 
