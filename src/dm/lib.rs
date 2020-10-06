@@ -1,7 +1,6 @@
 #![feature(type_ascription)]
 
 mod byond_ffi;
-mod calling;
 mod context;
 mod global_state;
 mod hooks;
