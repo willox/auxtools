@@ -1,6 +1,6 @@
 use super::proc::Proc;
 use super::raw_types;
-use super::value::Value;
+use super::value::{EitherValue, Value};
 use super::DMContext;
 use super::GLOBAL_STATE;
 use crate::raw_types::values::IntoRawValue;
@@ -60,7 +60,7 @@ static_detour! {
 }
 
 pub type ProcHook =
-    for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, Vec<Value<'a>>) -> Value<'a>;
+    for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, Vec<Value<'a>>) -> EitherValue<'a>;
 
 thread_local!(static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new()));
 
@@ -119,7 +119,9 @@ fn call_proc_by_id_hook(
             }
 
             let result = hook(&ctx, src, usr, args);
-            unsafe { result.into_raw_value() }
+            let result = unsafe { result.into_raw_value() };
+            unsafe { (GLOBAL_STATE.get().unwrap().inc_ref_count)(result) };
+            result
         }
         None => unsafe {
             PROC_HOOK_DETOUR.call(

@@ -15,7 +15,16 @@ extern crate once_cell;
 
 use context::DMContext;
 use global_state::GLOBAL_STATE;
+use value::EitherValue;
 use value::Value;
+
+extern crate rand;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
+
+fn random_string(n: usize) -> String {
+    thread_rng().sample_iter(&Alphanumeric).take(n).collect()
+}
 
 byond_ffi_fn! { auxtools_init(_input) {
     // Already initialized. Just succeed?
@@ -109,6 +118,22 @@ byond_ffi_fn! { auxtools_init(_input) {
         return Some("FAILED (Couldn't find CallDatumProcByName)".to_owned())
     }
 
+    /*
+    char* x_ref_count_call = (char*)Pocket::Sigscan::FindPattern(BYONDCORE, "3D ?? ?? ?? ?? 74 14 50 E8 ?? ?? ?? ?? FF 75 0C FF 75 08 E8", 20);
+    DecRefCount = (DecRefCountPtr)(x_ref_count_call + *(int*)x_ref_count_call + 4); //x_ref_count_call points to the relative offset to DecRefCount from the call site
+    x_ref_count_call = (char*)Pocket::Sigscan::FindPattern(BYONDCORE, "FF 75 10 E8 ?? ?? ?? ?? FF 75 0C 8B F8 FF 75 08 E8 ?? ?? ?? ?? 57", 17);
+    IncRefCount = (IncRefCountPtr)(x_ref_count_call + *(int*)x_ref_count_call + 4);
+    */
+    let dec_ref_count: raw_types::funcs::DecRefCount;
+    let inc_ref_count: raw_types::funcs::IncRefCount;
+    unsafe {
+        let dec_ref_count_call: *const u8 = byondcore.find(b"\x3D????\x74\x14\x50\xE8????\xFF\x75\x0C\xFF\x75\x08\xE8").unwrap().offset(20);
+        dec_ref_count = std::mem::transmute(dec_ref_count_call.offset((*(dec_ref_count_call as *const u32) + 4) as isize));
+
+        let inc_ref_count_call: *const u8 = byondcore.find(b"\xFF\x75\x10\xE8????\xFF\x75\x0C\x8B\xF8\xFF\x75\x08\xE8????\x57").unwrap().offset(17);
+        inc_ref_count = std::mem::transmute(inc_ref_count_call.offset((*(inc_ref_count_call as *const u32) + 4) as isize));
+    }
+
     if GLOBAL_STATE.set(global_state::State {
         get_proc_array_entry: get_proc_array_entry,
         get_string_id: get_string_id,
@@ -119,6 +144,8 @@ byond_ffi_fn! { auxtools_init(_input) {
         set_variable: set_variable,
         get_string_table_entry: get_string_table_entry,
         call_datum_proc_by_name: call_datum_proc_by_name,
+        dec_ref_count: dec_ref_count,
+        inc_ref_count: inc_ref_count
 
     }).is_err() {
         panic!();
@@ -152,23 +179,26 @@ fn hello_proc_hook<'a>(
     src: Value<'a>,
     usr: Value<'a>,
     args: Vec<Value<'a>>,
-) -> Value<'a> {
+) -> EitherValue<'a> {
     let dat = args[0];
 
     if let Some(num) = dat.get_float("hello") {
         dat.set("hello", &Value::from(num * 10.0))
     }
 
-    if let Some(mut s) = dat.get_string("stringy") {
-        s.push_str(" is a smarty pants");
-        s.push_str(&ctx.get_global_string("flumpty").unwrap());
-        dat.set("stringy", &s);
-    }
+    /*if let Some(mut s) = dat.get_string("stringy") {
+        for _ in 1..500 {
+            dat.set("stringy", &random_string(10));
+        }
+    }*/
 
-    let bruh = proc::get_proc("/proc/globalmeme")
+    proc::get_proc("/proc/globalmeme")
         .unwrap()
-        .call(args![5.0, "Hello", dat]);
-    bruh
+        .call(args![5.0, random_string(10), dat]);
+
+    //let bruh = dat.call("march_of_progress", args![5.0, random_string(10), dat]);
+
+    random_string(10).into()
 }
 
 #[cfg(test)]

@@ -30,3 +30,5 @@ pub type CallDatumProcByName = unsafe extern "cdecl" fn(
 pub type GetVariable = unsafe extern "cdecl" fn(values::Value, u32) -> values::Value;
 pub type SetVariable = unsafe extern "cdecl" fn(values::Value, u32, values::Value);
 pub type GetStringTableEntry = unsafe extern "cdecl" fn(u32) -> *const strings::StringEntry;
+pub type IncRefCount = unsafe extern "cdecl" fn(values::Value);
+pub type DecRefCount = unsafe extern "cdecl" fn(values::Value);

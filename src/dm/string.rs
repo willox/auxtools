@@ -9,19 +9,33 @@ pub struct StringRef {
 
 impl StringRef {
     pub fn new(ptr: *const raw_types::strings::StringEntry) -> Self {
-        // inc ref count
+        /*unsafe {
+            (GLOBAL_STATE.get().unwrap().inc_ref_count)(raw_types::values::Value {
+                tag: raw_types::values::ValueTag::String,
+                data: raw_types::values::ValueData {
+                    string: (*ptr).this,
+                },
+            });
+        }*/
 
         StringRef { internal: ptr }
     }
 
-    pub fn from_id<I: Into<u32>>(id: I) -> Self {
+    pub fn from_id<I: Into<u32> + Clone>(id: I) -> Self {
         Self::new(unsafe { (GLOBAL_STATE.get().unwrap().get_string_table_entry)(id.into()) })
     }
 }
 
 impl Drop for StringRef {
     fn drop(&mut self) {
-        // dec string ref
+        /*unsafe {
+            (GLOBAL_STATE.get().unwrap().dec_ref_count)(raw_types::values::Value {
+                tag: raw_types::values::ValueTag::String,
+                data: raw_types::values::ValueData {
+                    string: (*self.internal).this,
+                },
+            });
+        }*/
     }
 }
 
@@ -89,6 +103,7 @@ impl raw_types::values::IntoRawValue for StringRef {
 
 impl raw_types::values::IntoRawValue for String {
     unsafe fn into_raw_value(&self) -> raw_types::values::Value {
-        StringRef::from(self).into_raw_value()
+        let sref = StringRef::from(self);
+        sref.into_raw_value()
     }
 }

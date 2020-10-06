@@ -35,6 +35,7 @@ impl<'b> Value<'b> {
 
     fn get_by_id(&self, name_id: u32) -> Value<'b> {
         let val = unsafe { (GLOBAL_STATE.get().unwrap().get_variable)(self.value, name_id) };
+        unsafe { (GLOBAL_STATE.get().unwrap().inc_ref_count)(val) }
         unsafe { Self::from_raw(val) }
     }
 
@@ -222,5 +223,14 @@ impl From<bool> for Value<'_> {
 impl raw_types::values::IntoRawValue for Value<'_> {
     unsafe fn into_raw_value(&self) -> raw_types::values::Value {
         self.value
+    }
+}
+
+impl raw_types::values::IntoRawValue for EitherValue<'_> {
+    unsafe fn into_raw_value(&self) -> raw_types::values::Value {
+        match self {
+            EitherValue::Val(v) => v.into_raw_value(),
+            EitherValue::Str(s) => s.into_raw_value(),
+        }
     }
 }

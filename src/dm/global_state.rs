@@ -16,4 +16,6 @@ pub struct State {
     pub get_variable: raw_types::funcs::GetVariable,
     pub set_variable: raw_types::funcs::SetVariable,
     pub call_datum_proc_by_name: raw_types::funcs::CallDatumProcByName,
+    pub dec_ref_count: raw_types::funcs::DecRefCount,
+    pub inc_ref_count: raw_types::funcs::IncRefCount,
 }
