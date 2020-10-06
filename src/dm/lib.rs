@@ -1,6 +1,9 @@
 #![feature(type_ascription)]
 
 mod byond_ffi;
+mod calling;
+mod context;
+mod global_state;
 mod hooks;
 mod proc;
 mod raw_types;
@@ -11,74 +14,9 @@ extern crate detour;
 extern crate msgbox;
 extern crate once_cell;
 
-use once_cell::sync::OnceCell;
-use raw_types::values::{ValueData, ValueTag};
-use std::ffi::CString;
-use string::StringRef;
+use context::DMContext;
+use global_state::GLOBAL_STATE;
 use value::Value;
-
-static GLOBAL_STATE: OnceCell<State> = OnceCell::new();
-
-unsafe impl Sync for State {}
-unsafe impl Send for State {}
-
-struct State {
-    get_proc_array_entry: raw_types::funcs::GetProcArrayEntry,
-    execution_context: *mut raw_types::procs::ExecutionContext,
-    string_table: *mut raw_types::strings::StringTable,
-    get_string_id: raw_types::funcs::GetStringId,
-    get_string_table_entry: raw_types::funcs::GetStringTableEntry,
-    call_proc_by_id: raw_types::funcs::CallProcById,
-    get_variable: raw_types::funcs::GetVariable,
-    set_variable: raw_types::funcs::SetVariable,
-    call_datum_proc_by_name: raw_types::funcs::CallDatumProcByName,
-}
-
-// TODO: Bit of an assumption going on here. Procs are never destroyed... right?
-/*pub struct Proc {
-    internal: *mut raw_types::procs::Proc,
-}*/
-
-pub struct DMContext<'a> {
-    state: &'a State,
-}
-
-impl<'a> DMContext<'_> {
-    /*fn get_proc(&self, index: u32) -> Option<Proc> {
-        unsafe {
-            let ptr = (self.state.get_proc_array_entry)(raw_types::procs::ProcRef(index));
-
-            if ptr.is_null() {
-                return None;
-            }
-
-            Some(ProcEntry { internal: ptr })
-        }
-    }*/
-
-    fn get_global<S: Into<string::StringRef>>(&self, name: S) -> Option<Value> {
-        unsafe {
-            Value::new(ValueTag::World, ValueData { id: 1 }).get(name)
-            // Tag World with value 1 means Global
-        }
-    }
-
-    fn get_global_float<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {
-        unsafe { Value::new(ValueTag::World, ValueData { id: 1 }).get_float(name) }
-    }
-
-    fn get_global_string<S: Into<string::StringRef>>(&self, name: S) -> Option<String> {
-        unsafe { Value::new(ValueTag::World, ValueData { id: 1 }).get_string(name) }
-    }
-
-    fn new() -> Option<Self> {
-        if let Some(state) = GLOBAL_STATE.get() {
-            Some(Self { state: &state })
-        } else {
-            None
-        }
-    }
-}
 
 byond_ffi_fn! { auxtools_init(_input) {
     // Already initialized. Just succeed?
@@ -172,7 +110,7 @@ byond_ffi_fn! { auxtools_init(_input) {
         return Some("FAILED (Couldn't find CallDatumProcByName)".to_owned())
     }
 
-    if GLOBAL_STATE.set(State {
+    if GLOBAL_STATE.set(global_state::State {
         get_proc_array_entry: get_proc_array_entry,
         get_string_id: get_string_id,
         execution_context: std::ptr::null_mut(),
@@ -228,7 +166,9 @@ fn hello_proc_hook<'a>(
         dat.set("stringy", &s);
     }
 
-    let bruh = dat.call("marchofprogress", args!["Hello", 5.0, dat]);
+    let bruh = proc::get_proc("/proc/globalmeme")
+        .unwrap()
+        .call(args![5.0, "Hello", dat]);
     bruh
 }
 
