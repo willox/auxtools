@@ -6,17 +6,42 @@ use super::GLOBAL_STATE;
 use crate::raw_types::values::IntoRawValue;
 use detour::static_detour;
 use std::cell::RefCell;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
-pub fn init() -> Result<(), String> {
-    let state = GLOBAL_STATE.get().unwrap();
+pub enum HookFailure {
+    NotInitialized,
+    ProcNotFound,
+    AlreadyHooked,
+    UnknownFailure,
+}
 
-    unsafe {
-        let x = PROC_HOOK_DETOUR.initialize(state.call_proc_by_id, call_proc_by_id_hook);
-        x.ok().unwrap().enable().unwrap();
+impl std::fmt::Display for HookFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotInitialized => write!(f, "Library not initialized"),
+            Self::ProcNotFound => write!(f, "Proc not found"),
+            Self::AlreadyHooked => write!(f, "Proc is already hooked"),
+            Self::UnknownFailure => write!(f, "Unknown failure"),
+        }
     }
+}
 
-    Ok(())
+pub fn init() -> Result<(), String> {
+    match GLOBAL_STATE.get() {
+        Some(state) => unsafe {
+            match PROC_HOOK_DETOUR.initialize(state.call_proc_by_id, call_proc_by_id_hook) {
+                Ok(hook) => match hook.enable() {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(format!("Failed to enable hook: {}", e)),
+                },
+                Err(e) => Err(format!("Failed to initialize hook: {}", e)),
+            }
+        },
+        None => Err(String::from(
+            "Initialize the library first before initializing hooks.",
+        )),
+    }
 }
 
 // We can't use our fn types here so we have to provide the entire prototype again.
@@ -39,8 +64,30 @@ pub type ProcHook =
 
 thread_local!(static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new()));
 
-pub fn hook(proc: &Proc, hook: ProcHook) {
-    PROC_HOOKS.with(|h| h.borrow_mut().insert(proc.id, hook));
+fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFailure> {
+    PROC_HOOKS.with(|h| {
+        let mut map = h.borrow_mut();
+        match map.entry(id) {
+            Entry::Vacant(v) => {
+                v.insert(hook);
+                Ok(())
+            }
+            Entry::Occupied(_) => Err(HookFailure::AlreadyHooked),
+        }
+    })
+}
+
+pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure> {
+    match super::proc::get_proc(name) {
+        Some(p) => hook_by_id(p.id, hook),
+        None => Err(HookFailure::ProcNotFound),
+    }
+}
+
+impl Proc {
+    pub fn hook(&self, func: ProcHook) -> Result<(), HookFailure> {
+        hook_by_id(self.id, func)
+    }
 }
 
 fn call_proc_by_id_hook(

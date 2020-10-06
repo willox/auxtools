@@ -60,6 +60,12 @@ impl From<String> for StringRef {
     }
 }
 
+impl From<&String> for StringRef {
+    fn from(s: &String) -> Self {
+        string_to_stringref(s.as_str()).unwrap()
+    }
+}
+
 impl Into<String> for StringRef {
     fn into(self) -> String {
         unsafe {
@@ -78,5 +84,11 @@ impl raw_types::values::IntoRawValue for StringRef {
                 string: (*self.internal).this,
             },
         }
+    }
+}
+
+impl raw_types::values::IntoRawValue for String {
+    unsafe fn into_raw_value(&self) -> raw_types::values::Value {
+        StringRef::from(self).into_raw_value()
     }
 }

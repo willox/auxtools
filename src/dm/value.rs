@@ -42,12 +42,12 @@ impl<'b> Value<'b> {
         unsafe { (GLOBAL_STATE.get().unwrap().set_variable)(self.value, name_id, new_value) }
     }
 
-    pub fn get_untyped<S: Into<string::StringRef>>(&self, name: S) -> Option<Value<'b>> {
+    pub fn get<S: Into<string::StringRef>>(&self, name: S) -> Option<Value<'b>> {
         unsafe { Some(self.get_by_id((*name.into().internal).this.0)) }
     }
 
     pub fn get_float<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {
-        let var = self.get_untyped(name).unwrap();
+        let var = self.get(name).unwrap();
         match var.value.tag {
             raw_types::values::ValueTag::Number => Some(unsafe { var.value.data.number }),
             _ => None,
@@ -55,7 +55,7 @@ impl<'b> Value<'b> {
     }
 
     pub fn get_string<S: Into<string::StringRef>>(&self, name: S) -> Option<String> {
-        let var = self.get_untyped(name).unwrap();
+        let var = self.get(name).unwrap();
         match var.value.tag {
             raw_types::values::ValueTag::String => {
                 let id = unsafe { var.value.data.id };
@@ -104,20 +104,20 @@ impl<'b> Value<'b> {
     }
 }
 
-pub enum Fuck<'a> {
+pub enum EitherValue<'a> {
     Val(Value<'a>),
     Str(string::StringRef),
 }
 
 pub struct RawValueVector(pub Vec<raw_types::values::Value>);
 
-impl<'a> From<Vec<Fuck<'a>>> for RawValueVector {
-    fn from(v: Vec<Fuck>) -> Self {
+impl<'a> From<Vec<EitherValue<'a>>> for RawValueVector {
+    fn from(v: Vec<EitherValue>) -> Self {
         RawValueVector(unsafe {
             v.iter()
                 .map(|v| match v {
-                    Fuck::Val(v) => v.into_raw_value(),
-                    Fuck::Str(s) => s.into_raw_value(),
+                    EitherValue::Val(v) => v.into_raw_value(),
+                    EitherValue::Str(s) => s.into_raw_value(),
                 })
                 .collect()
         })
@@ -130,15 +130,33 @@ impl Default for RawValueVector {
     }
 }
 
-impl<'a> From<Value<'a>> for Fuck<'a> {
+impl<'a> From<Value<'a>> for EitherValue<'a> {
     fn from(v: Value<'a>) -> Self {
-        Fuck::Val(v)
+        EitherValue::Val(v)
     }
 }
 
-impl<'a> From<string::StringRef> for Fuck<'a> {
+impl<'a> From<string::StringRef> for EitherValue<'a> {
     fn from(s: string::StringRef) -> Self {
-        Fuck::Str(s)
+        EitherValue::Str(s)
+    }
+}
+
+impl<'a> From<String> for EitherValue<'a> {
+    fn from(s: String) -> Self {
+        EitherValue::Str(string::StringRef::from(s))
+    }
+}
+
+impl<'a> From<&str> for EitherValue<'a> {
+    fn from(s: &str) -> Self {
+        EitherValue::Str(string::StringRef::from(s))
+    }
+}
+
+impl<'a> From<f32> for EitherValue<'a> {
+    fn from(f: f32) -> Self {
+        EitherValue::Val(Value::from(f))
     }
 }
 

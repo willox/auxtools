@@ -6,6 +6,7 @@ use std::fmt;
 #[repr(u8)]
 #[derive(PartialEq, Copy, Clone)]
 #[allow(unused)]
+#[non_exhaustive]
 pub enum ValueTag {
     Null,   // 0x00
     Turf,   // 0x01
@@ -20,7 +21,6 @@ pub enum ValueTag {
 
 pub type VType = ValueTag;
 
-#[allow(unreachable_patterns)]
 impl fmt::Display for ValueTag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

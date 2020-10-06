@@ -1,3 +1,5 @@
+#![feature(type_ascription)]
+
 mod byond_ffi;
 mod hooks;
 mod proc;
@@ -183,29 +185,22 @@ byond_ffi_fn! { auxtools_init(_input) {
 
     proc::populate_procs();
 
-    proc::get_proc("/proc/wew").unwrap().hook(hello_proc_hook);
+    match hooks::hook("/proc/nonexistent", hello_proc_hook) {
+            Ok(_) => (),
+            Err(e) => {
+                msgbox::create("Failed to hook!", e.to_string().as_str(), msgbox::IconType::Error);
+            }
+        }
 
     Some("SUCCESS".to_owned())
 } }
-/*
-macro_rules! vec {
-    () => (
-        $crate::vec::Vec::new()
-    );
-    ($elem:expr; $n:expr) => (
-        $crate::vec::from_elem($elem, $n)
-    );
-    ($($x:expr),+ $(,)?) => (
-        <[_]>::into_vec(box [$($x),+])
-    );
-}
-*/
+
 macro_rules! args {
     () => {
         None
     };
     ($($x:expr),+ $(,)?) => {
-        Some(vec![$(value::Fuck::from($x),)+])
+        Some(vec![$(value::EitherValue::from($x),)+])
     };
 }
 
@@ -216,20 +211,17 @@ fn hello_proc_hook<'a>(
     args: Vec<Value<'a>>,
 ) -> Value<'a> {
     let dat = args[0];
-    //dat.set("hello", &ctx.get_string("Hewwo, wowd!"));
-    if let Some(s) = dat.get_float("hello") {
-        dat.set("hello", &Value::from(s * 10.0))
+
+    if let Some(num) = dat.get_float("hello") {
+        dat.set("hello", &Value::from(num * 10.0))
     }
 
     if let Some(mut s) = dat.get_string("stringy") {
         s.push_str(" is a smarty pants");
-        dat.set("stringy", &ctx.get_string(s.as_str()));
+        dat.set("stringy", &s);
     }
 
-    let bruh = dat.call(
-        "marchofprogress",
-        args![ctx.get_string("Hello"), Value::from(5)],
-    );
+    let bruh = dat.call("marchofprogress", args!["Hello", 5.0, dat]);
     bruh
 }
 
