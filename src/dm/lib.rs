@@ -178,14 +178,14 @@ fn hello_proc_hook<'a>(
     ctx: &'a DMContext,
     src: Value<'a>,
     usr: Value<'a>,
-    args: Vec<Value<'a>>,
+    args: &Vec<Value<'a>>,
 ) -> EitherValue<'a> {
     let dat = args[0];
 
-    let string: string::StringRef = "testing string".into();
+    let string: string::StringRef = "penis".into();
+    let string2: string::StringRef = "penisaaa".into();
+    
 
-    dat.set("test", &string);
-    dat.set("test", &Value::from(5));
     string.into()
 }
 

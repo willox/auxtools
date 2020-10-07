@@ -61,7 +61,7 @@ static_detour! {
 }
 
 pub type ProcHook =
-    for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, Vec<Value<'a>>) -> EitherValue<'a>;
+    for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, &Vec<Value<'a>>) -> EitherValue<'a>;
 
 thread_local! {
     static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new());
@@ -123,7 +123,7 @@ fn call_proc_by_id_hook(
             // We don't want to let StringRef returns have their reference count drop to 0 while we're converting them to a raw value
             let mut _keepalive: Option<StringRef> = None;
 
-            let result = match hook(&ctx, src, usr, args) {
+            let result = match hook(&ctx, src, usr, &args) {
                 EitherValue::Val(v) => unsafe { v.into_raw_value() },
                 EitherValue::Str(s) => {
                     _keepalive = Some(s.clone());
@@ -134,6 +134,12 @@ fn call_proc_by_id_hook(
             unsafe {
                 (GLOBAL_STATE.get().unwrap().inc_ref_count)(result);
                 std::mem::drop(_keepalive);
+            }
+
+            for val in args {
+                unsafe {
+                    (GLOBAL_STATE.get().unwrap().dec_ref_count)(val.into_raw_value());
+                }
             }
 
             result

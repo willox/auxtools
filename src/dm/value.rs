@@ -35,7 +35,7 @@ impl<'b> Value<'b> {
 
     fn get_by_id(&self, name_id: u32) -> Value<'b> {
         let val = unsafe { (GLOBAL_STATE.get().unwrap().get_variable)(self.value, name_id) };
-        unsafe { (GLOBAL_STATE.get().unwrap().inc_ref_count)(val) }
+        // unsafe { (GLOBAL_STATE.get().unwrap().inc_ref_count)(val) }
         unsafe { Self::from_raw(val) }
     }
 
