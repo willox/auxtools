@@ -182,23 +182,11 @@ fn hello_proc_hook<'a>(
 ) -> EitherValue<'a> {
     let dat = args[0];
 
-    if let Some(num) = dat.get_float("hello") {
-        dat.set("hello", &Value::from(num * 10.0))
-    }
+    let string: string::StringRef = "testing string".into();
 
-    /*if let Some(mut s) = dat.get_string("stringy") {
-        for _ in 1..500 {
-            dat.set("stringy", &random_string(10));
-        }
-    }*/
-
-    proc::get_proc("/proc/globalmeme")
-        .unwrap()
-        .call(args![5.0, random_string(10), dat]);
-
-    //let bruh = dat.call("march_of_progress", args![5.0, random_string(10), dat]);
-
-    random_string(10).into()
+    dat.set("test", &string);
+    dat.set("test", &Value::from(5));
+    string.into()
 }
 
 #[cfg(test)]

@@ -9,14 +9,14 @@ pub struct StringRef {
 
 impl StringRef {
     pub fn new(ptr: *const raw_types::strings::StringEntry) -> Self {
-        /*unsafe {
+        unsafe {
             (GLOBAL_STATE.get().unwrap().inc_ref_count)(raw_types::values::Value {
                 tag: raw_types::values::ValueTag::String,
                 data: raw_types::values::ValueData {
                     string: (*ptr).this,
                 },
             });
-        }*/
+        }
 
         StringRef { internal: ptr }
     }
@@ -26,16 +26,22 @@ impl StringRef {
     }
 }
 
+impl Clone for StringRef {
+    fn clone(&self) -> Self {
+        Self::new(self.internal)
+    }
+}
+
 impl Drop for StringRef {
     fn drop(&mut self) {
-        /*unsafe {
+        unsafe {
             (GLOBAL_STATE.get().unwrap().dec_ref_count)(raw_types::values::Value {
                 tag: raw_types::values::ValueTag::String,
                 data: raw_types::values::ValueData {
                     string: (*self.internal).this,
                 },
             });
-        }*/
+        }
     }
 }
 

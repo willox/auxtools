@@ -11,7 +11,7 @@ pub struct StringEntry {
     pub this: StringId,
     pub left: *mut StringEntry,
     pub right: *mut StringEntry,
-    pub refcount: u32,
+    pub ref_count: u32,
     pub unk_1: u32,
     pub unk_2: u32,
 }
