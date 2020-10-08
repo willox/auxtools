@@ -1,7 +1,7 @@
 use super::raw_types;
 use super::raw_types::procs::{ProcEntry, ProcId};
 use super::string::StringRef;
-use super::value::{RawValueVector, Value};
+use super::value::Value;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -62,25 +62,4 @@ pub fn get_proc_override<S: Into<String>>(path: S, override_id: usize) -> Option
 
 pub fn get_proc<S: Into<String>>(path: S) -> Option<Proc> {
     get_proc_override(path, 0)
-}
-
-impl<'a> Proc {
-    pub fn call<R: Into<RawValueVector> + Default>(&self, args: Option<R>) -> Value<'a> {
-        let mut args: Vec<raw_types::values::Value> = args.unwrap_or_default().into().0;
-
-        let result = unsafe {
-            (GLOBAL_STATE.get().unwrap().call_proc_by_id)(
-                Value::null().into_raw_value(),
-                2,
-                self.id,
-                0,
-                Value::null().into_raw_value(),
-                args.as_mut_ptr(),
-                args.len(),
-                0,
-                0,
-            )
-        };
-        unsafe { Value::from_raw(result) }
-    }
 }

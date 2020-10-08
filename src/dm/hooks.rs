@@ -1,6 +1,6 @@
 use super::proc::Proc;
 use super::raw_types;
-use super::value::{EitherValue, Value};
+use super::value::Value;
 use super::string::StringRef;
 use super::DMContext;
 use super::GLOBAL_STATE;
@@ -61,7 +61,7 @@ static_detour! {
 }
 
 pub type ProcHook =
-    for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, &Vec<Value<'a>>) -> EitherValue<'a>;
+    for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, &Vec<Value<'a>>) -> Value<'a>;
 
 thread_local! {
     static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new());
@@ -120,29 +120,19 @@ fn call_proc_by_id_hook(
                     .collect();
             }
 
-            // We don't want to let StringRef returns have their reference count drop to 0 while we're converting them to a raw value
-            let mut _keepalive: Option<StringRef> = None;
+            // Stealing our reference out of the Value
+            let result = hook(&ctx, src, usr, &args);
+            let result_raw = unsafe { result.into_raw_value() };
+            std::mem::forget(result);
 
-            let result = match hook(&ctx, src, usr, &args) {
-                EitherValue::Val(v) => unsafe { v.into_raw_value() },
-                EitherValue::Str(s) => {
-                    _keepalive = Some(s.clone());
-                    unsafe { s.into_raw_value() }
-                }
-            };
-
-            unsafe {
-                (GLOBAL_STATE.get().unwrap().inc_ref_count)(result);
-                std::mem::drop(_keepalive);
-            }
-
+            // We have to 
             for val in args {
                 unsafe {
                     (GLOBAL_STATE.get().unwrap().dec_ref_count)(val.into_raw_value());
                 }
             }
 
-            result
+            result_raw
         }
         None => unsafe {
             PROC_HOOK_DETOUR.call(

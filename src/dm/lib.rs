@@ -15,7 +15,6 @@ extern crate once_cell;
 
 use context::DMContext;
 use global_state::GLOBAL_STATE;
-use value::EitherValue;
 use value::Value;
 
 extern crate rand;
@@ -157,36 +156,32 @@ byond_ffi_fn! { auxtools_init(_input) {
 
     proc::populate_procs();
 
+    /*
     hooks::hook("/proc/wew", hello_proc_hook).unwrap_or_else(|e| {
             msgbox::create("Failed to hook!", e.to_string().as_str(), msgbox::IconType::Error)
         }
     );
+    */
+
+    hooks::hook("/proc/react", react_hook).unwrap_or_else(|e| {
+        msgbox::create("Failed to hook!", e.to_string().as_str(), msgbox::IconType::Error)
+    }
+);
 
     Some("SUCCESS".to_owned())
 } }
 
-macro_rules! args {
-    () => {
-        None
-    };
-    ($($x:expr),+ $(,)?) => {
-        Some(vec![$(value::EitherValue::from($x),)+])
-    };
-}
-
-fn hello_proc_hook<'a>(
-    ctx: &'a DMContext,
-    src: Value<'a>,
-    usr: Value<'a>,
+fn react_hook<'a>(
+    _ctx: &'a DMContext,
+    _src: Value<'a>,
+    _usr: Value<'a>,
     args: &Vec<Value<'a>>,
-) -> EitherValue<'a> {
-    let dat = args[0];
+) -> Value<'a> {
+    // There's no way to check the type of the argument yet
+    let gas_mix = &args[0];
+    let temperature = gas_mix.get_float("temperature").unwrap();
 
-    let string: string::StringRef = "penis".into();
-    let string2: string::StringRef = "penisaaa".into();
-    
-
-    string.into()
+    Value::from(temperature * 2.0)
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@ pub static GLOBAL_STATE: OnceCell<State> = OnceCell::new();
 unsafe impl Sync for State {}
 unsafe impl Send for State {}
 
+// TODO: These should all be unsafe
 pub struct State {
     pub get_proc_array_entry: raw_types::funcs::GetProcArrayEntry,
     pub execution_context: *mut raw_types::procs::ExecutionContext,

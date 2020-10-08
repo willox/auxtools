@@ -1,115 +1,88 @@
+use super::value::Value;
 use super::raw_types;
 use super::GLOBAL_STATE;
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::fmt;
 
 pub struct StringRef {
-    pub internal: *const raw_types::strings::StringEntry,
+    pub value: Value<'static>,
 }
 
 impl StringRef {
-    pub fn new(ptr: *const raw_types::strings::StringEntry) -> Self {
-        unsafe {
-            (GLOBAL_STATE.get().unwrap().inc_ref_count)(raw_types::values::Value {
-                tag: raw_types::values::ValueTag::String,
-                data: raw_types::values::ValueData {
-                    string: (*ptr).this,
-                },
-            });
+    pub fn new(string: &str) -> Self {
+        StringRef {
+            value: Value::from(string)
         }
-
-        StringRef { internal: ptr }
     }
 
-    pub fn from_id<I: Into<u32> + Clone>(id: I) -> Self {
-        Self::new(unsafe { (GLOBAL_STATE.get().unwrap().get_string_table_entry)(id.into()) })
+    pub fn from_value(value: Value) -> Option<Self> {
+        // TODO: Check type with a nice api
+        if value.value.tag != raw_types::values::ValueTag::String {
+            return None;
+        }
+
+        // Here we're going from value -> raw -> new value because to get that juicy static lifetime
+        Some(StringRef {
+            value: unsafe { Value::from_raw(value.value) },
+        })
+    }
+
+    pub unsafe fn from_id(id: u32) -> Self {
+        // TODO: Could check the string id is valid
+        StringRef {
+            value: Value::from_raw(raw_types::values::Value {
+                tag: raw_types::values::ValueTag::String,
+                data: raw_types::values::ValueData { id: id },
+            })
+        }
+    }
+
+    pub fn get_id(&self) -> u32 {
+        return unsafe { self.value.value.data.id };
     }
 }
 
 impl Clone for StringRef {
     fn clone(&self) -> Self {
-        Self::new(self.internal)
-    }
-}
-
-impl Drop for StringRef {
-    fn drop(&mut self) {
-        unsafe {
-            (GLOBAL_STATE.get().unwrap().dec_ref_count)(raw_types::values::Value {
-                tag: raw_types::values::ValueTag::String,
-                data: raw_types::values::ValueData {
-                    string: (*self.internal).this,
-                },
-            });
-        }
+        Self::from_value(self.value.clone()).unwrap()
     }
 }
 
 impl fmt::Debug for StringRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        unsafe {
-            // TODO: Show ref count? Escape special chars?
-            let string = CStr::from_ptr((*self.internal).data);
-            write!(f, "{}", string.to_string_lossy())
-        }
+        // TODO: Show ref count? Escape special chars?
+        let data: String = self.clone().into();
+        write!(f, "{}", data)
     }
-}
-
-fn string_to_stringref(string: &str) -> Option<StringRef> {
-    if let Ok(string) = CString::new(string) {
-        unsafe {
-            let index =
-                (GLOBAL_STATE.get().unwrap().get_string_id)(string.as_ptr(), true, false, true);
-            let strings = (*GLOBAL_STATE.get().unwrap().string_table).strings;
-
-            return Some(StringRef::new(*strings.add(index as usize)));
-        }
-    }
-    None
 }
 
 impl From<&str> for StringRef {
     fn from(s: &str) -> Self {
-        string_to_stringref(s).unwrap()
+        StringRef::new(s)
     }
 }
 
 impl From<String> for StringRef {
     fn from(s: String) -> Self {
-        string_to_stringref(s.as_str()).unwrap()
+        StringRef::new(s.as_str())
     }
 }
 
 impl From<&String> for StringRef {
     fn from(s: &String) -> Self {
-        string_to_stringref(s.as_str()).unwrap()
+        StringRef::new(s.as_str())
     }
 }
 
 impl Into<String> for StringRef {
     fn into(self) -> String {
         unsafe {
-            CStr::from_ptr((*self.internal).data)
+            let id = self.value.value.data.id;
+            let entry = (GLOBAL_STATE.get().unwrap().get_string_table_entry)(id);
+
+            CStr::from_ptr((*entry).data)
                 .to_string_lossy()
                 .into()
         }
-    }
-}
-
-impl raw_types::values::IntoRawValue for StringRef {
-    unsafe fn into_raw_value(&self) -> raw_types::values::Value {
-        raw_types::values::Value {
-            tag: raw_types::values::ValueTag::String,
-            data: raw_types::values::ValueData {
-                string: (*self.internal).this,
-            },
-        }
-    }
-}
-
-impl raw_types::values::IntoRawValue for String {
-    unsafe fn into_raw_value(&self) -> raw_types::values::Value {
-        let sref = StringRef::from(self);
-        sref.into_raw_value()
     }
 }

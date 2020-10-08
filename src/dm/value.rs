@@ -6,10 +6,18 @@ use std::ffi::CString;
 use std::fmt;
 use std::marker::PhantomData;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct Value<'a> {
     pub value: raw_types::values::Value,
     pub phantom: PhantomData<&'a raw_types::values::Value>,
+}
+
+impl<'a> Drop for Value<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            (GLOBAL_STATE.get().unwrap().dec_ref_count)(self.into_raw_value());
+        }
+    }
 }
 
 impl<'b> Value<'b> {
@@ -17,8 +25,11 @@ impl<'b> Value<'b> {
         tag: raw_types::values::ValueTag,
         data: raw_types::values::ValueData,
     ) -> Value<'a> {
+        let raw = raw_types::values::Value { tag, data };
+        (GLOBAL_STATE.get().unwrap().dec_ref_count)(raw);
+
         Value {
-            value: raw_types::values::Value { tag, data },
+            value: raw,
             phantom: PhantomData {},
         }
     }
@@ -44,7 +55,7 @@ impl<'b> Value<'b> {
     }
 
     pub fn get<S: Into<string::StringRef>>(&self, name: S) -> Option<Value<'b>> {
-        unsafe { Some(self.get_by_id((*name.into().internal).this.0)) }
+        unsafe { Some(self.get_by_id(name.into().get_id())) }
     }
 
     pub fn get_float<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {
@@ -60,7 +71,7 @@ impl<'b> Value<'b> {
         match var.value.tag {
             raw_types::values::ValueTag::String => {
                 let id = unsafe { var.value.data.id };
-                let s = string::StringRef::from_id(id);
+                let s = unsafe { string::StringRef::from_id(id) };
                 Some(s.into())
             }
             _ => None,
@@ -73,10 +84,11 @@ impl<'b> Value<'b> {
         new_value: &V,
     ) {
         unsafe {
-            self.set_by_id((*name.into().internal).this.0, new_value.into_raw_value());
+            self.set_by_id(name.into().get_id(), new_value.into_raw_value());
         }
     }
 
+    /*
     pub fn call<S: AsRef<str>, R: Into<RawValueVector> + Default>(
         &self,
         procname: S,
@@ -99,6 +111,7 @@ impl<'b> Value<'b> {
             Value::from_raw(result)
         }
     }
+    */
 
     // blah blah lifetime is not verified with this so use at your peril
     pub unsafe fn from_raw(v: raw_types::values::Value) -> Self {
@@ -106,71 +119,42 @@ impl<'b> Value<'b> {
     }
 }
 
-pub enum EitherValue<'a> {
-    Val(Value<'a>),
-    Str(string::StringRef),
-}
-
-pub struct RawValueVector(pub Vec<raw_types::values::Value>);
-
-impl<'a> From<Vec<EitherValue<'a>>> for RawValueVector {
-    fn from(v: Vec<EitherValue>) -> Self {
-        RawValueVector(unsafe {
-            v.iter()
-                .map(|v| match v {
-                    EitherValue::Val(v) => v.into_raw_value(),
-                    EitherValue::Str(s) => s.into_raw_value(),
-                })
-                .collect()
-        })
-    }
-}
-
-impl Default for RawValueVector {
-    fn default() -> Self {
-        Self(vec![])
-    }
-}
-
-impl<'a> From<Value<'a>> for EitherValue<'a> {
-    fn from(v: Value<'a>) -> Self {
-        EitherValue::Val(v)
-    }
-}
-
-impl<'a> From<string::StringRef> for EitherValue<'a> {
-    fn from(s: string::StringRef) -> Self {
-        EitherValue::Str(s)
-    }
-}
-
-impl<'a> From<String> for EitherValue<'a> {
-    fn from(s: String) -> Self {
-        EitherValue::Str(string::StringRef::from(s))
-    }
-}
-
-impl<'a> From<&str> for EitherValue<'a> {
-    fn from(s: &str) -> Self {
-        EitherValue::Str(string::StringRef::from(s))
-    }
-}
-
-impl<'a> From<f32> for EitherValue<'a> {
-    fn from(f: f32) -> Self {
-        EitherValue::Val(Value::from(f))
-    }
-}
-
-impl<'a> From<Vec<string::StringRef>> for RawValueVector {
-    fn from(v: Vec<string::StringRef>) -> Self {
-        RawValueVector(unsafe { v.iter().map(|v| v.into_raw_value()).collect() })
-    }
-}
-
 impl fmt::Display for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.value)
+    }
+}
+
+fn string_to_raw_value(string: &str) -> Option<raw_types::values::Value> {
+	if let Ok(string) = CString::new(string) {
+		unsafe {
+			let index =
+                (GLOBAL_STATE.get().unwrap().get_string_id)(string.as_ptr(), true, false, true);
+                
+            return Some(raw_types::values::Value {
+                tag: raw_types::values::ValueTag::String,
+                data: raw_types::values::ValueData { id: index },
+            })
+		}
+	}
+	None
+}
+
+impl From<&str> for Value<'_> {
+    fn from(s: &str) -> Self {
+        unsafe { Value::from_raw(string_to_raw_value(s).unwrap()) }
+    }
+}
+
+impl From<String> for Value<'_> {
+    fn from(s: String) -> Self {
+        unsafe { Value::from_raw(string_to_raw_value(s.as_str()).unwrap()) }
+    }
+}
+
+impl From<&String> for Value<'_> {
+    fn from(s: &String) -> Self {
+        unsafe { Value::from_raw(string_to_raw_value(s.as_str()).unwrap()) }
     }
 }
 
@@ -226,11 +210,3 @@ impl raw_types::values::IntoRawValue for Value<'_> {
     }
 }
 
-impl raw_types::values::IntoRawValue for EitherValue<'_> {
-    unsafe fn into_raw_value(&self) -> raw_types::values::Value {
-        match self {
-            EitherValue::Val(v) => v.into_raw_value(),
-            EitherValue::Str(s) => s.into_raw_value(),
-        }
-    }
-}
