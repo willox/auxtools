@@ -8,8 +8,8 @@ use std::marker::PhantomData;
 
 #[derive(Clone)]
 pub struct Value<'a> {
-    pub value: raw_types::values::Value,
-    pub phantom: PhantomData<&'a raw_types::values::Value>,
+	pub value: raw_types::values::Value,
+	pub phantom: PhantomData<&'a raw_types::values::Value>,
 }
 
 impl<'a> Drop for Value<'a> {
@@ -159,54 +159,54 @@ impl From<&String> for Value<'_> {
 }
 
 impl From<f32> for Value<'_> {
-    fn from(num: f32) -> Self {
-        unsafe {
-            Value::new(
-                raw_types::values::ValueTag::Number,
-                raw_types::values::ValueData { number: num },
-            )
-        }
-    }
+	fn from(num: f32) -> Self {
+		unsafe {
+			Value::new(
+				raw_types::values::ValueTag::Number,
+				raw_types::values::ValueData { number: num },
+			)
+		}
+	}
 }
 
 impl From<i32> for Value<'_> {
-    fn from(num: i32) -> Self {
-        unsafe {
-            Value::new(
-                raw_types::values::ValueTag::Number,
-                raw_types::values::ValueData { number: num as f32 },
-            )
-        }
-    }
+	fn from(num: i32) -> Self {
+		unsafe {
+			Value::new(
+				raw_types::values::ValueTag::Number,
+				raw_types::values::ValueData { number: num as f32 },
+			)
+		}
+	}
 }
 
 impl From<u32> for Value<'_> {
-    fn from(num: u32) -> Self {
-        unsafe {
-            Value::new(
-                raw_types::values::ValueTag::Number,
-                raw_types::values::ValueData { number: num as f32 },
-            )
-        }
-    }
+	fn from(num: u32) -> Self {
+		unsafe {
+			Value::new(
+				raw_types::values::ValueTag::Number,
+				raw_types::values::ValueData { number: num as f32 },
+			)
+		}
+	}
 }
 
 impl From<bool> for Value<'_> {
-    fn from(b: bool) -> Self {
-        unsafe {
-            Value::new(
-                raw_types::values::ValueTag::Number,
-                raw_types::values::ValueData {
-                    number: if b { 1.0 } else { 0.0 },
-                },
-            )
-        }
-    }
+	fn from(b: bool) -> Self {
+		unsafe {
+			Value::new(
+				raw_types::values::ValueTag::Number,
+				raw_types::values::ValueData {
+					number: if b { 1.0 } else { 0.0 },
+				},
+			)
+		}
+	}
 }
 
 impl raw_types::values::IntoRawValue for Value<'_> {
-    unsafe fn into_raw_value(&self) -> raw_types::values::Value {
-        self.value
-    }
+	unsafe fn into_raw_value(&self) -> raw_types::values::Value {
+		self.value
+	}
 }
 
