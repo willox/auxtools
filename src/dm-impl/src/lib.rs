@@ -1,6 +1,5 @@
 use proc_macro::TokenStream;
 
-use proc_macro2::Span;
 use quote::quote;
 use syn::{parse_macro_input, Lit};
 
@@ -44,5 +43,8 @@ pub fn convert_signature(input: TokenStream) -> TokenStream {
 		})
 		.collect();
 
-	return quote! {vec![]}.into();
+	return quote! {
+		vec![ #( #streams, )* ]
+	}
+	.into();
 }
