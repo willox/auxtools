@@ -1,11 +1,10 @@
 #![feature(type_ascription)]
 
-extern crate rand;
-
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 
 use context::DMContext;
+pub use dm_impl;
 use global_state::GLOBAL_STATE;
 use value::EitherValue;
 use value::Value;
@@ -19,10 +18,18 @@ mod raw_types;
 mod string;
 mod value;
 
+macro_rules! signature {
+	($sig:tt) => {
+		$crate::dm_impl::from_signature!($sig)
+	};
+}
+
 fn random_string(n: usize) -> String {
 	thread_rng().sample_iter(&Alphanumeric).take(n).collect()
 }
 
+// signature!("3D ?? ?? ?? ?? 74 14 50 E8 ?? ?? ?? ?? FF 75 0C FF 75 08 E8")
+// should hopefully work when someone bothers
 static SIGNATURES: phf::Map<&'static str, &'static [u8]> = phf::phf_map! {
 	"string_table" => b"\xA1????\x8B\x04?\x85\xC0\x0F\x84????\x80\x3D????\x00\x8B\x18",
 	"get_proc_array_entry" => b"\xE8????\x8B\xC8\x8D\x45?\x6A\x01\x50\xFF\x76?\x8A\x46?\xFF\x76?\xFE\xC0",

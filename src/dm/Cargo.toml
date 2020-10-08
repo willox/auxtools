@@ -9,9 +9,10 @@ path = "lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
+dm-impl = { path = "../dm-impl" }
+sigscan = { path = "../sigscan" }
 once_cell = "1.4"
 detour = "0.7"
 msgbox = "0.4"
 rand = "0.7"
 phf = { version = "0.8", features = ["macros"] }
-sigscan = { path = "../sigscan" }

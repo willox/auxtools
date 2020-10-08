@@ -1,6 +1,7 @@
 [workspace]
 members = [
 	"src/dm",
+	"src/dm-impl",
 	"src/cli",
 	"src/sigscan",
 ]
