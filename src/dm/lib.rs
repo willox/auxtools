@@ -20,7 +20,7 @@ mod value;
 
 macro_rules! signature {
 	($sig:tt) => {
-		$crate::dm_impl::from_signature!($sig)
+		$crate::dm_impl::convert_signature!($sig)
 	};
 }
 
@@ -48,6 +48,8 @@ byond_ffi_fn! { auxtools_init(_input) {
 	if GLOBAL_STATE.get().is_some() {
 		return Some("SUCCESS".to_owned());
 	}
+
+	let x: Vec<Option<u8>> = signature!("3D ?? ?? ?? ?? 74 14 50 E8 ?? ?? ?? ?? FF 75 0C FF 75 08 E8");
 
 	let byondcore = match sigscan::Scanner::for_module("byondcore.dll") {
 		Some(v) => v,
