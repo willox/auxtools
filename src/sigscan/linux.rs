@@ -22,25 +22,25 @@ extern "C" fn dl_phdr_callback(info: *mut dl_phdr_info, _size: usize, data: *mut
 	let target_module_name = unsafe { CStr::from_ptr(cb_data.module_name_ptr as *mut c_char) }
 		.to_str()
 		.unwrap();
-	if module_name.ends_with(target_module_name) {
+	if !module_name.ends_with(target_module_name) {
 		return 0;
 	}
 
 	let headers: &'static [Elf32_Phdr] =
 		unsafe { std::slice::from_raw_parts(info.dlpi_phdr, info.dlpi_phnum as usize) };
-	headers
+	let elf_header = headers
 		.iter()
 		.filter(|p| p.p_type == PT_LOAD)
-		.for_each(|elf_header| {
-			let start = (info.dlpi_addr + elf_header.p_vaddr) as usize;
-			let end = start + elf_header.p_memsz as usize;
-			let len = end - start;
+		.next()
+		.unwrap();
 
-			cb_data.memory_start = start;
-			cb_data.memory_len = len;
-			cb_data.memory_area =
-				Some(unsafe { std::slice::from_raw_parts(start as *const u8, len) });
-		});
+	let start = (info.dlpi_addr + elf_header.p_vaddr) as usize;
+	let end = start + elf_header.p_memsz as usize;
+	let len = end - start;
+
+	cb_data.memory_start = start;
+	cb_data.memory_len = len;
+	cb_data.memory_area = Some(unsafe { std::slice::from_raw_parts(start as *const u8, len) });
 	0
 }
 
@@ -63,23 +63,29 @@ impl Scanner {
 		};
 		unsafe { dl_iterate_phdr(Some(dl_phdr_callback), std::mem::transmute(&data)) };
 
-		let mut offset: usize = 0;
+		let mut data_current = data.memory_start as *mut u8;
+		let data_end = (data.memory_start + data.memory_len) as *mut u8;
+		let mut signature_offset = 0;
 
-		data.memory_area
-			.unwrap()
-			.windows(signature.len())
-			.find(|mem_slice: &&[u8]| {
-				let ret = mem_slice
-					.iter()
-					.enumerate()
-					.all(|(idx, byte)| match signature[idx] {
-						Some(s) => s == *byte,
-						None => true,
-					});
-				println!("offset {}", offset);
-				ret
-			})
-			.map(|_| (data.memory_start + offset) as *mut u8)
+		unsafe {
+			while data_current <= data_end {
+				if signature[signature_offset] == None
+					|| signature[signature_offset] == Some(*data_current)
+				{
+					if signature.len() <= signature_offset + 1 {
+						return Some(data_current.offset(-(signature_offset as isize)));
+					}
+					signature_offset += 1;
+				} else {
+					data_current = data_current.offset(-(signature_offset as isize));
+					signature_offset = 0;
+				}
+
+				data_current = data_current.offset(1);
+			}
+		}
+
+		None
 	}
 }
 
