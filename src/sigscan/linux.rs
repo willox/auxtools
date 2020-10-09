@@ -18,15 +18,16 @@ pub struct Scanner {
 extern "C" fn dl_phdr_callback(info: *mut dl_phdr_info, _size: usize, data: *mut c_void) -> c_int {
 	let info = unsafe { *info };
 	let module_name = unsafe { CStr::from_ptr(info.dlpi_name) }.to_str().unwrap();
-	let target_module_name = unsafe { CStr::from_ptr(data as *mut c_char) }
+	let cb_data: &mut CallbackData = unsafe { std::mem::transmute(data) };
+	let target_module_name = unsafe { CStr::from_ptr(cb_data.module_name_ptr as *mut c_char) }
 		.to_str()
 		.unwrap();
-	if target_module_name != module_name {
+	if module_name.ends_with(target_module_name) {
 		return 0;
 	}
+
 	let headers: &'static [Elf32_Phdr] =
 		unsafe { std::slice::from_raw_parts(info.dlpi_phdr, info.dlpi_phnum as usize) };
-	let cb_data: &mut CallbackData = unsafe { std::mem::transmute(data) };
 	headers
 		.iter()
 		.filter(|p| p.p_type == PT_LOAD)
@@ -34,6 +35,7 @@ extern "C" fn dl_phdr_callback(info: *mut dl_phdr_info, _size: usize, data: *mut
 			let start = (info.dlpi_addr + elf_header.p_vaddr) as usize;
 			let end = start + elf_header.p_memsz as usize;
 			let len = end - start;
+
 			cb_data.memory_start = start;
 			cb_data.memory_len = len;
 			cb_data.memory_area =
@@ -74,7 +76,7 @@ impl Scanner {
 						Some(s) => s == *byte,
 						None => true,
 					});
-				offset += 1;
+				println!("offset {}", offset);
 				ret
 			})
 			.map(|_| (data.memory_start + offset) as *mut u8)

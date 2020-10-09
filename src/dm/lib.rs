@@ -44,7 +44,7 @@ static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map!
 
 #[cfg(unix)]
 static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map! {
-	"string_table" => signature!("8B 15 ?? ?? ?? ?? 8B 04 ?? 85 C0 74 ?? C9 C3 8B 15 ?? ?? ?? ?? B8 A0 BC F5 F7"),
+	"string_table" => signature!("A1 ?? ?? ?? ?? 8B 04 ?? 85 C0 74 ?? 8B 18 89 75 ?? 89 34 24 E8 ?? ?? ?? ??"),
 	"get_proc_array_entry" => signature!("E8 ?? ?? ?? ?? 8B 00 89 04 24 E8 ?? ?? ?? ?? 8B 00 89 44 24 ?? 8D 45 ??"),
 	"get_string_id" => signature!("55 89 E5 57 56 89 CE 53 89 D3 83 EC 5C 8B 55 ?? 85 C0 88 55 ?? 0F 84 ?? ?? ?? ??"),
 	//"call_proc_by_id" => signature!("55 8B EC 81 EC ?? ?? ?? ?? A1 ?? ?? ?? ?? 33 C5 89 45 ?? 8B 55 ?? 8B 45"),
@@ -52,9 +52,15 @@ static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map!
 	"set_variable" => signature!("55 89 E5 81 EC A8 00 00 00 8B 55 ?? 8B 45 ?? 89 5D ?? 8B 5D ?? 89 7D ??"),
 	"get_string_table_entry" => signature!("55 89 E5 83 EC 18 8B 45 ?? 39 05 ?? ?? ?? ?? 76 ?? 8B 15 ?? ?? ?? ?? 8B 04 ??"),
 	//"call_datum_proc_by_name" => signature!("55 8B EC 83 EC 0C 53 8B 5D 10 8D 45 FF 56 8B 75 14 57 6A 01 50 FF 75 1C C6 45 FF 00 FF 75 18 6A 00 56 53 "),
-	//"dec_ref_count_call" => signature!("3D ?? ?? ?? ?? 74 14 50 E8 ?? ?? ?? ?? FF 75 0C FF 75 08 E8 "),
+	"dec_ref_count_call" => signature!("E8 ?? ?? ?? ?? 8B 4D ?? C7 44 24 ?? 00 00 00 00 C7 44 24 ?? 00 00 00 00 89 0C 24"),
 	"inc_ref_count_call" => signature!("E8 ?? ?? ?? ?? 8B 43 ?? 80 48 ?? 04 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC 5D"),
 };
+
+#[cfg(unix)]
+const BYONDCORE: &'static str = "libbyond.so";
+
+#[cfg(windows)]
+const BYONDCORE: &'static str = "byondcore.dll";
 
 byond_ffi_fn! { auxtools_init(_input) {
 	// Already initialized. Just succeed?
@@ -62,12 +68,12 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("SUCCESS".to_owned());
 	}
 
-	let byondcore = match sigscan::Scanner::for_module("byondcore.dll") {
+	let byondcore = match sigscan::Scanner::for_module(BYONDCORE) {
 		Some(v) => v,
 		None => return Some("FAILED (Couldn't create scanner for byondcore.dll)".to_owned())
 	};
 
-	let string_table: *mut raw_types::strings::StringTable;
+	let mut string_table: *mut raw_types::strings::StringTable = unsafe { std::mem::transmute(0) };
 	if let Some(ptr) = byondcore.find(SIGNATURES.get("string_table").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
@@ -77,7 +83,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("FAILED (Couldn't find stringtable)".to_owned())
 	}
 
-	let get_proc_array_entry: raw_types::funcs::GetProcArrayEntry;
+	let mut get_proc_array_entry: raw_types::funcs::GetProcArrayEntry  = unsafe { std::mem::transmute(0) };;
 	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_proc_array_entry").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
@@ -85,27 +91,28 @@ byond_ffi_fn! { auxtools_init(_input) {
 			get_proc_array_entry = std::mem::transmute(ptr.offset(5).offset(offset) as *const ());
 		}
 	} else {
-		return Some("FAILED (Couldn't find GetProcArrayEntry)".to_owned())
+		//return Some("FAILED (Couldn't find GetProcArrayEntry)".to_owned())
 	}
 
-	let get_string_id: raw_types::funcs::GetStringId;
+	let mut get_string_id: raw_types::funcs::GetStringId  = unsafe { std::mem::transmute(0) };;
 	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_string_id").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			get_string_id = std::mem::transmute(ptr as *const ());
 		}
 	} else {
-		return Some("FAILED (Couldn't find GetStringId)".to_owned())
+		//return Some("FAILED (Couldn't find GetStringId)".to_owned())
 	}
 
-	let call_proc_by_id: raw_types::funcs::CallProcById;
+
+	let mut call_proc_by_id: raw_types::funcs::CallProcById = unsafe { std::mem::transmute(0) };
 	if let Some(ptr) = byondcore.find(SIGNATURES.get("call_proc_by_id").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			call_proc_by_id = std::mem::transmute(ptr as *const ());
 		}
 	} else {
-		return Some("FAILED (Couldn't find CallGlobalProc)".to_owned())
+		//return Some("FAILED (Couldn't find CallGlobalProc)".to_owned())
 	}
 
 	let get_variable: raw_types::funcs::GetVariable;
@@ -138,14 +145,14 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("FAILED (Couldn't find GetStringTableEntry)".to_owned())
 	}
 
-	let call_datum_proc_by_name: raw_types::funcs::CallDatumProcByName;
+	let mut call_datum_proc_by_name: raw_types::funcs::CallDatumProcByName = unsafe { std::mem::transmute(0) };
 	if let Some(ptr) = byondcore.find(SIGNATURES.get("call_datum_proc_by_name").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			call_datum_proc_by_name = std::mem::transmute(ptr as *const ());
 		}
 	} else {
-		return Some("FAILED (Couldn't find CallDatumProcByName)".to_owned())
+		//return Some("FAILED (Couldn't find CallDatumProcByName)".to_owned())
 	}
 
 	/*
@@ -189,6 +196,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 	hooks::hook("/proc/wew", hello_proc_hook).unwrap_or_else(|e| {
 			//msgbox::create("Failed to hook!", e.to_string().as_str(), msgbox::IconType::Error)
+			eprintln!("Failed to hook /proc/wew: {}", e.to_string());
 		}
 	);
 
