@@ -4,7 +4,8 @@ use quote::quote;
 use syn::{parse_macro_input, Lit};
 
 fn from_signature(s: String) -> Vec<Option<u8>> {
-	s.split(" ")
+	s.trim()
+		.split(" ")
 		.map(|byte| {
 			let byte = byte.trim();
 			match byte.len() {
