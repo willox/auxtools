@@ -27,20 +27,39 @@ fn random_string(n: usize) -> String {
 	thread_rng().sample_iter(&Alphanumeric).take(n).collect()
 }
 
-// signature!("3D ?? ?? ?? ?? 74 14 50 E8 ?? ?? ?? ?? FF 75 0C FF 75 08 E8")
-// should hopefully work when someone bothers
-static SIGNATURES: phf::Map<&'static str, &'static [u8]> = phf::phf_map! {
-	"string_table" => b"\xA1????\x8B\x04?\x85\xC0\x0F\x84????\x80\x3D????\x00\x8B\x18",
-	"get_proc_array_entry" => b"\xE8????\x8B\xC8\x8D\x45?\x6A\x01\x50\xFF\x76?\x8A\x46?\xFF\x76?\xFE\xC0",
-	"get_string_id" => b"\x55\x8B\xEC\x8B\x45?\x83\xEC?\x53\x56\x8B\x35",
-	"call_proc_by_id" => b"\x55\x8B\xEC\x81\xEC????\xA1????\x33\xC5\x89\x45?\x8B\x55?\x8B\x45",
-	"get_variable" => b"\x55\x8B\xEC\x8B\x4D?\x0F\xB6\xC1\x48\x83\xF8?\x0F\x87????\x0F\xB6\x80????\xFF\x24\x85????\xFF\x75?\xFF\x75?\xE8",
-	"set_variable" => b"\x55\x8B\xEC\x8B\x4D\x08\x0F\xB6\xC1\x48\x57\x8B\x7D\x10\x83\xF8\x53\x0F?????\x0F\xB6\x80????\xFF\x24\x85????\xFF\x75\x18\xFF\x75\x14\x57\xFF\x75\x0C\xE8????\x83\xC4\x10\x5F\x5D\xC3",
-	"get_string_table_entry" => b"\x55\x8B\xEC\x8B\x4D\x08\x3B\x0D????\x73\x10\xA1",
-	"call_datum_proc_by_name" => b"\x55\x8B\xEC\x83\xEC\x0C\x53\x8B\x5D\x10\x8D\x45\xFF\x56\x8B\x75\x14\x57\x6A\x01\x50\xFF\x75\x1C\xC6\x45\xFF\x00\xFF\x75\x18\x6A\x00\x56\x53",
-	"dec_ref_count_call" => b"\x3D????\x74\x14\x50\xE8????\xFF\x75\x0C\xFF\x75\x08\xE8",
-	"inc_ref_count_call" => b"\xFF\x75\x10\xE8????\xFF\x75\x0C\x8B\xF8\xFF\x75\x08\xE8????\x57",
+#[cfg(windows)]
+static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map! {
+	"string_table" => signature!("A1 ?? ?? ?? ?? 8B 04 ?? 85 C0 0F 84 ?? ?? ?? ?? 80 3D ?? ?? ?? ?? 00 8B 18 "),
+	"get_proc_array_entry" => signature!("E8 ?? ?? ?? ?? 8B C8 8D 45 ?? 6A 01 50 FF 76 ?? 8A 46 ?? FF 76 ?? FE C0"),
+	"get_string_id" => signature!("55 8B EC 8B 45 ?? 83 EC ?? 53 56 8B 35"),
+	"call_proc_by_id" => signature!("55 8B EC 81 EC ?? ?? ?? ?? A1 ?? ?? ?? ?? 33 C5 89 45 ?? 8B 55 ?? 8B 45"),
+	"get_variable" => signature!("55 8B EC 8B 4D ?? 0F B6 C1 48 83 F8 ?? 0F 87 ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 ?? FF 75 ?? E8"),
+	"set_variable" => signature!("55 8B EC 8B 4D 08 0F B6 C1 48 57 8B 7D 10 83 F8 53 0F ?? ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 18 FF 75 14 57 FF 75 0C E8 ?? ?? ?? ?? 83 C4 10 5F 5D C3"),
+	"get_string_table_entry" => signature!("55 8B EC 8B 4D 08 3B 0D ?? ?? ?? ?? 73 10 A1"),
+	"call_datum_proc_by_name" => signature!("55 8B EC 83 EC 0C 53 8B 5D 10 8D 45 FF 56 8B 75 14 57 6A 01 50 FF 75 1C C6 45 FF 00 FF 75 18 6A 00 56 53 "),
+	"dec_ref_count_call" => signature!("E8 ?? ?? ?? ?? FF 77 ?? FF 77 ?? E8 ?? ?? ?? ?? 8D 77 ?? 56 E8 ?? ?? ?? ??"),
+	"inc_ref_count_call" => signature!("E8 ?? ?? ?? ?? 83 C4 0C 81 FF FF FF 00 00 74 ?? 85 FF 74 ?? 57 FF 75 ??"),
 };
+
+#[cfg(unix)]
+static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map! {
+	"string_table" => signature!("A1 ?? ?? ?? ?? 8B 04 ?? 85 C0 74 ?? 8B 18 89 75 ?? 89 34 24 E8 ?? ?? ?? ??"),
+	"get_proc_array_entry" => signature!("E8 ?? ?? ?? ?? 8B 00 89 04 24 E8 ?? ?? ?? ?? 8B 00 89 44 24 ?? 8D 45 ??"),
+	"get_string_id" => signature!("55 89 E5 57 56 89 CE 53 89 D3 83 EC 5C 8B 55 ?? 85 C0 88 55 ?? 0F 84 ?? ?? ?? ??"),
+	"call_proc_by_id" => signature!("55 89 E5 81 EC D8 00 00 00 89 5D ?? 89 C3 0F B6 45 ?? 81 7D ?? FF FF 00 00"),
+	"get_variable" => signature!("55 89 E5 81 EC C8 00 00 00 8B 55 ?? 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ??"),
+	"set_variable" => signature!("55 89 E5 81 EC A8 00 00 00 8B 55 ?? 8B 45 ?? 89 5D ?? 8B 5D ?? 89 7D ??"),
+	"get_string_table_entry" => signature!("55 89 E5 83 EC 18 8B 45 ?? 39 05 ?? ?? ?? ?? 76 ?? 8B 15 ?? ?? ?? ?? 8B 04 ??"),
+	"call_datum_proc_by_name" => signature!("00"),
+	"dec_ref_count_call" => signature!("E8 ?? ?? ?? ?? 8B 4D ?? C7 44 24 ?? 00 00 00 00 C7 44 24 ?? 00 00 00 00 89 0C 24"),
+	"inc_ref_count_call" => signature!("E8 ?? ?? ?? ?? 8B 43 ?? 80 48 ?? 04 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC 5D"),
+};
+
+#[cfg(unix)]
+const BYONDCORE: &'static str = "libbyond.so";
+
+#[cfg(windows)]
+const BYONDCORE: &'static str = "byondcore.dll";
 
 byond_ffi_fn! { auxtools_init(_input) {
 	// Already initialized. Just succeed?
@@ -48,15 +67,13 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("SUCCESS".to_owned());
 	}
 
-	let x: Vec<Option<u8>> = signature!("3D ?? ?? ?? ?? 74 14 50 E8 ?? ?? ?? ?? FF 75 0C FF 75 08 E8");
-
-	let byondcore = match sigscan::Scanner::for_module("byondcore.dll") {
+	let byondcore = match sigscan::Scanner::for_module(BYONDCORE) {
 		Some(v) => v,
 		None => return Some("FAILED (Couldn't create scanner for byondcore.dll)".to_owned())
 	};
 
-	let string_table: *mut raw_types::strings::StringTable;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("string_table").unwrap()) {
+	let mut string_table: *mut raw_types::strings::StringTable = unsafe { std::mem::transmute(0) };
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("string_table").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			string_table = *(ptr.offset(1) as *mut *mut raw_types::strings::StringTable);
@@ -65,39 +82,40 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("FAILED (Couldn't find stringtable)".to_owned())
 	}
 
-	let get_proc_array_entry: raw_types::funcs::GetProcArrayEntry;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_proc_array_entry").unwrap()) {
+	let mut get_proc_array_entry: raw_types::funcs::GetProcArrayEntry  = unsafe { std::mem::transmute(0) };
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_proc_array_entry").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			let offset = *(ptr.offset(1) as *const isize);
 			get_proc_array_entry = std::mem::transmute(ptr.offset(5).offset(offset) as *const ());
 		}
 	} else {
-		return Some("FAILED (Couldn't find GetProcArrayEntry)".to_owned())
+		//return Some("FAILED (Couldn't find GetProcArrayEntry)".to_owned())
 	}
 
-	let get_string_id: raw_types::funcs::GetStringId;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_string_id").unwrap()) {
+	let mut get_string_id: raw_types::funcs::GetStringId  = unsafe { std::mem::transmute(0) };;
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_string_id").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			get_string_id = std::mem::transmute(ptr as *const ());
 		}
 	} else {
-		return Some("FAILED (Couldn't find GetStringId)".to_owned())
+		//return Some("FAILED (Couldn't find GetStringId)".to_owned())
 	}
 
-	let call_proc_by_id: raw_types::funcs::CallProcById;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("call_proc_by_id").unwrap()) {
+
+	let mut call_proc_by_id: raw_types::funcs::CallProcById = unsafe { std::mem::transmute(0) };
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("call_proc_by_id").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			call_proc_by_id = std::mem::transmute(ptr as *const ());
 		}
 	} else {
-		return Some("FAILED (Couldn't find CallGlobalProc)".to_owned())
+		//return Some("FAILED (Couldn't find CallGlobalProc)".to_owned())
 	}
 
 	let get_variable: raw_types::funcs::GetVariable;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_variable").unwrap()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_variable").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			get_variable = std::mem::transmute(ptr as *const ());
@@ -107,7 +125,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	let set_variable: raw_types::funcs::SetVariable;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("set_variable").unwrap()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("set_variable").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			set_variable = std::mem::transmute(ptr as *const ());
@@ -117,7 +135,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	let get_string_table_entry: raw_types::funcs::GetStringTableEntry;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_string_table_entry").unwrap()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_string_table_entry").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			get_string_table_entry = std::mem::transmute(ptr as *const ());
@@ -126,14 +144,14 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("FAILED (Couldn't find GetStringTableEntry)".to_owned())
 	}
 
-	let call_datum_proc_by_name: raw_types::funcs::CallDatumProcByName;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("call_datum_proc_by_name").unwrap()) {
+	let mut call_datum_proc_by_name: raw_types::funcs::CallDatumProcByName = unsafe { std::mem::transmute(0) };
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("call_datum_proc_by_name").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			call_datum_proc_by_name = std::mem::transmute(ptr as *const ());
 		}
 	} else {
-		return Some("FAILED (Couldn't find CallDatumProcByName)".to_owned())
+		//return Some("FAILED (Couldn't find CallDatumProcByName)".to_owned())
 	}
 
 	/*
@@ -142,14 +160,27 @@ byond_ffi_fn! { auxtools_init(_input) {
 	x_ref_count_call = (char*)Pocket::Sigscan::FindPattern(BYONDCORE, "FF 75 10 E8 ?? ?? ?? ?? FF 75 0C 8B F8 FF 75 08 E8 ?? ?? ?? ?? 57", 17);
 	IncRefCount = (IncRefCountPtr)(x_ref_count_call + *(int*)x_ref_count_call + 4);
 	*/
-	let dec_ref_count: raw_types::funcs::DecRefCount;
-	let inc_ref_count: raw_types::funcs::IncRefCount;
-	unsafe {
-		let dec_ref_count_call: *const u8 = byondcore.find(SIGNATURES.get("dec_ref_count_call").unwrap()).unwrap().offset(20);
-		dec_ref_count = std::mem::transmute(dec_ref_count_call.offset((*(dec_ref_count_call as *const u32) + 4) as isize));
 
-		let inc_ref_count_call: *const u8 = byondcore.find(SIGNATURES.get("inc_ref_count_call").unwrap()).unwrap().offset(17);
-		inc_ref_count = std::mem::transmute(inc_ref_count_call.offset((*(inc_ref_count_call as *const u32) + 4) as isize));
+	let mut dec_ref_count: raw_types::funcs::DecRefCount = unsafe { std::mem::transmute(0) };;
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("dec_ref_count_call").unwrap().to_vec()) {
+		unsafe {
+			// TODO: Could be nulls
+			let offset = *(ptr.offset(1) as *const isize);
+			dec_ref_count = std::mem::transmute(ptr.offset(5).offset(offset) as *const ());
+		}
+	} else {
+		//return Some("FAILED (Couldn't find dec_ref_count)".to_owned())
+	}
+
+	let mut inc_ref_count: raw_types::funcs::DecRefCount = unsafe { std::mem::transmute(0) };;
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("inc_ref_count_call").unwrap().to_vec()) {
+		unsafe {
+			// TODO: Could be nulls
+			let offset = *(ptr.offset(1) as *const isize);
+			inc_ref_count = std::mem::transmute(ptr.offset(5).offset(offset) as *const ());
+		}
+	} else {
+		//return Some("FAILED (Couldn't find dec_ref_count)".to_owned())
 	}
 
 	if GLOBAL_STATE.set(global_state::State {
@@ -176,7 +207,8 @@ byond_ffi_fn! { auxtools_init(_input) {
 	proc::populate_procs();
 
 	hooks::hook("/proc/react", hello_proc_hook).unwrap_or_else(|e| {
-			msgbox::create("Failed to hook!", e.to_string().as_str(), msgbox::IconType::Error)
+			//msgbox::create("Failed to hook!", e.to_string().as_str(), msgbox::IconType::Error)
+			eprintln!("Failed to hook /proc/react: {}", e.to_string());
 		}
 	);
 
