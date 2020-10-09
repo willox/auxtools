@@ -45,7 +45,7 @@ pub fn convert_signature(input: TokenStream) -> TokenStream {
 		.collect();
 
 	return quote! {
-		vec![ #( #streams, )* ]
+		&[ #( #streams, )* ]
 	}
 	.into();
 }

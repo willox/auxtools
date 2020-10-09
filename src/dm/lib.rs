@@ -30,7 +30,7 @@ fn random_string(n: usize) -> String {
 
 // signature!("3D ?? ?? ?? ?? 74 14 50 E8 ?? ?? ?? ?? FF 75 0C FF 75 08 E8")
 // should hopefully work when someone bothers
-static SIGNATURES: phf::Map<&'static str, Vec<Option<u8>>> = phf::phf_map! {
+static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map! {
 	"string_table" => signature!("A1 ?? ?? ?? ?? 8B 04 ?? 85 C0 0F 84 ?? ?? ?? ?? 80 3D ?? ?? ?? ?? 00 8B 18 "),
 	"get_proc_array_entry" => signature!("E8 ?? ?? ?? ?? 8B C8 8D 45 ?? 6A 01 50 FF 76 ?? 8A 46 ?? FF 76 ?? FE C0"),
 	"get_string_id" => signature!("55 8B EC 8B 45 ?? 83 EC ?? 53 56 8B 35"),
@@ -39,8 +39,8 @@ static SIGNATURES: phf::Map<&'static str, Vec<Option<u8>>> = phf::phf_map! {
 	"set_variable" => signature!("55 8B EC 8B 4D 08 0F B6 C1 48 57 8B 7D 10 83 F8 53 0F ?? ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 18 FF 75 14 57 FF 75 0C E8 ?? ?? ?? ?? 83 C4 10 5F 5D C3"),
 	"get_string_table_entry" => signature!("55 8B EC 8B 4D 08 3B 0D ?? ?? ?? ?? 73 10 A1"),
 	"call_datum_proc_by_name" => signature!("55 8B EC 83 EC 0C 53 8B 5D 10 8D 45 FF 56 8B 75 14 57 6A 01 50 FF 75 1C C6 45 FF 00 FF 75 18 6A 00 56 53 "),
-	"dec_ref_count" => signature!("3D ?? ?? ?? ?? 74 14 50 E8 ?? ?? ?? ?? FF 75 0C FF 75 08 E8 "),
-	"inc_ref_count" => signature!("FF 75 10 E8 ?? ?? ?? ?? FF 75 0C 8B F8 FF 75 08 E8 ?? ?? ?? ?? 57 "),
+	"dec_ref_count_call" => signature!("3D ?? ?? ?? ?? 74 14 50 E8 ?? ?? ?? ?? FF 75 0C FF 75 08 E8 "),
+	"inc_ref_count_call" => signature!("FF 75 10 E8 ?? ?? ?? ?? FF 75 0C 8B F8 FF 75 08 E8 ?? ?? ?? ?? 57 "),
 };
 
 byond_ffi_fn! { auxtools_init(_input) {
@@ -49,15 +49,13 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("SUCCESS".to_owned());
 	}
 
-	let x: Vec<Option<u8>> = signature!("3D ?? ?? ?? ?? 74 14 50 E8 ?? ?? ?? ?? FF 75 0C FF 75 08 E8");
-
 	let byondcore = match sigscan::Scanner::for_module("byondcore.dll") {
 		Some(v) => v,
 		None => return Some("FAILED (Couldn't create scanner for byondcore.dll)".to_owned())
 	};
 
 	let string_table: *mut raw_types::strings::StringTable;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("string_table").unwrap()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("string_table").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			string_table = *(ptr.offset(1) as *mut *mut raw_types::strings::StringTable);
@@ -67,7 +65,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	let get_proc_array_entry: raw_types::funcs::GetProcArrayEntry;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_proc_array_entry").unwrap()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_proc_array_entry").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			let offset = *(ptr.offset(1) as *const isize);
@@ -78,7 +76,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	let get_string_id: raw_types::funcs::GetStringId;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_string_id").unwrap()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_string_id").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			get_string_id = std::mem::transmute(ptr as *const ());
@@ -88,7 +86,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	let call_proc_by_id: raw_types::funcs::CallProcById;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("call_proc_by_id").unwrap()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("call_proc_by_id").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			call_proc_by_id = std::mem::transmute(ptr as *const ());
@@ -98,7 +96,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	let get_variable: raw_types::funcs::GetVariable;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_variable").unwrap()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_variable").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			get_variable = std::mem::transmute(ptr as *const ());
@@ -108,7 +106,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	let set_variable: raw_types::funcs::SetVariable;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("set_variable").unwrap()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("set_variable").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			set_variable = std::mem::transmute(ptr as *const ());
@@ -118,7 +116,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	let get_string_table_entry: raw_types::funcs::GetStringTableEntry;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_string_table_entry").unwrap()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_string_table_entry").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			get_string_table_entry = std::mem::transmute(ptr as *const ());
@@ -128,7 +126,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	let call_datum_proc_by_name: raw_types::funcs::CallDatumProcByName;
-	if let Some(ptr) = byondcore.find(SIGNATURES.get("call_datum_proc_by_name").unwrap()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("call_datum_proc_by_name").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			call_datum_proc_by_name = std::mem::transmute(ptr as *const ());
@@ -146,10 +144,10 @@ byond_ffi_fn! { auxtools_init(_input) {
 	let dec_ref_count: raw_types::funcs::DecRefCount;
 	let inc_ref_count: raw_types::funcs::IncRefCount;
 	unsafe {
-		let dec_ref_count_call: *const u8 = byondcore.find(SIGNATURES.get("dec_ref_count_call").unwrap()).unwrap().offset(20);
+		let dec_ref_count_call: *const u8 = byondcore.find(SIGNATURES.get("dec_ref_count_call").unwrap().to_vec()).unwrap().offset(20);
 		dec_ref_count = std::mem::transmute(dec_ref_count_call.offset((*(dec_ref_count_call as *const u32) + 4) as isize));
 
-		let inc_ref_count_call: *const u8 = byondcore.find(SIGNATURES.get("inc_ref_count_call").unwrap()).unwrap().offset(17);
+		let inc_ref_count_call: *const u8 = byondcore.find(SIGNATURES.get("inc_ref_count_call").unwrap().to_vec()).unwrap().offset(17);
 		inc_ref_count = std::mem::transmute(inc_ref_count_call.offset((*(inc_ref_count_call as *const u32) + 4) as isize));
 	}
 
@@ -177,7 +175,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	proc::populate_procs();
 
 	hooks::hook("/proc/wew", hello_proc_hook).unwrap_or_else(|e| {
-			msgbox::create("Failed to hook!", e.to_string().as_str(), msgbox::IconType::Error)
+			//msgbox::create("Failed to hook!", e.to_string().as_str(), msgbox::IconType::Error)
 		}
 	);
 
