@@ -46,9 +46,9 @@ impl Scanner {
 		}
 
 		Some(Scanner {
-			module: module,
-			data_begin: data_begin,
-			data_end: data_end,
+			module,
+			data_begin,
+			data_end,
 		})
 	}
 
