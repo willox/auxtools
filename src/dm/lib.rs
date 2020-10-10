@@ -1,5 +1,3 @@
-#![feature(type_ascription)]
-
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 

@@ -5,10 +5,38 @@ use super::value::{EitherValue, Value};
 use super::DMContext;
 use super::GLOBAL_STATE;
 use crate::raw_types::values::IntoRawValue;
-use detour::static_detour;
+use detour::RawDetour;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+
+extern "C" {
+	static mut call_proc_by_id_original: *const ();
+
+	fn call_proc_by_id_original_trampoline(
+		usr: raw_types::values::Value,
+		proc_type: u32,
+		proc_id: raw_types::procs::ProcId,
+		unk_0: u32,
+		src: raw_types::values::Value,
+		args: *mut raw_types::values::Value,
+		args_countL: usize,
+		unk_1: u32,
+		unk_2: u32,
+	) -> raw_types::values::Value;
+
+	fn call_proc_by_id_hook_trampoline(
+		usr: raw_types::values::Value,
+		proc_type: u32,
+		proc_id: raw_types::procs::ProcId,
+		unk_0: u32,
+		src: raw_types::values::Value,
+		args: *mut raw_types::values::Value,
+		args_countL: usize,
+		unk_1: u32,
+		unk_2: u32,
+	) -> raw_types::values::Value;
+}
 
 pub enum HookFailure {
 	NotInitialized,
@@ -31,33 +59,24 @@ impl std::fmt::Display for HookFailure {
 pub fn init() -> Result<(), String> {
 	match GLOBAL_STATE.get() {
 		Some(state) => unsafe {
-			match PROC_HOOK_DETOUR.initialize(state.call_proc_by_id, call_proc_by_id_hook) {
-				Ok(hook) => match hook.enable() {
-					Ok(_) => Ok(()),
-					Err(e) => Err(format!("Failed to enable hook: {}", e)),
-				},
-				Err(e) => Err(format!("Failed to initialize hook: {}", e)),
+			// TODO: clean up and pass on errors
+			let hook = RawDetour::new(
+				state.call_proc_by_id as *const (),
+				call_proc_by_id_hook_trampoline as *const (),
+			)
+			.unwrap();
+
+			hook.enable().unwrap();
+			unsafe {
+				call_proc_by_id_original = std::mem::transmute(hook.trampoline());
 			}
+			std::mem::forget(hook);
+			Ok(())
 		},
 		None => Err(String::from(
 			"Initialize the library first before initializing hooks.",
 		)),
 	}
-}
-
-// We can't use our fn types here so we have to provide the entire prototype again.
-static_detour! {
-	static PROC_HOOK_DETOUR: unsafe extern "cdecl" fn(
-		raw_types::values::Value,
-		u32,
-		raw_types::procs::ProcId,
-		u32,
-		raw_types::values::Value,
-		*mut raw_types::values::Value,
-		usize,
-		u32,
-		u32
-	) -> raw_types::values::Value;
 }
 
 pub type ProcHook =
@@ -93,7 +112,8 @@ impl Proc {
 	}
 }
 
-fn call_proc_by_id_hook(
+#[no_mangle]
+extern "C" fn call_proc_by_id_hook(
 	usr_raw: raw_types::values::Value,
 	proc_type: u32,
 	proc_id: raw_types::procs::ProcId,
@@ -145,7 +165,7 @@ fn call_proc_by_id_hook(
 			result
 		}
 		None => unsafe {
-			PROC_HOOK_DETOUR.call(
+			call_proc_by_id_original_trampoline(
 				usr_raw, proc_type, proc_id, unknown1, src_raw, args_ptr, num_args, unknown2,
 				unknown3,
 			)
