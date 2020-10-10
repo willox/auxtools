@@ -10,6 +10,19 @@ use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
+pub struct CompileTimeHook {
+	pub proc_path: &'static str,
+	pub hook: ProcHook,
+}
+
+impl CompileTimeHook {
+	pub fn new(proc_path: &'static str, hook: ProcHook) -> Self {
+		CompileTimeHook { proc_path, hook }
+	}
+}
+
+inventory::collect!(CompileTimeHook);
+
 pub enum HookFailure {
 	NotInitialized,
 	ProcNotFound,
@@ -61,7 +74,7 @@ static_detour! {
 }
 
 pub type ProcHook =
-	for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, &Vec<Value<'a>>) -> Value<'a>;
+	for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, &mut Vec<Value<'a>>) -> Value<'a>;
 
 thread_local! {
 	static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new());
@@ -109,7 +122,7 @@ fn call_proc_by_id_hook(
 			let ctx = DMContext::new().unwrap();
 			let src;
 			let usr;
-			let args: Vec<Value>;
+			let mut args: Vec<Value>;
 
 			unsafe {
 				src = Value::from_raw(src_raw);
@@ -121,7 +134,7 @@ fn call_proc_by_id_hook(
 			}
 
 			// Stealing our reference out of the Value
-			let result = hook(&ctx, src, usr, &args);
+			let result = hook(&ctx, src, usr, &mut args);
 			let result_raw = unsafe { result.into_raw_value() };
 			std::mem::forget(result);
 

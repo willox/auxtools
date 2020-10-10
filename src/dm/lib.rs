@@ -1,5 +1,6 @@
-#![feature(type_ascription)]
-
+#![feature(half_open_range_patterns)]
+#![feature(exclusive_range_pattern)]
+#![allow(warnings)]
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 
@@ -30,19 +31,6 @@ macro_rules! signature {
 fn random_string(n: usize) -> String {
 	thread_rng().sample_iter(&Alphanumeric).take(n).collect()
 }
-
-struct CompileTimeHook {
-	proc_path: &'static str,
-	hook: hooks::ProcHook,
-}
-
-impl CompileTimeHook {
-	pub fn new(proc_path: &'static str, hook: hooks::ProcHook) -> Self {
-		CompileTimeHook { proc_path, hook }
-	}
-}
-
-inventory::collect!(CompileTimeHook);
 
 #[cfg(windows)]
 const BYONDCORE: &'static str = "byondcore.dll";
@@ -242,7 +230,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 	proc::populate_procs();
 
-	for cthook in inventory::iter::<CompileTimeHook> {
+	for cthook in inventory::iter::<hooks::CompileTimeHook> {
 		hooks::hook(cthook.proc_path, cthook.hook).expect("bruh");
 	}
 
@@ -250,22 +238,12 @@ byond_ffi_fn! { auxtools_init(_input) {
 } }
 
 #[hook("/proc/react")]
-fn hello_proc_hook<'a>(
-	ctx: &'a DMContext,
-	src: Value<'a>,
-	usr: Value<'a>,
-	args: &Vec<Value<'a>>,
-) -> Value<'a> {
-	let dat = &args[0];
-
-	let string: string::StringRef = "penis".into();
-	let string2: string::StringRef = "penisaaa".into();
-
-	if let Some(l) = dat.get_list("listvar") {
-		return l.get(1);
+fn hello_proc_hook(some_datum: Value) {
+	if let Some(num) = some_datum.get_float("hello") {
+		(num * 2.0).into()
+	} else {
+		Value::null()
 	}
-
-	Value::null()
 }
 
 #[cfg(test)]

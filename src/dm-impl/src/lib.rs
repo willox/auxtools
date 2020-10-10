@@ -1,4 +1,5 @@
 use proc_macro::TokenStream;
+use syn::spanned::Spanned;
 
 use quote::quote;
 use syn::{parse_macro_input, Lit};
@@ -55,16 +56,69 @@ pub fn convert_signature(input: TokenStream) -> TokenStream {
 	.into();
 }
 
+fn extract_args(a: &syn::FnArg) -> &syn::PatType {
+	match a {
+		syn::FnArg::Typed(p) => p,
+		_ => panic!("Not supported on types with `self`!"),
+	}
+}
+
 #[proc_macro_attribute]
 pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let input = syn::parse_macro_input!(item as syn::ItemFn);
-	let proc = syn::parse_macro_input!(attr as syn::Lit);
-	let name = &input.sig.ident;
+	let proc = syn::parse_macro_input!(attr as Option<syn::Lit>);
+	let func_name = &input.sig.ident;
+	let args = &input.sig.inputs;
+	let args_len = args.len();
+
+	let cthook_prelude = match proc {
+		Some(p) => quote! {
+			inventory::submit!(
+				crate::hooks::CompileTimeHook::new(#p, #func_name)
+			);
+		},
+		None => quote! {},
+	};
+	let signature = quote! {
+		fn #func_name<'a>(
+			ctx: &'a DMContext,
+			src: Value<'a>,
+			usr: Value<'a>,
+			args: &mut Vec<Value<'a>>,
+		) -> Value <'a>
+	};
+
+	let body = &input.block;
+	let mut arg_names: syn::punctuated::Punctuated<syn::Ident, syn::Token![,]> =
+		syn::punctuated::Punctuated::new();
+	let mut proc_arg_unpacker: syn::punctuated::Punctuated<
+		proc_macro2::TokenStream,
+		syn::Token![,],
+	> = syn::punctuated::Punctuated::new();
+	for arg in args.iter().map(extract_args) {
+		match &*arg.pat {
+			syn::Pat::Ident(p) => {
+				arg_names.push(p.ident.clone());
+				let index = arg_names.len() - 1;
+				proc_arg_unpacker.push(
+					(quote! {
+						&args[#index]
+					})
+					.into(),
+				)
+			}
+			_ => {}
+		};
+	}
 	let result = quote! {
-		inventory::submit!(
-			CompileTimeHook::new(#proc, #name)
-		);
-		#input
+		#cthook_prelude
+		#signature {
+			for i in 0..#args_len - args.len() {
+				args.push(Value::null())
+			}
+			let (#arg_names) = (#proc_arg_unpacker);
+			#body
+		}
 	};
 	result.into()
 }
