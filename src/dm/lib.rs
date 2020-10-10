@@ -12,6 +12,7 @@ mod byond_ffi;
 mod context;
 mod global_state;
 mod hooks;
+mod list;
 mod proc;
 mod raw_types;
 mod string;
@@ -40,6 +41,8 @@ static SIGNATURES: phf::Map<&'static str, &'static [u8]> = phf::phf_map! {
 	"call_datum_proc_by_name" => b"\x55\x8B\xEC\x83\xEC\x0C\x53\x8B\x5D\x10\x8D\x45\xFF\x56\x8B\x75\x14\x57\x6A\x01\x50\xFF\x75\x1C\xC6\x45\xFF\x00\xFF\x75\x18\x6A\x00\x56\x53",
 	"dec_ref_count_call" => b"\x3D????\x74\x14\x50\xE8????\xFF\x75\x0C\xFF\x75\x08\xE8",
 	"inc_ref_count_call" => b"\xFF\x75\x10\xE8????\xFF\x75\x0C\x8B\xF8\xFF\x75\x08\xE8????\x57",
+	"get_list_by_id_call" => b"\x55\x8B\xEC\xFF\x75\x08\xE8????\x83\xC4\x04\x85\xC0\x75\x13\x68????\xE8????\x83\xC4\x04\x5D\xE9????\x5D\xC3",
+	"get_assoc_element" => b"\x55\x8B\xEC\x51\x8B\x4D\x08\xC6\x45\xFF\x00\x80\xF9\x05\x76\x11\x80\xF9\x21\x74\x10\x80\xF9\x0D\x74\x0B\x80\xF9\x0E\x75\x65\xEB\x04\x84\xC9\x74\x5F\x6A\x00\x8D\x45\xFF\x50\xFF\x75\x0C\x51\x6A\x00\x6A\x7B",
 };
 
 byond_ffi_fn! { auxtools_init(_input) {
@@ -152,6 +155,23 @@ byond_ffi_fn! { auxtools_init(_input) {
 		inc_ref_count = std::mem::transmute(inc_ref_count_call.offset((*(inc_ref_count_call as *const u32) + 4) as isize));
 	}
 
+	let get_list_by_id: raw_types::funcs::GetListById;
+	unsafe {
+		// TODO: Could be nulls
+		let get_list_by_id_call = byondcore.find(SIGNATURES.get("get_list_by_id_call").unwrap()).unwrap().offset(7);
+		get_list_by_id = std::mem::transmute(get_list_by_id_call.offset((*(get_list_by_id_call as *const u32) + 4) as isize));
+	}
+
+	let get_assoc_element: raw_types::funcs::GetAssocElement;
+		if let Some(ptr) = byondcore.find(SIGNATURES.get("get_assoc_element").unwrap()) {
+		unsafe {
+			// TODO: Could be nulls
+			get_assoc_element = std::mem::transmute(ptr as *const ());
+		}
+	} else {
+		return Some("FAILED (Couldn't find GetAssocElement)".to_owned())
+	}
+
 	if GLOBAL_STATE.set(global_state::State {
 		get_proc_array_entry: get_proc_array_entry,
 		get_string_id: get_string_id,
@@ -163,7 +183,9 @@ byond_ffi_fn! { auxtools_init(_input) {
 		get_string_table_entry: get_string_table_entry,
 		call_datum_proc_by_name: call_datum_proc_by_name,
 		dec_ref_count: dec_ref_count,
-		inc_ref_count: inc_ref_count
+		inc_ref_count: inc_ref_count,
+		get_list_by_id: get_list_by_id,
+		get_assoc_element: get_assoc_element,
 
 	}).is_err() {
 		panic!();
@@ -193,6 +215,10 @@ fn hello_proc_hook<'a>(
 
 	let string: string::StringRef = "penis".into();
 	let string2: string::StringRef = "penisaaa".into();
+
+	if let Some(l) = dat.get_list("listvar") {
+		return l.get(1);
+	}
 
 	Value::null()
 }

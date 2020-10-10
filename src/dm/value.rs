@@ -1,6 +1,7 @@
 use super::raw_types;
 use super::string;
 use super::GLOBAL_STATE;
+use crate::list;
 use crate::raw_types::values::IntoRawValue;
 use std::ffi::CString;
 use std::fmt;
@@ -26,7 +27,7 @@ impl<'b> Value<'b> {
 		data: raw_types::values::ValueData,
 	) -> Value<'a> {
 		let raw = raw_types::values::Value { tag, data };
-		(GLOBAL_STATE.get().unwrap().dec_ref_count)(raw);
+		(GLOBAL_STATE.get().unwrap().inc_ref_count)(raw);
 
 		Value {
 			value: raw,
@@ -46,7 +47,7 @@ impl<'b> Value<'b> {
 
 	fn get_by_id(&self, name_id: u32) -> Value<'b> {
 		let val = unsafe { (GLOBAL_STATE.get().unwrap().get_variable)(self.value, name_id) };
-		// unsafe { (GLOBAL_STATE.get().unwrap().inc_ref_count)(val) }
+		unsafe { (GLOBAL_STATE.get().unwrap().inc_ref_count)(val) }
 		unsafe { Self::from_raw(val) }
 	}
 
@@ -74,6 +75,14 @@ impl<'b> Value<'b> {
 				let s = unsafe { string::StringRef::from_id(id) };
 				Some(s.into())
 			}
+			_ => None,
+		}
+	}
+
+	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> Option<list::List> {
+		let var = self.get(name).unwrap();
+		match var.value.tag {
+			raw_types::values::ValueTag::List => Some(unsafe { list::List::from_raw_value(var) }),
 			_ => None,
 		}
 	}

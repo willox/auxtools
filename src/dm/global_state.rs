@@ -19,4 +19,6 @@ pub struct State {
 	pub call_datum_proc_by_name: raw_types::funcs::CallDatumProcByName,
 	pub dec_ref_count: raw_types::funcs::DecRefCount,
 	pub inc_ref_count: raw_types::funcs::IncRefCount,
+	pub get_list_by_id: raw_types::funcs::GetListById,
+	pub get_assoc_element: raw_types::funcs::GetAssocElement,
 }

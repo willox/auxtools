@@ -1,3 +1,4 @@
+use super::lists;
 use super::procs;
 use super::strings;
 use super::values;
@@ -32,3 +33,5 @@ pub type SetVariable = unsafe extern "cdecl" fn(values::Value, u32, values::Valu
 pub type GetStringTableEntry = unsafe extern "cdecl" fn(u32) -> *const strings::StringEntry;
 pub type IncRefCount = unsafe extern "cdecl" fn(values::Value);
 pub type DecRefCount = unsafe extern "cdecl" fn(values::Value);
+pub type GetListById = unsafe extern "cdecl" fn(u32) -> *mut lists::List;
+pub type GetAssocElement = unsafe extern "cdecl" fn(values::Value, values::Value) -> values::Value;
