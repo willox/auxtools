@@ -3,6 +3,11 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Lit};
 
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io::prelude::*;
+use std::path::Path;
+
 fn from_signature(s: String) -> Vec<Option<u8>> {
 	s.trim()
 		.split(" ")
@@ -48,4 +53,18 @@ pub fn convert_signature(input: TokenStream) -> TokenStream {
 		&[ #( #streams, )* ]
 	}
 	.into();
+}
+
+#[proc_macro_attribute]
+pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
+	let input = syn::parse_macro_input!(item as syn::ItemFn);
+	let proc = syn::parse_macro_input!(attr as syn::Lit);
+	let name = &input.sig.ident;
+	let result = quote! {
+		inventory::submit!(
+			CompileTimeHook::new(#proc, #name)
+		);
+		#input
+	};
+	result.into()
 }

@@ -17,7 +17,7 @@ pub enum HookFailure {
 	UnknownFailure,
 }
 
-impl std::fmt::Display for HookFailure {
+impl std::fmt::Debug for HookFailure {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Self::NotInitialized => write!(f, "Library not initialized"),

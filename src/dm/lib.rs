@@ -5,6 +5,7 @@ use rand::{thread_rng, Rng};
 
 use context::DMContext;
 pub use dm_impl;
+use dm_impl::hook;
 use global_state::GLOBAL_STATE;
 use value::Value;
 
@@ -18,6 +19,8 @@ mod raw_types;
 mod string;
 mod value;
 
+extern crate inventory;
+
 macro_rules! signature {
 	($sig:tt) => {
 		$crate::dm_impl::convert_signature!($sig)
@@ -28,6 +31,22 @@ fn random_string(n: usize) -> String {
 	thread_rng().sample_iter(&Alphanumeric).take(n).collect()
 }
 
+struct CompileTimeHook {
+	proc_path: &'static str,
+	hook: hooks::ProcHook,
+}
+
+impl CompileTimeHook {
+	pub fn new(proc_path: &'static str, hook: hooks::ProcHook) -> Self {
+		CompileTimeHook { proc_path, hook }
+	}
+}
+
+inventory::collect!(CompileTimeHook);
+
+#[cfg(windows)]
+const BYONDCORE: &'static str = "byondcore.dll";
+#[cfg(windows)]
 static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map! {
 	"string_table" => signature!("A1 ?? ?? ?? ?? 8B 04 ?? 85 C0 0F 84 ?? ?? ?? ?? 80 3D ?? ?? ?? ?? 00 8B 18 "),
 	"get_proc_array_entry" => signature!("E8 ?? ?? ?? ?? 8B C8 8D 45 ?? 6A 01 50 FF 76 ?? 8A 46 ?? FF 76 ?? FE C0"),
@@ -37,12 +56,14 @@ static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map!
 	"set_variable" => signature!("55 8B EC 8B 4D 08 0F B6 C1 48 57 8B 7D 10 83 F8 53 0F ?? ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 18 FF 75 14 57 FF 75 0C E8 ?? ?? ?? ?? 83 C4 10 5F 5D C3"),
 	"get_string_table_entry" => signature!("55 8B EC 8B 4D 08 3B 0D ?? ?? ?? ?? 73 10 A1"),
 	"call_datum_proc_by_name" => signature!("55 8B EC 83 EC 0C 53 8B 5D 10 8D 45 FF 56 8B 75 14 57 6A 01 50 FF 75 1C C6 45 FF 00 FF 75 18 6A 00 56 53 "),
-	"dec_ref_count_call" => signature!("E8 ?? ?? ?? ?? FF 77 ?? FF 77 ?? E8 ?? ?? ?? ?? 8D 77 ?? 56 E8 ?? ?? ?? ??"),
-	"inc_ref_count_call" => signature!("E8 ?? ?? ?? ?? 83 C4 0C 81 FF FF FF 00 00 74 ?? 85 FF 74 ?? 57 FF 75 ??"),
+	"dec_ref_count_call" => signature!("E8 ?? ?? ?? ?? 83 C4 0C 81 FF FF FF 00 00 74 ?? 85 FF 74 ?? 57 FF 75 ??"),
+	"inc_ref_count_call" => signature!("E8 ?? ?? ?? ?? FF 77 ?? FF 77 ?? E8 ?? ?? ?? ?? 8D 77 ?? 56 E8 ?? ?? ?? ??"),
 	"get_list_by_id_call" => signature!("55 8B EC FF 75 08 E8 ?? ?? ?? ?? 83 C4 04 85 C0 75 13 68 ?? ?? ?? ?? E8 ?? ?? ?? ?? 83 C4 04 5D E9 ?? ?? ?? ?? 5D C3"),
 	"get_assoc_element" => signature!("55 8B EC 51 8B 4D 08 C6 45 FF 00 80 F9 05 76 11 80 F9 21 74 10 80 F9 0D 74 0B 80 F9 0E 75 65 EB 04 84 C9 74 5F 6A 00 8D 45 FF 50 FF 75 0C 51 6A 00 6A 7B"),
 };
 
+#[cfg(unix)]
+const BYONDCORE: &'static str = "libbyond.so";
 #[cfg(unix)]
 static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map! {
 	"string_table" => signature!("A1 ?? ?? ?? ?? 8B 04 ?? 85 C0 74 ?? 8B 18 89 75 ?? 89 34 24 E8 ?? ?? ?? ??"),
@@ -56,12 +77,6 @@ static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map!
 	"dec_ref_count_call" => signature!("E8 ?? ?? ?? ?? 8B 4D ?? C7 44 24 ?? 00 00 00 00 C7 44 24 ?? 00 00 00 00 89 0C 24"),
 	"inc_ref_count_call" => signature!("E8 ?? ?? ?? ?? 8B 43 ?? 80 48 ?? 04 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC 5D"),
 };
-
-#[cfg(unix)]
-const BYONDCORE: &'static str = "libbyond.so";
-
-#[cfg(windows)]
-const BYONDCORE: &'static str = "byondcore.dll";
 
 byond_ffi_fn! { auxtools_init(_input) {
 	// Already initialized. Just succeed?
@@ -227,15 +242,14 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 	proc::populate_procs();
 
-	hooks::hook("/proc/react", hello_proc_hook).unwrap_or_else(|e| {
-			//msgbox::create("Failed to hook!", e.to_string().as_str(), msgbox::IconType::Error)
-			eprintln!("Failed to hook /proc/react: {}", e.to_string());
-		}
-	);
+	for cthook in inventory::iter::<CompileTimeHook> {
+		hooks::hook(cthook.proc_path, cthook.hook).expect("bruh");
+	}
 
 	Some("SUCCESS".to_owned())
 } }
 
+#[hook("/proc/react")]
 fn hello_proc_hook<'a>(
 	ctx: &'a DMContext,
 	src: Value<'a>,
