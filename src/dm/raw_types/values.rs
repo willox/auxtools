@@ -1,5 +1,4 @@
 use super::super::string;
-use super::super::value;
 use super::strings;
 use std::fmt;
 
@@ -31,17 +30,6 @@ pub enum ValueTag {
 impl fmt::Display for ValueTag {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(f, "{:?}", self)
-		/*match self {
-			ValueTag::Null => write!(f, "Null"),
-			ValueTag::Turf => write!(f, "Turf"),
-			ValueTag::Obj => write!(f, "Obj"),
-			ValueTag::Mob => write!(f, "Mob"),
-			ValueTag::Area => write!(f, "Area"),
-			ValueTag::Client => write!(f, "Client"),
-			ValueTag::String => write!(f, "String"),
-			ValueTag::Number => write!(f, "Number"),
-			_ => write!(f, "Unknown-type"),
-		}*/
 	}
 }
 

@@ -21,6 +21,7 @@ impl<'a> Drop for Value<'a> {
 	}
 }
 
+#[allow(unused)]
 impl<'b> Value<'b> {
 	pub unsafe fn new<'a>(
 		tag: raw_types::values::ValueTag,
@@ -56,7 +57,7 @@ impl<'b> Value<'b> {
 	}
 
 	pub fn get<S: Into<string::StringRef>>(&self, name: S) -> Option<Value<'b>> {
-		unsafe { Some(self.get_by_id(name.into().get_id())) }
+		Some(self.get_by_id(name.into().get_id()))
 	}
 
 	pub fn get_number<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {

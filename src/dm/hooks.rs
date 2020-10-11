@@ -1,6 +1,5 @@
 use super::proc::Proc;
 use super::raw_types;
-use super::string::StringRef;
 use super::value::Value;
 use super::DMContext;
 use super::GLOBAL_STATE;
@@ -24,6 +23,7 @@ impl CompileTimeHook {
 inventory::collect!(CompileTimeHook);
 
 extern "C" {
+	#[allow(improper_ctypes)]
 	static mut call_proc_by_id_original: *const ();
 
 	fn call_proc_by_id_original_trampoline(
@@ -118,6 +118,7 @@ pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure>
 }
 
 impl Proc {
+	#[allow(unused)]
 	pub fn hook(&self, func: ProcHook) -> Result<(), HookFailure> {
 		hook_by_id(self.id, func)
 	}

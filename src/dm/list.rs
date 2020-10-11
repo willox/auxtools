@@ -4,11 +4,13 @@ use crate::raw_types::values::IntoRawValue;
 use crate::string;
 use crate::value;
 
+#[allow(unused)]
 pub struct List {
 	internal: *mut raw_types::lists::List,
 	me_as_value: raw_types::values::Value,
 }
 
+#[allow(unused)]
 impl<'a> List {
 	pub unsafe fn from_id(id: u32) -> Self {
 		let ptr = (GLOBAL_STATE.get().unwrap().get_list_by_id)(id);

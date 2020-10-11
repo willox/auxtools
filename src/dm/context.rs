@@ -3,10 +3,12 @@ use super::raw_types::values::{ValueData, ValueTag};
 use super::string;
 use super::value::Value;
 
+#[allow(unused)]
 pub struct DMContext<'a> {
 	state: &'a State,
 }
 
+#[allow(unused)]
 impl<'a> DMContext<'_> {
 	//NOTE: In order for this to work, the dm code needs to contain `global.vars["varname"]` anywhere.
 	pub fn get_global<S: Into<string::StringRef>>(&self, name: S) -> Option<Value> {

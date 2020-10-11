@@ -1,14 +1,8 @@
-#![feature(proc_macro_diagnostic)]
-use proc_macro::{Diagnostic, Level, TokenStream};
+use proc_macro::TokenStream;
 use syn::spanned::Spanned;
 
 use quote::quote;
 use syn::{parse_macro_input, Lit};
-
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::prelude::*;
-use std::path::Path;
 
 fn from_signature(s: String) -> Vec<Option<u8>> {
 	s.trim()
@@ -76,13 +70,9 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 		syn::ReturnType::Default => {} //
 
 		syn::ReturnType::Type(_, ty) => {
-			Diagnostic::spanned(
-				ty.span().unwrap(),
-				Level::Error,
-				"Do not specify return type of proc hooks",
-			)
-			.emit();
-			return (quote! {}).into();
+			return syn::Error::new(ty.span(), "Do not specify the return value of hooks")
+				.to_compile_error()
+				.into()
 		}
 	}
 

@@ -33,6 +33,7 @@ struct AssociativeListEntry
 */
 
 #[repr(C)]
+#[allow(unused)]
 enum Color {
 	Red = 0,
 	Black = 1,
