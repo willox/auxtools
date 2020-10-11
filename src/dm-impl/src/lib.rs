@@ -1,4 +1,5 @@
-use proc_macro::TokenStream;
+#![feature(proc_macro_diagnostic)]
+use proc_macro::{Diagnostic, Level, TokenStream};
 use syn::spanned::Spanned;
 
 use quote::quote;
@@ -70,6 +71,19 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let func_name = &input.sig.ident;
 	let args = &input.sig.inputs;
 	let args_len = args.len();
+
+	match &input.sig.output {
+		syn::ReturnType::Default => {} //
+
+		syn::ReturnType::Type(_, ty) => {
+			Diagnostic::spanned(
+				ty.span().unwrap(),
+				Level::Error,
+				"Do not specify return type of proc hooks",
+			)
+			.emit();
+		}
+	}
 
 	let cthook_prelude = match proc {
 		Some(p) => quote! {

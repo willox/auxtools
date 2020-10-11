@@ -80,9 +80,7 @@ pub fn init() -> Result<(), String> {
 			.unwrap();
 
 			hook.enable().unwrap();
-			unsafe {
-				call_proc_by_id_original = std::mem::transmute(hook.trampoline());
-			}
+			call_proc_by_id_original = std::mem::transmute(hook.trampoline());
 			std::mem::forget(hook);
 			Ok(())
 		},

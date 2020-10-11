@@ -59,32 +59,16 @@ impl<'b> Value<'b> {
 		unsafe { Some(self.get_by_id(name.into().get_id())) }
 	}
 
-	pub fn get_float<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {
-		let var = self.get(name).unwrap();
-		match var.value.tag {
-			raw_types::values::ValueTag::Number => Some(unsafe { var.value.data.number }),
-			_ => None,
-		}
+	pub fn get_number<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {
+		self.get(name).unwrap().as_number()
 	}
 
 	pub fn get_string<S: Into<string::StringRef>>(&self, name: S) -> Option<String> {
-		let var = self.get(name).unwrap();
-		match var.value.tag {
-			raw_types::values::ValueTag::String => {
-				let id = unsafe { var.value.data.id };
-				let s = unsafe { string::StringRef::from_id(id) };
-				Some(s.into())
-			}
-			_ => None,
-		}
+		self.get(name).unwrap().as_string()
 	}
 
 	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> Option<list::List> {
-		let var = self.get(name).unwrap();
-		match var.value.tag {
-			raw_types::values::ValueTag::List => Some(unsafe { list::List::from_raw_value(var) }),
-			_ => None,
-		}
+		self.get(name).unwrap().as_list()
 	}
 
 	pub fn set<S: Into<string::StringRef>, V: raw_types::values::IntoRawValue>(
@@ -94,6 +78,31 @@ impl<'b> Value<'b> {
 	) {
 		unsafe {
 			self.set_by_id(name.into().get_id(), new_value.into_raw_value());
+		}
+	}
+
+	pub fn as_number(&self) -> Option<f32> {
+		match self.value.tag {
+			raw_types::values::ValueTag::Number => unsafe { Some(self.value.data.number) },
+			_ => None,
+		}
+	}
+
+	pub fn as_string(&self) -> Option<String> {
+		match self.value.tag {
+			raw_types::values::ValueTag::String => unsafe {
+				Some(string::StringRef::from_id(self.value.data.id).into())
+			},
+			_ => None,
+		}
+	}
+
+	pub fn as_list(&self) -> Option<list::List> {
+		match self.value.tag {
+			raw_types::values::ValueTag::List => unsafe {
+				Some(list::List::from_id(self.value.data.id))
+			},
+			_ => None,
 		}
 	}
 

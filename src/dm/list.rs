@@ -1,8 +1,8 @@
 use crate::global_state::GLOBAL_STATE;
 use crate::raw_types;
 use crate::raw_types::values::IntoRawValue;
+use crate::string;
 use crate::value;
-use std::ops::{Index, IndexMut};
 
 pub struct List {
 	internal: *mut raw_types::lists::List,
@@ -74,5 +74,25 @@ impl ListKey for u32 {
 				number: self as f32,
 			},
 		}
+	}
+}
+
+fn str_to_listkey<S: Into<String>>(s: S) -> raw_types::values::Value {
+	unsafe {
+		string::StringRef::new(s.into().as_str())
+			.value
+			.into_raw_value()
+	}
+}
+
+impl ListKey for &str {
+	fn as_list_key(self) -> raw_types::values::Value {
+		str_to_listkey(self)
+	}
+}
+
+impl ListKey for &String {
+	fn as_list_key(self) -> raw_types::values::Value {
+		str_to_listkey(self)
 	}
 }

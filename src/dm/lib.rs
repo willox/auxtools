@@ -95,7 +95,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 		//return Some("FAILED (Couldn't find GetProcArrayEntry)".to_owned())
 	}
 
-	let mut get_string_id: raw_types::funcs::GetStringId  = unsafe { std::mem::transmute(0) };;
+	let mut get_string_id: raw_types::funcs::GetStringId  = unsafe { std::mem::transmute(0) };
 	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_string_id").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
@@ -163,7 +163,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	IncRefCount = (IncRefCountPtr)(x_ref_count_call + *(int*)x_ref_count_call + 4);
 	*/
 
-	let mut dec_ref_count: raw_types::funcs::DecRefCount = unsafe { std::mem::transmute(0) };;
+	let mut dec_ref_count: raw_types::funcs::DecRefCount = unsafe { std::mem::transmute(0) };
 	if let Some(ptr) = byondcore.find(SIGNATURES.get("dec_ref_count_call").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
@@ -236,11 +236,22 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 #[hook("/proc/react")]
 fn hello_proc_hook(some_datum: Value) {
-	if let Some(num) = some_datum.get_float("hello") {
+	if let Some(num) = some_datum.get_number("hello") {
 		(num * 2.0).into()
 	} else {
 		Value::null()
 	}
+}
+
+#[hook("/datum/getvartest/proc/hookme")]
+fn datum_proc_hook_test() {
+	if let Some(l) = src.get_list("listvar") {
+		if let Some(num) = l.get("bonk").as_number() {
+			return Value::from(num * 2.0);
+		}
+	}
+
+	Value::null()
 }
 
 #[cfg(test)]

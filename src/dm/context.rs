@@ -16,8 +16,8 @@ impl<'a> DMContext<'_> {
 		}
 	}
 
-	pub fn get_global_float<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {
-		unsafe { Value::new(ValueTag::World, ValueData { id: 1 }).get_float(name) }
+	pub fn get_global_number<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {
+		unsafe { Value::new(ValueTag::World, ValueData { id: 1 }).get_number(name) }
 	}
 
 	pub fn get_global_string<S: Into<string::StringRef>>(&self, name: S) -> Option<String> {
