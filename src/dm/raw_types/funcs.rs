@@ -35,3 +35,4 @@ pub type IncRefCount = unsafe extern "cdecl" fn(values::Value);
 pub type DecRefCount = unsafe extern "cdecl" fn(values::Value);
 pub type GetListById = unsafe extern "cdecl" fn(u32) -> *mut lists::List;
 pub type GetAssocElement = unsafe extern "cdecl" fn(values::Value, values::Value) -> values::Value;
+pub type SetAssocElement = unsafe extern "cdecl" fn(values::Value, values::Value, values::Value);

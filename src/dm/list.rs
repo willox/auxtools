@@ -42,6 +42,16 @@ impl<'a> List {
 			))
 		}
 	}
+
+	pub fn set<I: ListKey, V: IntoRawValue>(&mut self, index: I, value: &V) {
+		unsafe {
+			(GLOBAL_STATE.get().unwrap().set_assoc_element)(
+				self.me_as_value,
+				index.as_list_key(),
+				value.into_raw_value(),
+			);
+		}
+	}
 }
 
 impl<'a> From<value::Value<'a>> for List {

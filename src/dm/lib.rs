@@ -45,6 +45,7 @@ static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map!
 	"inc_ref_count_call" => signature!("E8 ?? ?? ?? ?? FF 77 ?? FF 77 ?? E8 ?? ?? ?? ?? 8D 77 ?? 56 E8 ?? ?? ?? ??"),
 	"get_list_by_id_call" => signature!("55 8B EC FF 75 08 E8 ?? ?? ?? ?? 83 C4 04 85 C0 75 13 68 ?? ?? ?? ?? E8 ?? ?? ?? ?? 83 C4 04 5D E9 ?? ?? ?? ?? 5D C3"),
 	"get_assoc_element" => signature!("55 8B EC 51 8B 4D 08 C6 45 FF 00 80 F9 05 76 11 80 F9 21 74 10 80 F9 0D 74 0B 80 F9 0E 75 65 EB 04 84 C9 74 5F 6A 00 8D 45 FF 50 FF 75 0C 51 6A 00 6A 7B"),
+	"set_assoc_element" => signature!("55 8B EC 83 EC 14 8B 4D 08 C6 45 FF 00 80 F9 05 76 15 80 F9 21 74 14 80 F9 0D 74 0F 80 F9 0E 0F 85 ?? ?? ?? ?? EB 04 84 C9 74 7A 6A 00")
 };
 
 #[cfg(unix)]
@@ -156,13 +157,6 @@ byond_ffi_fn! { auxtools_init(_input) {
 		//return Some("FAILED (Couldn't find CallDatumProcByName)".to_owned())
 	}
 
-	/*
-	char* x_ref_count_call = (char*)Pocket::Sigscan::FindPattern(BYONDCORE, "3D ?? ?? ?? ?? 74 14 50 E8 ?? ?? ?? ?? FF 75 0C FF 75 08 E8", 20);
-	DecRefCount = (DecRefCountPtr)(x_ref_count_call + *(int*)x_ref_count_call + 4); //x_ref_count_call points to the relative offset to DecRefCount from the call site
-	x_ref_count_call = (char*)Pocket::Sigscan::FindPattern(BYONDCORE, "FF 75 10 E8 ?? ?? ?? ?? FF 75 0C 8B F8 FF 75 08 E8 ?? ?? ?? ?? 57", 17);
-	IncRefCount = (IncRefCountPtr)(x_ref_count_call + *(int*)x_ref_count_call + 4);
-	*/
-
 	let mut dec_ref_count: raw_types::funcs::DecRefCount = unsafe { std::mem::transmute(0) };
 	if let Some(ptr) = byondcore.find(SIGNATURES.get("dec_ref_count_call").unwrap().to_vec()) {
 		unsafe {
@@ -193,13 +187,23 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	let get_assoc_element: raw_types::funcs::GetAssocElement;
-		if let Some(ptr) = byondcore.find(SIGNATURES.get("get_assoc_element").unwrap().to_vec()) {
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_assoc_element").unwrap().to_vec()) {
 		unsafe {
 			// TODO: Could be nulls
 			get_assoc_element = std::mem::transmute(ptr as *const ());
 		}
 	} else {
 		return Some("FAILED (Couldn't find GetAssocElement)".to_owned())
+	}
+
+	let set_assoc_element: raw_types::funcs::SetAssocElement;
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("set_assoc_element").unwrap().to_vec()) {
+		unsafe {
+			// TODO: Could be nulls
+			set_assoc_element = std::mem::transmute(ptr as *const ());
+		}
+	} else {
+		return Some("FAILED (Couldn't find SetAssocElement)".to_owned())
 	}
 
 	if GLOBAL_STATE.set(global_state::State {
@@ -216,6 +220,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 		inc_ref_count: inc_ref_count,
 		get_list_by_id: get_list_by_id,
 		get_assoc_element: get_assoc_element,
+		set_assoc_element: set_assoc_element,
 
 	}).is_err() {
 		panic!();
@@ -245,10 +250,8 @@ fn hello_proc_hook(some_datum: Value) {
 
 #[hook("/datum/getvartest/proc/hookme")]
 fn datum_proc_hook_test() {
-	if let Some(l) = src.get_list("listvar") {
-		if let Some(num) = l.get("bonk").as_number() {
-			return Value::from(num * 2.0);
-		}
+	if let Some(mut l) = src.get_list("listvar") {
+		l.set("bonk", &Value::from(7.0));
 	}
 
 	Value::null()
