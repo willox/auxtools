@@ -1,6 +1,3 @@
-#![feature(half_open_range_patterns)]
-#![feature(exclusive_range_pattern)]
-#![allow(warnings)]
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 
