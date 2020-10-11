@@ -82,6 +82,7 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 				"Do not specify return type of proc hooks",
 			)
 			.emit();
+			return (quote! {}).into();
 		}
 	}
 

@@ -34,6 +34,25 @@ impl<'a> List {
 		}
 	}
 
+	pub fn new() -> Self {
+		Self::with_size(0)
+	}
+
+	pub fn with_size(capacity: u32) -> Self {
+		let id = unsafe { (GLOBAL_STATE.get().unwrap().create_list)(capacity) };
+		let as_value = raw_types::values::Value {
+			tag: raw_types::values::ValueTag::List,
+			data: raw_types::values::ValueData { id },
+		};
+		unsafe {
+			(GLOBAL_STATE.get().unwrap().inc_ref_count)(as_value);
+		}
+		Self {
+			me_as_value: as_value,
+			internal: unsafe { (GLOBAL_STATE.get().unwrap().get_list_by_id)(id) },
+		}
+	}
+
 	pub fn get<I: ListKey>(&self, index: I) -> value::Value<'a> {
 		unsafe {
 			value::Value::from_raw((GLOBAL_STATE.get().unwrap().get_assoc_element)(
@@ -52,11 +71,42 @@ impl<'a> List {
 			);
 		}
 	}
+
+	pub fn append<V: IntoRawValue>(&mut self, value: &V) {
+		unsafe {
+			(GLOBAL_STATE.get().unwrap().append_to_list)(self.me_as_value, value.into_raw_value());
+		}
+	}
+
+	pub fn remove<V: IntoRawValue>(&mut self, value: &V) {
+		unsafe {
+			(GLOBAL_STATE.get().unwrap().remove_from_list)(
+				self.me_as_value,
+				value.into_raw_value(),
+			);
+		}
+	}
+
+	pub fn len(&self) -> u32 {
+		unsafe { (GLOBAL_STATE.get().unwrap().get_length)(self.me_as_value) }
+	}
 }
 
 impl<'a> From<value::Value<'a>> for List {
 	fn from(value: value::Value) -> Self {
 		unsafe { Self::from_id(value.value.data.id) }
+	}
+}
+
+impl raw_types::values::IntoRawValue for List {
+	unsafe fn into_raw_value(&self) -> raw_types::values::Value {
+		self.me_as_value
+	}
+}
+
+impl From<List> for value::Value<'_> {
+	fn from(list: List) -> Self {
+		unsafe { Self::from_raw(list.me_as_value) }
 	}
 }
 

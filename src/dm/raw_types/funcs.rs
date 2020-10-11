@@ -36,3 +36,7 @@ pub type DecRefCount = unsafe extern "cdecl" fn(values::Value);
 pub type GetListById = unsafe extern "cdecl" fn(u32) -> *mut lists::List;
 pub type GetAssocElement = unsafe extern "cdecl" fn(values::Value, values::Value) -> values::Value;
 pub type SetAssocElement = unsafe extern "cdecl" fn(values::Value, values::Value, values::Value);
+pub type CreateList = unsafe extern "cdecl" fn(u32) -> u32;
+pub type AppendToList = unsafe extern "cdecl" fn(values::Value, values::Value);
+pub type RemoveFromList = unsafe extern "cdecl" fn(values::Value, values::Value);
+pub type GetLength = unsafe extern "cdecl" fn(values::Value) -> u32;

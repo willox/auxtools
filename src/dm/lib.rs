@@ -45,7 +45,11 @@ static SIGNATURES: phf::Map<&'static str, &'static [Option<u8>]> = phf::phf_map!
 	"inc_ref_count_call" => signature!("E8 ?? ?? ?? ?? FF 77 ?? FF 77 ?? E8 ?? ?? ?? ?? 8D 77 ?? 56 E8 ?? ?? ?? ??"),
 	"get_list_by_id_call" => signature!("55 8B EC FF 75 08 E8 ?? ?? ?? ?? 83 C4 04 85 C0 75 13 68 ?? ?? ?? ?? E8 ?? ?? ?? ?? 83 C4 04 5D E9 ?? ?? ?? ?? 5D C3"),
 	"get_assoc_element" => signature!("55 8B EC 51 8B 4D 08 C6 45 FF 00 80 F9 05 76 11 80 F9 21 74 10 80 F9 0D 74 0B 80 F9 0E 75 65 EB 04 84 C9 74 5F 6A 00 8D 45 FF 50 FF 75 0C 51 6A 00 6A 7B"),
-	"set_assoc_element" => signature!("55 8B EC 83 EC 14 8B 4D 08 C6 45 FF 00 80 F9 05 76 15 80 F9 21 74 14 80 F9 0D 74 0F 80 F9 0E 0F 85 ?? ?? ?? ?? EB 04 84 C9 74 7A 6A 00")
+	"set_assoc_element" => signature!("55 8B EC 83 EC 14 8B 4D 08 C6 45 FF 00 80 F9 05 76 15 80 F9 21 74 14 80 F9 0D 74 0F 80 F9 0E 0F 85 ?? ?? ?? ?? EB 04 84 C9 74 7A 6A 00"),
+	"create_list" => signature!("55 8B EC 8B ?? ?? ?? ?? ?? 56 85 C9 74 1B A1 ?? ?? ?? ?? 49 89 ?? ?? ?? ?? ?? 8B 34 88 81 FE ?? ?? ?? ?? 0F 85 ?? ?? ?? ?? 8B ?? ?? ?? ?? ?? 8B F1 81 F9 ?? ?? ?? ?? 75 1B 51 68 ?? ?? ?? ?? 68 ?? ?? ?? ?? E8 ?? ?? ?? ?? 83 C4 0C B8 ?? ?? ?? ?? 5E 5D C3"),
+	"append_to_list" => signature!("55 8B EC 8B 4D 08 0F B6 C1 48 56 83 F8 53 0F 87 ?? ?? ?? ?? 0F B6 ?? ?? ?? ?? ?? FF 24 ?? ?? ?? ?? ?? FF 75 0C E8 ?? ?? ?? ?? 8B F0 83 C4 04 85 F6 0F 84 ?? ?? ?? ?? 8B 46 0C 40 50 56 E8 ?? ?? ?? ?? 8B 56 0C 83 C4 08 85 D2"),
+	"remove_from_list" => signature!("55 8B EC 8B 4D 08 83 EC 0C 0F B6 C1 48 53 83 F8 53 0F 87 ?? ?? ?? ?? 0F B6 ?? ?? ?? ?? ?? 8B 55 10 FF 24 ?? ?? ?? ?? ?? 6A 0F FF 75 0C 51 E8 ?? ?? ?? ?? 50 E8 ?? ?? ?? ?? 83 C4 10 85 C0 0F 84 ?? ?? ?? ?? 8B 48 0C 8B 10 85 C9 0F 84 ?? ?? ?? ?? 8B 45 14 8B 5D 10"),
+	"get_length" => signature!("55 8B EC 8B 4D 08 83 EC 18 0F B6 C1 48 53 56 57 83 F8 53 0F 87 ?? ?? ?? ?? 0F B6 ?? ?? ?? ?? ?? FF 24 ?? ?? ?? ?? ?? FF 75 0C"),
 };
 
 #[cfg(unix)]
@@ -206,6 +210,46 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("FAILED (Couldn't find SetAssocElement)".to_owned())
 	}
 
+	let create_list: raw_types::funcs::CreateList;
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("create_list").unwrap().to_vec()) {
+		unsafe {
+			// TODO: Could be nulls
+			create_list = std::mem::transmute(ptr as *const ());
+		}
+	} else {
+		return Some("FAILED (Couldn't find CreateList)".to_owned())
+	}
+
+	let append_to_list: raw_types::funcs::AppendToList;
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("append_to_list").unwrap().to_vec()) {
+		unsafe {
+			// TODO: Could be nulls
+			append_to_list = std::mem::transmute(ptr as *const ());
+		}
+	} else {
+		return Some("FAILED (Couldn't find CreateList)".to_owned())
+	}
+
+	let remove_from_list: raw_types::funcs::RemoveFromList;
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("remove_from_list").unwrap().to_vec()) {
+		unsafe {
+			// TODO: Could be nulls
+			remove_from_list = std::mem::transmute(ptr as *const ());
+		}
+	} else {
+		return Some("FAILED (Couldn't find CreateList)".to_owned())
+	}
+
+	let get_length: raw_types::funcs::GetLength;
+	if let Some(ptr) = byondcore.find(SIGNATURES.get("get_length").unwrap().to_vec()) {
+		unsafe {
+			// TODO: Could be nulls
+			get_length = std::mem::transmute(ptr as *const ());
+		}
+	} else {
+		return Some("FAILED (Couldn't find GetLength)".to_owned())
+	}
+
 	if GLOBAL_STATE.set(global_state::State {
 		get_proc_array_entry: get_proc_array_entry,
 		get_string_id: get_string_id,
@@ -221,7 +265,10 @@ byond_ffi_fn! { auxtools_init(_input) {
 		get_list_by_id: get_list_by_id,
 		get_assoc_element: get_assoc_element,
 		set_assoc_element: set_assoc_element,
-
+		create_list: create_list,
+		append_to_list: append_to_list,
+		remove_from_list: remove_from_list,
+		get_length: get_length,
 	}).is_err() {
 		panic!();
 	}
@@ -254,7 +301,11 @@ fn datum_proc_hook_test() {
 		l.set("bonk", &Value::from(7.0));
 	}
 
-	Value::null()
+	let mut list = list::List::new();
+	list.append(&Value::from(1.0));
+	list.append(&src.get("hello").unwrap());
+	list.remove(&Value::from(1.0));
+	Value::from(list.len() as f32)
 }
 
 #[cfg(test)]

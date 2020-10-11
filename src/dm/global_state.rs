@@ -22,4 +22,8 @@ pub struct State {
 	pub get_list_by_id: raw_types::funcs::GetListById,
 	pub get_assoc_element: raw_types::funcs::GetAssocElement,
 	pub set_assoc_element: raw_types::funcs::SetAssocElement,
+	pub create_list: raw_types::funcs::CreateList,
+	pub append_to_list: raw_types::funcs::AppendToList,
+	pub remove_from_list: raw_types::funcs::RemoveFromList,
+	pub get_length: raw_types::funcs::GetLength,
 }
