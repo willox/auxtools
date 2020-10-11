@@ -107,22 +107,16 @@ impl<'b> Value<'b> {
 		}
 	}
 
-	/*
-	pub fn call<S: AsRef<str>, R: Into<RawValueVector> + Default>(
-		&self,
-		procname: S,
-		args: Option<R>,
-	) -> Value<'b> {
+	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Self]) -> Value<'b> {
 		unsafe {
 			let procname = String::from(procname.as_ref()).replace("_", " ");
-			let mut args: Vec<raw_types::values::Value> = args.unwrap_or_default().into().0;
-
+			let args: Vec<_> = args.iter().map(|e| e.into_raw_value()).collect();
 			let result = (GLOBAL_STATE.get().unwrap().call_datum_proc_by_name)(
 				Value::null().into_raw_value(),
 				2,
-				(*string::StringRef::from(procname).internal).this,
+				string::StringRef::from(procname).value.value.data.string,
 				self.into_raw_value(),
-				args.as_mut_ptr(),
+				args.as_ptr(),
 				args.len(),
 				0,
 				0,
@@ -130,7 +124,6 @@ impl<'b> Value<'b> {
 			Value::from_raw(result)
 		}
 	}
-	*/
 
 	// blah blah lifetime is not verified with this so use at your peril
 	pub unsafe fn from_raw(v: raw_types::values::Value) -> Self {

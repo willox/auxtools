@@ -91,7 +91,6 @@ macro_rules! find_function_by_call {
 		let $name: $crate::raw_types::funcs::$typ;
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name.to_vec()) {
 			unsafe {
-				// TODO: Could be nulls
 				let offset = *(ptr.offset(1) as *const isize);
 				$name = std::mem::transmute(ptr.offset(5).offset(offset) as *const ());
 				}
@@ -110,6 +109,15 @@ macro_rules! with_scanner {
 macro_rules! with_scanner_by_call {
 	($scanner:ident, $( $name:ident: $typ:ident),* ) => {
 		$( find_function_by_call!($scanner, $name, $typ); )*
+	};
+}
+
+macro_rules! args {
+	() => {
+		None
+	};
+	($( $e:expr ),*) => {
+		Some(&mut [$( $e, )*])
 	};
 }
 
@@ -205,6 +213,11 @@ fn hello_proc_hook(some_datum: Value) {
 fn datum_proc_hook_test() {
 	if let Some(mut l) = src.get_list("listvar") {
 		l.set("bonk", &Value::from(7.0));
+
+		src.call(
+			"march_of_progress",
+			&[&Value::from(1.0), &Value::from(2.0), &src, &Value::from(l)],
+		);
 	}
 
 	let mut list = list::List::new();

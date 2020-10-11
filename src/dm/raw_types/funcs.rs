@@ -23,7 +23,7 @@ pub type CallDatumProcByName = unsafe extern "cdecl" fn(
 	u32,
 	strings::StringId,
 	values::Value,
-	*mut values::Value,
+	*const values::Value,
 	usize,
 	u32,
 	u32,
