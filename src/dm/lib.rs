@@ -4,15 +4,15 @@ use dm_impl::hook;
 use global_state::GLOBAL_STATE;
 use value::Value;
 
-mod byond_ffi;
-mod context;
-mod global_state;
-mod hooks;
-mod list;
-mod proc;
-mod raw_types;
-mod string;
-mod value;
+pub mod byond_ffi;
+pub mod context;
+pub mod global_state;
+pub mod hooks;
+pub mod list;
+pub mod proc;
+pub mod raw_types;
+pub mod string;
+pub mod value;
 
 extern crate inventory;
 
@@ -109,15 +109,6 @@ macro_rules! with_scanner {
 macro_rules! with_scanner_by_call {
 	($scanner:ident, $( $name:ident: $typ:ident),* ) => {
 		$( find_function_by_call!($scanner, $name, $typ); )*
-	};
-}
-
-macro_rules! args {
-	() => {
-		None
-	};
-	($( $e:expr ),*) => {
-		Some(&mut [$( $e, )*])
 	};
 }
 

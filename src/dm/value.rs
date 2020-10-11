@@ -7,6 +7,7 @@ use std::ffi::CString;
 use std::fmt;
 use std::marker::PhantomData;
 
+/// `Value` represents any value a DM variable can hold, such as numbers, strings, datums, etc.
 #[derive(Clone)]
 pub struct Value<'a> {
 	pub value: raw_types::values::Value,
@@ -23,6 +24,8 @@ impl<'a> Drop for Value<'a> {
 
 #[allow(unused)]
 impl<'b> Value<'b> {
+	/// Creates a new value from raw tag and data.
+	/// Use if you know what you are doing.
 	pub unsafe fn new<'a>(
 		tag: raw_types::values::ValueTag,
 		data: raw_types::values::ValueData,
@@ -36,6 +39,7 @@ impl<'b> Value<'b> {
 		}
 	}
 
+	/// Equivalent to DM's `null`.
 	pub fn null() -> Value<'static> {
 		return Value {
 			value: raw_types::values::Value {
@@ -56,22 +60,27 @@ impl<'b> Value<'b> {
 		unsafe { (GLOBAL_STATE.get().unwrap().set_variable)(self.value, name_id, new_value) }
 	}
 
-	pub fn get<S: Into<string::StringRef>>(&self, name: S) -> Option<Value<'b>> {
-		Some(self.get_by_id(name.into().get_id()))
+	/// Gets a variable by name.
+	pub fn get<S: Into<string::StringRef>>(&self, name: S) -> Value<'b> {
+		self.get_by_id(name.into().get_id())
 	}
 
+	/// Gets a variable by name and safely casts it to a float.
 	pub fn get_number<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {
-		self.get(name).unwrap().as_number()
+		self.get(name).as_number()
 	}
 
+	/// Gets a variable by name and safely casts it to a string.
 	pub fn get_string<S: Into<string::StringRef>>(&self, name: S) -> Option<String> {
-		self.get(name).unwrap().as_string()
+		self.get(name).as_string()
 	}
 
+	/// Gets a variable by name and safely casts it to a [list::List].
 	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> Option<list::List> {
-		self.get(name).unwrap().as_list()
+		self.get(name).as_list()
 	}
 
+	/// Sets a variable by name to a given value.
 	pub fn set<S: Into<string::StringRef>, V: raw_types::values::IntoRawValue>(
 		&self,
 		name: S,
@@ -82,6 +91,7 @@ impl<'b> Value<'b> {
 		}
 	}
 
+	/// Check if the current value is a number and casts it.
 	pub fn as_number(&self) -> Option<f32> {
 		match self.value.tag {
 			raw_types::values::ValueTag::Number => unsafe { Some(self.value.data.number) },
@@ -89,6 +99,7 @@ impl<'b> Value<'b> {
 		}
 	}
 
+	/// Check if the current value is a string and casts it.
 	pub fn as_string(&self) -> Option<String> {
 		match self.value.tag {
 			raw_types::values::ValueTag::String => unsafe {
@@ -98,6 +109,7 @@ impl<'b> Value<'b> {
 		}
 	}
 
+	/// Check if the current value is a list and casts it.
 	pub fn as_list(&self) -> Option<list::List> {
 		match self.value.tag {
 			raw_types::values::ValueTag::List => unsafe {
@@ -107,6 +119,14 @@ impl<'b> Value<'b> {
 		}
 	}
 
+	/// Calls a method of the value with the given arguments.
+	///
+	/// # Examples:
+	///
+	/// This example is equivalent to `src.explode(3)` in DM.
+	/// ```rust
+	/// src.call("explode", &[&Value::from(3.0)]);
+	/// ```
 	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Self]) -> Value<'b> {
 		unsafe {
 			let procname = String::from(procname.as_ref()).replace("_", " ");
@@ -125,7 +145,7 @@ impl<'b> Value<'b> {
 		}
 	}
 
-	// blah blah lifetime is not verified with this so use at your peril
+	/// blah blah lifetime is not verified with this so use at your peril
 	pub unsafe fn from_raw(v: raw_types::values::Value) -> Self {
 		Value::new(v.tag, v.data)
 	}

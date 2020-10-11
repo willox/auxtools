@@ -50,10 +50,10 @@ struct AssociativeListEntry {
 
 #[repr(C)]
 pub struct List {
-	vector_part: *mut values::Value,
-	assoc_part: *mut AssociativeListEntry,
-	allocated: u32,
-	length: u32,
-	refcount: u32,
+	pub vector_part: *mut values::Value,
+	pub assoc_part: *mut AssociativeListEntry,
+	pub allocated: u32,
+	pub length: u32,
+	pub refcount: u32,
 	unknown: u32,
 }

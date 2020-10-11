@@ -4,6 +4,7 @@ use crate::raw_types::values::IntoRawValue;
 use crate::string;
 use crate::value;
 
+/// Represents a DM `list`.
 #[allow(unused)]
 pub struct List {
 	internal: *mut raw_types::lists::List,
@@ -36,10 +37,22 @@ impl<'a> List {
 		}
 	}
 
+	/// Creates a new empty list.
 	pub fn new() -> Self {
 		Self::with_size(0)
 	}
 
+	/// Creates a new empty list, with enough memory reserved to contain `capacity` elements.
+	/// NOTE: UNTESTED, BYOND MAY RESIZE IT BACK DOWN!
+	pub fn with_capacity(capacity: u32) -> Self {
+		let res = Self::with_size(capacity);
+		unsafe {
+			(*res.internal).length = 0;
+		}
+		res
+	}
+
+	/// Creates a new list filled with `capacity` nulls.
 	pub fn with_size(capacity: u32) -> Self {
 		let id = unsafe { (GLOBAL_STATE.get().unwrap().create_list)(capacity) };
 		let as_value = raw_types::values::Value {

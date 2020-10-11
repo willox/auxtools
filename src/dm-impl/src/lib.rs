@@ -58,6 +58,35 @@ fn extract_args(a: &syn::FnArg) -> &syn::PatType {
 	}
 }
 
+/// The `hook` attribute is used to define functions that may be used as proc hooks,
+/// and to optionally hook those procs upon library initialization.
+///
+/// # Examples
+///
+/// Here we define a hook that multiplies a number passed to it by two.
+/// It can now be used to hook procs, for example `hooks::hook("/proc/double_up", double_up);`
+/// ```rust
+/// #[hook]
+/// fn double_up(num: Value) {
+///		if let Some(num) = num.as_number() {
+///			Value::from(num * 2.0);
+///		}
+///		Value::null()
+/// }
+/// ```
+///
+/// This function is used to hook `/mob/proc/on_honked`.
+/// By specifying the proc path, we hook the proc immediately upon startup.
+///
+/// ```rust
+/// #[hook("/mob/proc/on_honked")]
+/// fn on_honked(honker: Value) {
+///		src.call("gib", &[]);
+///		honker.call("laugh", &[]);
+///		Value::null()
+/// }
+/// ```
+
 #[proc_macro_attribute]
 pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let input = syn::parse_macro_input!(item as syn::ItemFn);
@@ -115,6 +144,10 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 			_ => {}
 		};
 	}
+	let _default_null = quote! {
+		#[allow(unreachable_code)]
+		Value::null()
+	};
 	let result = quote! {
 		#cthook_prelude
 		#signature {

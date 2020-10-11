@@ -41,6 +41,7 @@ pub union ValueData {
 	pub id: u32,
 }
 
+/// Internal thing used when interfacing with BYOND. You shouldn't need to use this.
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct Value {
