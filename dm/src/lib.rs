@@ -213,7 +213,7 @@ fn datum_proc_hook_test() {
 
 	let mut list = list::List::new();
 	list.append(&Value::from(1.0));
-	list.append(&src.get("hello").unwrap());
+	list.append(&src.get("hello"));
 	list.remove(&Value::from(1.0));
 	Value::from(list.len() as f32)
 }

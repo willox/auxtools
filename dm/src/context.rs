@@ -11,7 +11,7 @@ pub struct DMContext<'a> {
 #[allow(unused)]
 impl<'a> DMContext<'_> {
 	//NOTE: In order for this to work, the dm code needs to contain `global.vars["varname"]` anywhere.
-	pub fn get_global<S: Into<string::StringRef>>(&self, name: S) -> Option<Value> {
+	pub fn get_global<S: Into<string::StringRef>>(&self, name: S) -> Value {
 		unsafe {
 			Value::new(ValueTag::World, ValueData { id: 1 }).get(name)
 			// Tag World with value 1 means Global
