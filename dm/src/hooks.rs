@@ -8,6 +8,7 @@ use detour::RawDetour;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::sync::Once;
 
 pub struct CompileTimeHook {
 	pub proc_path: &'static str,
@@ -69,7 +70,7 @@ impl std::fmt::Debug for HookFailure {
 	}
 }
 
-pub fn init() -> Result<(), String> {
+fn init() -> Result<(), String> {
 	match GLOBAL_STATE.get() {
 		Some(state) => unsafe {
 			// TODO: clean up and pass on errors
@@ -97,7 +98,14 @@ thread_local! {
 	static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new());
 }
 
+static PROC_HOOKS_INIT: Once = Once::new();
+
 fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFailure> {
+	PROC_HOOKS_INIT.call_once(|| {
+		if let Err(e) = init() {
+			panic!(e);
+		}
+	});
 	PROC_HOOKS.with(|h| {
 		let mut map = h.borrow_mut();
 		match map.entry(id) {

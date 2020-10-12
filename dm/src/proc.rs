@@ -75,7 +75,6 @@ fn populate_procs() {
 
 static LOAD_PROCS: Once = Once::new();
 
-/// Retrieves the specified override of a proc.
 pub fn get_proc_override<S: Into<String>>(path: S, override_id: usize) -> Option<Proc> {
 	LOAD_PROCS.call_once(|| {
 		populate_procs();

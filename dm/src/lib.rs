@@ -1,6 +1,10 @@
+//! For when BYOND is not enough. Probably often.
+
 use context::DMContext;
-pub use dm_impl;
-use dm_impl::hook;
+
+use dm_impl;
+pub use dm_impl::hook;
+
 use global_state::GLOBAL_STATE;
 use value::Value;
 
@@ -9,6 +13,7 @@ pub mod context;
 pub mod global_state;
 pub mod hooks;
 pub mod list;
+pub mod plugin;
 pub mod proc;
 pub mod raw_types;
 pub mod string;
@@ -178,10 +183,6 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("FAILED (Could not initialize global state)".to_owned());
 	}
 
-	if let Err(error) = hooks::init() {
-		return Some(error);
-	}
-
 	for cthook in inventory::iter::<hooks::CompileTimeHook> {
 		if let Err(e) = hooks::hook(cthook.proc_path, cthook.hook) {
 			return Some(format!("FAILED (Could not hook proc {}: {:?})", cthook.proc_path, e));
@@ -207,7 +208,7 @@ fn datum_proc_hook_test() {
 
 		src.call(
 			"march_of_progress",
-			&[&Value::from(1.0), &Value::from(2.0), &src, &Value::from(l)],
+			&[&1.0.into(), &2.0.into(), &src, &l.into()],
 		);
 	}
 

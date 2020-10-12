@@ -1,4 +1,5 @@
 use super::global_state::{State, GLOBAL_STATE};
+use super::list;
 use super::raw_types::values::{ValueData, ValueTag};
 use super::string;
 use super::value::Value;
@@ -11,7 +12,7 @@ pub struct DMContext<'a> {
 
 #[allow(unused)]
 impl<'a> DMContext<'_> {
-	//NOTE: In order for this to work, the dm code needs to contain `global.vars["varname"]` anywhere.
+	/// NOTE: In order for this to work, the dm code needs to contain `global.vars["varname"]` anywhere.
 	pub fn get_global<S: Into<string::StringRef>>(&self, name: S) -> Value {
 		unsafe {
 			Value::new(ValueTag::World, ValueData { id: 1 }).get(name)
@@ -25,6 +26,14 @@ impl<'a> DMContext<'_> {
 
 	pub fn get_global_string<S: Into<string::StringRef>>(&self, name: S) -> Option<String> {
 		unsafe { Value::new(ValueTag::World, ValueData { id: 1 }).get_string(name) }
+	}
+
+	pub fn get_global_list<S: Into<string::StringRef>>(&self, name: S) -> Option<list::List> {
+		unsafe { Value::new(ValueTag::World, ValueData { id: 1 }).get_list(name) }
+	}
+
+	pub fn get_world<S: Into<string::StringRef>>(&self, name: S) -> Value<'a> {
+		unsafe { Value::new(ValueTag::World, ValueData { id: 0 }) }
 	}
 
 	pub fn new() -> Option<Self> {
