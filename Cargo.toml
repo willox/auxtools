@@ -1,9 +1,9 @@
 [workspace]
 members = [
-	"src/dm",
-	"src/dm-impl",
-	"src/cli",
-	"src/sigscan",
+	"cli",
+	"dm",
+	"dm-impl",
+	"sigscan",
 ]
 
 [profile.release]
