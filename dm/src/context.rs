@@ -1,12 +1,12 @@
-use super::global_state::{State, GLOBAL_STATE};
 use super::raw_types::values::{ValueData, ValueTag};
 use super::string;
 use super::value::Value;
+use std::marker::PhantomData;
 
 /// The context is used to interact with global stuff. It should probably be renamed at this point.
 #[allow(unused)]
 pub struct DMContext<'a> {
-	state: &'a State,
+	phantom: PhantomData<&'a ()>,
 }
 
 #[allow(unused)]
@@ -28,10 +28,9 @@ impl<'a> DMContext<'_> {
 	}
 
 	pub fn new() -> Option<Self> {
-		if let Some(state) = GLOBAL_STATE.get() {
-			Some(Self { state: &state })
-		} else {
-			None
-		}
+		// Pretty dumb way to set the lifetime but im not changing it now
+		Some(Self {
+			phantom: PhantomData,
+		})
 	}
 }

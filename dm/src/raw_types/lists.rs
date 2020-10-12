@@ -1,6 +1,10 @@
 use super::values;
 
 #[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct ListId(pub u32);
+
+#[repr(C)]
 #[allow(unused)]
 enum Color {
 	Red = 0,

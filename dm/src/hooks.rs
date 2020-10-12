@@ -2,7 +2,6 @@ use super::proc::Proc;
 use super::raw_types;
 use super::value::Value;
 use super::DMContext;
-use super::GLOBAL_STATE;
 use crate::raw_types::values::IntoRawValue;
 use detour::RawDetour;
 use std::cell::RefCell;
@@ -23,7 +22,7 @@ impl CompileTimeHook {
 inventory::collect!(CompileTimeHook);
 
 extern "C" {
-	#[allow(improper_ctypes)]
+
 	static mut call_proc_by_id_original: *const ();
 
 	fn call_proc_by_id_original_trampoline(
@@ -70,24 +69,19 @@ impl std::fmt::Debug for HookFailure {
 }
 
 pub fn init() -> Result<(), String> {
-	match GLOBAL_STATE.get() {
-		Some(state) => unsafe {
-			// TODO: clean up and pass on errors
-			let hook = RawDetour::new(
-				state.call_proc_by_id as *const (),
-				call_proc_by_id_hook_trampoline as *const (),
-			)
-			.unwrap();
+	// TODO: clean up and pass on errors
+	unsafe {
+		let hook = RawDetour::new(
+			raw_types::funcs::call_proc_by_id_byond as *const (),
+			call_proc_by_id_hook_trampoline as *const (),
+		)
+		.unwrap();
 
-			hook.enable().unwrap();
-			call_proc_by_id_original = std::mem::transmute(hook.trampoline());
-			std::mem::forget(hook);
-			Ok(())
-		},
-		None => Err(String::from(
-			"Initialize the library first before initializing hooks.",
-		)),
+		hook.enable().unwrap();
+		call_proc_by_id_original = std::mem::transmute(hook.trampoline());
+		std::mem::forget(hook);
 	}
+	Ok(())
 }
 
 pub type ProcHook =
@@ -158,9 +152,9 @@ extern "C" fn call_proc_by_id_hook(
 			std::mem::forget(result);
 
 			// We have to
-			for val in args {
+			for val in &args {
 				unsafe {
-					(GLOBAL_STATE.get().unwrap().dec_ref_count)(val.into_raw_value());
+					assert_eq!(raw_types::funcs::dec_ref_count(val.into_raw_value()), 1);
 				}
 			}
 
