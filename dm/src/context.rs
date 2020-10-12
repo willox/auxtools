@@ -3,6 +3,7 @@ use super::raw_types::values::{ValueData, ValueTag};
 use super::string;
 use super::value::Value;
 
+/// The context is used to interact with global stuff. It should probably be renamed at this point.
 #[allow(unused)]
 pub struct DMContext<'a> {
 	state: &'a State,

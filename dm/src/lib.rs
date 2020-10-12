@@ -175,17 +175,17 @@ byond_ffi_fn! { auxtools_init(_input) {
 		remove_from_list: remove_from_list,
 		get_length: get_length,
 	}).is_err() {
-		panic!();
+		return Some("FAILED (Could not initialize global state)".to_owned());
 	}
 
 	if let Err(error) = hooks::init() {
 		return Some(error);
 	}
 
-	proc::populate_procs();
-
 	for cthook in inventory::iter::<hooks::CompileTimeHook> {
-		hooks::hook(cthook.proc_path, cthook.hook).expect("bruh");
+		if let Err(e) = hooks::hook(cthook.proc_path, cthook.hook) {
+			return Some(format!("FAILED (Could not hook proc {}: {:?})", cthook.proc_path, e));
+		}
 	}
 
 	Some("SUCCESS".to_owned())

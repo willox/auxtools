@@ -3,8 +3,33 @@ use super::string::StringRef;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::sync::Once;
 
 use super::GLOBAL_STATE;
+
+/// Used to manipulate procs.
+///
+/// ### Override ID
+///
+/// Procs in DM can be defined multiple times.
+///
+/// ```
+/// /proc/hello() // Override #0 or base proc
+///		world << "Hello"
+///
+///	/hello() // Override #1
+///		..() // Calls override #0
+///		world << "World"
+///
+///	/hello() // Override #2
+///		..() // Calls override #1
+///		world << "!!!"
+///	```
+///
+///	To get the nth override, use [get_proc_override]: `let hello = get_proc_override("/proc/hello", n).unwrap()`
+/// [get_proc] retrieves the base proc.
+///
+///
 
 #[derive(Clone)]
 pub struct Proc {
@@ -19,7 +44,7 @@ fn strip_path(p: String) -> String {
 	p.replace("/proc/", "/").replace("/verb/", "/")
 }
 
-pub fn populate_procs() {
+fn populate_procs() {
 	let mut i: u32 = 0;
 	loop {
 		let proc_entry = unsafe { (GLOBAL_STATE.get().unwrap().get_proc_array_entry)(ProcId(i)) };
@@ -48,7 +73,13 @@ pub fn populate_procs() {
 	}
 }
 
+static LOAD_PROCS: Once = Once::new();
+
+/// Retrieves the specified override of a proc.
 pub fn get_proc_override<S: Into<String>>(path: S, override_id: usize) -> Option<Proc> {
+	LOAD_PROCS.call_once(|| {
+		populate_procs();
+	});
 	let s = strip_path(path.into());
 	PROCS_BY_NAME.with(|h| match h.borrow().get(&s)?.get(override_id) {
 		Some(p) => Some(p.clone()),
@@ -56,6 +87,7 @@ pub fn get_proc_override<S: Into<String>>(path: S, override_id: usize) -> Option
 	})
 }
 
+/// Retrieves the 0th override of a proc.
 pub fn get_proc<S: Into<String>>(path: S) -> Option<Proc> {
 	get_proc_override(path, 0)
 }
