@@ -1,11 +1,10 @@
+use super::raw_types;
 use super::raw_types::procs::{ProcEntry, ProcId};
 use super::string::StringRef;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Once;
-
-use super::GLOBAL_STATE;
 
 /// Used to manipulate procs.
 ///
@@ -47,7 +46,13 @@ fn strip_path(p: String) -> String {
 fn populate_procs() {
 	let mut i: u32 = 0;
 	loop {
-		let proc_entry = unsafe { (GLOBAL_STATE.get().unwrap().get_proc_array_entry)(ProcId(i)) };
+		let mut proc_entry: *mut ProcEntry = std::ptr::null_mut();
+		unsafe {
+			assert_eq!(
+				raw_types::funcs::get_proc_array_entry(&mut proc_entry, ProcId(i)),
+				1
+			);
+		}
 		if proc_entry.is_null() {
 			break;
 		}

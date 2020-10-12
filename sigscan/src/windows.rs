@@ -82,9 +82,12 @@ impl Scanner {
 
 impl Drop for Scanner {
 	fn drop(&mut self) {
+		// TODO: WTf this started throwing?!
+		/*
 		unsafe {
 			libloaderapi::FreeLibrary(self.module);
 		}
+		*/
 	}
 }
 

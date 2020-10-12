@@ -1,6 +1,5 @@
 use super::raw_types;
 use super::string;
-use super::GLOBAL_STATE;
 use crate::list;
 use crate::raw_types::values::IntoRawValue;
 use std::ffi::CString;
@@ -17,7 +16,7 @@ pub struct Value<'a> {
 impl<'a> Drop for Value<'a> {
 	fn drop(&mut self) {
 		unsafe {
-			(GLOBAL_STATE.get().unwrap().dec_ref_count)(self.into_raw_value());
+			raw_types::funcs::dec_ref_count(self.into_raw_value());
 		}
 	}
 }
@@ -31,7 +30,7 @@ impl<'b> Value<'b> {
 		data: raw_types::values::ValueData,
 	) -> Value<'a> {
 		let raw = raw_types::values::Value { tag, data };
-		(GLOBAL_STATE.get().unwrap().inc_ref_count)(raw);
+		raw_types::funcs::inc_ref_count(raw);
 
 		Value {
 			value: raw,
@@ -51,13 +50,38 @@ impl<'b> Value<'b> {
 	}
 
 	fn get_by_id(&self, name_id: u32) -> Value<'b> {
-		let val = unsafe { (GLOBAL_STATE.get().unwrap().get_variable)(self.value, name_id) };
-		unsafe { (GLOBAL_STATE.get().unwrap().inc_ref_count)(val) }
-		unsafe { Self::from_raw(val) }
+		let mut val = raw_types::values::Value {
+			tag: raw_types::values::ValueTag::Null,
+			data: raw_types::values::ValueData { id: 0 },
+		};
+
+		// TODO: Should handle error
+		unsafe {
+			assert_eq!(
+				raw_types::funcs::get_variable(
+					&mut val,
+					self.value,
+					raw_types::strings::StringId(name_id),
+				),
+				1
+			);
+
+			Self::from_raw(val)
+		}
 	}
 
 	fn set_by_id(&self, name_id: u32, new_value: raw_types::values::Value) {
-		unsafe { (GLOBAL_STATE.get().unwrap().set_variable)(self.value, name_id, new_value) }
+		// TODO: handle error
+		unsafe {
+			assert_eq!(
+				raw_types::funcs::set_variable(
+					self.value,
+					raw_types::strings::StringId(name_id),
+					new_value
+				),
+				1
+			);
+		}
 	}
 
 	/// Gets a variable by name.
@@ -128,20 +152,33 @@ impl<'b> Value<'b> {
 	/// src.call("explode", &[&Value::from(3.0)]);
 	/// ```
 	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Self]) -> Value<'b> {
+		let mut ret = raw_types::values::Value {
+			tag: raw_types::values::ValueTag::Null,
+			data: raw_types::values::ValueData { id: 0 },
+		};
+
 		unsafe {
 			let procname = String::from(procname.as_ref()).replace("_", " ");
 			let args: Vec<_> = args.iter().map(|e| e.into_raw_value()).collect();
-			let result = (GLOBAL_STATE.get().unwrap().call_datum_proc_by_name)(
-				Value::null().into_raw_value(),
-				2,
-				string::StringRef::from(procname).value.value.data.string,
-				self.into_raw_value(),
-				args.as_ptr(),
-				args.len(),
-				0,
-				0,
+			let name_ref = string::StringRef::from(procname);
+
+			// TODO: handle error
+			assert_eq!(
+				raw_types::funcs::call_datum_proc_by_name(
+					&mut ret,
+					Value::null().into_raw_value(),
+					2,
+					name_ref.value.value.data.string,
+					self.value,
+					args.as_ptr(),
+					args.len(),
+					0,
+					0
+				),
+				1
 			);
-			Value::from_raw(result)
+
+			Value::from_raw(ret)
 		}
 	}
 
@@ -160,12 +197,16 @@ impl fmt::Display for Value<'_> {
 fn string_to_raw_value(string: &str) -> Option<raw_types::values::Value> {
 	if let Ok(string) = CString::new(string) {
 		unsafe {
-			let index =
-				(GLOBAL_STATE.get().unwrap().get_string_id)(string.as_ptr(), true, false, true);
+			let mut index = raw_types::strings::StringId(0);
+
+			assert_eq!(
+				raw_types::funcs::get_string_id(&mut index, string.as_ptr(), 1, 0, 1),
+				1
+			);
 
 			return Some(raw_types::values::Value {
 				tag: raw_types::values::ValueTag::String,
-				data: raw_types::values::ValueData { id: index },
+				data: raw_types::values::ValueData { string: index },
 			});
 		}
 	}

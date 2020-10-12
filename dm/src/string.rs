@@ -1,6 +1,5 @@
 use super::raw_types;
 use super::value::Value;
-use super::GLOBAL_STATE;
 use std::ffi::CStr;
 use std::fmt;
 
@@ -77,9 +76,9 @@ impl From<&String> for StringRef {
 impl Into<String> for StringRef {
 	fn into(self) -> String {
 		unsafe {
-			let id = self.value.value.data.id;
-			let entry = (GLOBAL_STATE.get().unwrap().get_string_table_entry)(id);
-
+			let id = self.value.value.data.string;
+			let mut entry: *mut raw_types::strings::StringEntry = std::ptr::null_mut();
+			assert_eq!(raw_types::funcs::get_string_table_entry(&mut entry, id), 1);
 			CStr::from_ptr((*entry).data).to_string_lossy().into()
 		}
 	}

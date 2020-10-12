@@ -1,16 +1,13 @@
 //! For when BYOND is not enough. Probably often.
 
 use context::DMContext;
-
-use dm_impl;
-pub use dm_impl::hook;
-
-use global_state::GLOBAL_STATE;
+pub use dm_impl;
+use dm_impl::hook;
+use std::ffi::c_void;
 use value::Value;
 
 pub mod byond_ffi;
 pub mod context;
-pub mod global_state;
 pub mod hooks;
 pub mod list;
 pub mod plugin;
@@ -79,11 +76,11 @@ signatures! {
 }
 
 macro_rules! find_function {
-	($scanner:ident, $name:ident, $typ:ident) => {
-		let $name: $crate::raw_types::funcs::$typ;
+	($scanner:ident, $name:ident) => {
+		let $name: *const c_void;
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name.to_vec()) {
 			unsafe {
-				$name = std::mem::transmute(ptr as *const ());
+				$name = std::mem::transmute(ptr as *const c_void);
 				}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
@@ -92,8 +89,8 @@ macro_rules! find_function {
 }
 
 macro_rules! find_function_by_call {
-	($scanner:ident, $name:ident, $typ:ident) => {
-		let $name: $crate::raw_types::funcs::$typ;
+	($scanner:ident, $name:ident) => {
+		let $name: *const c_void;
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name.to_vec()) {
 			unsafe {
 				let offset = *(ptr.offset(1) as *const isize);
@@ -106,22 +103,19 @@ macro_rules! find_function_by_call {
 }
 
 macro_rules! with_scanner {
-	($scanner:ident, $( $name:ident: $typ:ident),* ) => {
-		$( find_function!($scanner, $name, $typ); )*
+	($scanner:ident, $( $name:ident),* ) => {
+		$( find_function!($scanner, $name); )*
 	};
 }
 
 macro_rules! with_scanner_by_call {
-	($scanner:ident, $( $name:ident: $typ:ident),* ) => {
-		$( find_function_by_call!($scanner, $name, $typ); )*
+	($scanner:ident, $( $name:ident),* ) => {
+		$( find_function_by_call!($scanner, $name); )*
 	};
 }
 
 byond_ffi_fn! { auxtools_init(_input) {
-	// Already initialized. Just succeed?
-	if GLOBAL_STATE.get().is_some() {
-		return Some("SUCCESS".to_owned());
-	}
+	// TODO: Don't initialize a second time
 
 	let byondcore = match sigscan::Scanner::for_module(BYONDCORE) {
 		Some(v) => v,
@@ -129,25 +123,25 @@ byond_ffi_fn! { auxtools_init(_input) {
 	};
 
 	with_scanner! { byondcore,
-		get_string_id: GetStringId,
-		call_proc_by_id: CallProcById,
-		get_variable: GetVariable,
-		set_variable: SetVariable,
-		get_string_table_entry: GetStringTableEntry,
-		call_datum_proc_by_name: CallDatumProcByName,
-		get_assoc_element: GetAssocElement,
-		set_assoc_element: SetAssocElement,
-		append_to_list: AppendToList,
-		remove_from_list: RemoveFromList,
-		get_length: GetLength,
-		create_list: CreateList
+		get_string_id,
+		call_proc_by_id,
+		get_variable,
+		set_variable,
+		get_string_table_entry,
+		call_datum_proc_by_name,
+		get_assoc_element,
+		set_assoc_element,
+		append_to_list,
+		remove_from_list,
+		get_length,
+		create_list
 	}
 
-	with_scanner_by_call! {byondcore,
-		get_proc_array_entry: GetProcArrayEntry,
-		dec_ref_count: DecRefCount,
-		inc_ref_count: IncRefCount,
-		get_list_by_id: GetListById
+	with_scanner_by_call! { byondcore,
+		get_proc_array_entry,
+		dec_ref_count,
+		inc_ref_count,
+		get_list_by_id
 	}
 
 	let string_table: *mut raw_types::strings::StringTable;
@@ -160,27 +154,23 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("FAILED (Couldn't find stringtable)".to_owned())
 	}
 
-	if GLOBAL_STATE.set(global_state::State {
-		get_proc_array_entry: get_proc_array_entry,
-		get_string_id: get_string_id,
-		execution_context: std::ptr::null_mut(),
-		string_table: string_table,
-		call_proc_by_id: call_proc_by_id,
-		get_variable: get_variable,
-		set_variable: set_variable,
-		get_string_table_entry: get_string_table_entry,
-		call_datum_proc_by_name: call_datum_proc_by_name,
-		dec_ref_count: dec_ref_count,
-		inc_ref_count: inc_ref_count,
-		get_list_by_id: get_list_by_id,
-		get_assoc_element: get_assoc_element,
-		set_assoc_element: set_assoc_element,
-		create_list: create_list,
-		append_to_list: append_to_list,
-		remove_from_list: remove_from_list,
-		get_length: get_length,
-	}).is_err() {
-		return Some("FAILED (Could not initialize global state)".to_owned());
+	unsafe {
+		raw_types::funcs::call_proc_by_id_byond = call_proc_by_id;
+		raw_types::funcs::call_datum_proc_by_name_byond = call_datum_proc_by_name;
+		raw_types::funcs::get_proc_array_entry_byond = get_proc_array_entry;
+		raw_types::funcs::get_string_id_byond = get_string_id;
+		raw_types::funcs::get_variable_byond = get_variable;
+		raw_types::funcs::set_variable_byond = set_variable;
+		raw_types::funcs::get_string_table_entry_byond = get_string_table_entry;
+		raw_types::funcs::inc_ref_count_byond = inc_ref_count;
+		raw_types::funcs::dec_ref_count_byond = dec_ref_count;
+		raw_types::funcs::get_list_by_id_byond = get_list_by_id;
+		raw_types::funcs::get_assoc_element_byond = get_assoc_element;
+		raw_types::funcs::set_assoc_element_byond = set_assoc_element;
+		raw_types::funcs::create_list_byond = create_list;
+		raw_types::funcs::append_to_list_byond = append_to_list;
+		raw_types::funcs::remove_from_list_byond = remove_from_list;
+		raw_types::funcs::get_length_byond = get_length;
 	}
 
 	for cthook in inventory::iter::<hooks::CompileTimeHook> {
@@ -201,6 +191,7 @@ fn hello_proc_hook(some_datum: Value) {
 	}
 }
 
+/*
 #[hook("/datum/getvartest/proc/hookme")]
 fn datum_proc_hook_test() {
 	if let Some(mut l) = src.get_list("listvar") {
@@ -218,6 +209,7 @@ fn datum_proc_hook_test() {
 	list.remove(&Value::from(1.0));
 	Value::from(list.len() as f32)
 }
+*/
 
 #[cfg(test)]
 mod tests {
