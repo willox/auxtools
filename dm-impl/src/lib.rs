@@ -65,7 +65,7 @@ fn extract_args(a: &syn::FnArg) -> &syn::PatType {
 ///
 /// Here we define a hook that multiplies a number passed to it by two.
 /// It can now be used to hook procs, for example `hooks::hook("/proc/double_up", double_up);`
-/// ```rust
+/// ```ignore
 /// #[hook]
 /// fn double_up(num: Value) {
 ///		if let Some(num) = num.as_number() {
@@ -78,7 +78,7 @@ fn extract_args(a: &syn::FnArg) -> &syn::PatType {
 /// This function is used to hook `/mob/proc/on_honked`.
 /// By specifying the proc path, we hook the proc immediately upon startup.
 ///
-/// ```rust
+/// ```ignore
 /// #[hook("/mob/proc/on_honked")]
 /// fn on_honked(honker: Value) {
 ///		src.call("gib", &[]);
