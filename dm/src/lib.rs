@@ -3,6 +3,7 @@
 use context::DMContext;
 pub use dm_impl;
 use dm_impl::hook;
+use runtime::DMResult;
 use std::ffi::c_void;
 use value::Value;
 
@@ -10,9 +11,9 @@ pub mod byond_ffi;
 pub mod context;
 pub mod hooks;
 pub mod list;
-pub mod plugin;
 pub mod proc;
 pub mod raw_types;
+pub mod runtime;
 pub mod string;
 pub mod value;
 
@@ -184,10 +185,11 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 #[hook("/proc/react")]
 fn hello_proc_hook(some_datum: Value) {
-	if let Some(num) = some_datum.get_number("hello") {
-		(num * 2.0).into()
+	let numba = some_datum.get_number("listvar")?;
+	if let Ok(num) = some_datum.get_number("hello") {
+		Ok(Value::from(num * 2.0))
 	} else {
-		Value::null()
+		Ok(Value::null())
 	}
 }
 

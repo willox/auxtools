@@ -3,6 +3,7 @@ use super::raw_types;
 use super::value::Value;
 use super::DMContext;
 use crate::raw_types::values::IntoRawValue;
+use crate::runtime::DMResult;
 use detour::RawDetour;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
@@ -86,7 +87,7 @@ pub fn init() -> Result<(), String> {
 }
 
 pub type ProcHook =
-	for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, &mut Vec<Value<'a>>) -> Value<'a>;
+	for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, &mut Vec<Value<'a>>) -> DMResult<'a>;
 
 thread_local! {
 	static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new());
@@ -156,8 +157,6 @@ extern "C" fn call_proc_by_id_hook(
 
 			// Stealing our reference out of the Value
 			let result = hook(&ctx, src, usr, &mut args);
-			let result_raw = unsafe { result.into_raw_value() };
-			std::mem::forget(result);
 
 			// We have to
 			for val in &args {
@@ -166,7 +165,17 @@ extern "C" fn call_proc_by_id_hook(
 				}
 			}
 
-			result_raw
+			match result {
+				Ok(r) => {
+					let result_raw = unsafe { r.into_raw_value() };
+					std::mem::forget(r);
+					result_raw
+				}
+				Err(e) => {
+					msgbox::create("Wtf bro?", e.message.as_str(), msgbox::IconType::Error);
+					unsafe { Value::null().into_raw_value() }
+				}
+			}
 		}
 		None => unsafe {
 			call_proc_by_id_original_trampoline(

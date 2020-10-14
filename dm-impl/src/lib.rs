@@ -119,7 +119,7 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 			src: Value<'a>,
 			usr: Value<'a>,
 			args: &mut Vec<Value<'a>>,
-		) -> Value <'a>
+		) -> DMResult<'a>
 	};
 
 	let body = &input.block;

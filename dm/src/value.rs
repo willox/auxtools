@@ -2,6 +2,9 @@ use super::raw_types;
 use super::string;
 use crate::list;
 use crate::raw_types::values::IntoRawValue;
+#[macro_use]
+use crate::runtime;
+use crate::runtime::{ConversionResult, DMResult};
 use std::ffi::CString;
 use std::fmt;
 use std::marker::PhantomData;
@@ -49,7 +52,7 @@ impl<'b> Value<'b> {
 		};
 	}
 
-	fn get_by_id(&self, name_id: u32) -> Value<'b> {
+	fn get_by_id(&self, name_id: u32) -> DMResult<'b> {
 		let mut val = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
@@ -57,51 +60,64 @@ impl<'b> Value<'b> {
 
 		// TODO: Should handle error
 		unsafe {
-			assert_eq!(
-				raw_types::funcs::get_variable(
-					&mut val,
-					self.value,
-					raw_types::strings::StringId(name_id),
-				),
-				1
-			);
+			if raw_types::funcs::get_variable(
+				&mut val,
+				self.value,
+				raw_types::strings::StringId(name_id),
+			) != 1
+			{
+				let varname: String = string::StringRef::from_id(name_id).into();
+				runtime!("Could not read {}.{}", &self, varname);
+			}
 
-			Self::from_raw(val)
+			Ok(Self::from_raw(val))
 		}
 	}
 
 	fn set_by_id(&self, name_id: u32, new_value: raw_types::values::Value) {
 		// TODO: handle error
 		unsafe {
-			assert_eq!(
-				raw_types::funcs::set_variable(
-					self.value,
-					raw_types::strings::StringId(name_id),
-					new_value
-				),
-				1
-			);
+			if raw_types::funcs::set_variable(
+				self.value,
+				raw_types::strings::StringId(name_id),
+				new_value,
+			) != 1
+			{
+				//let varname: String = string::StringRef::from_id(name_id).into();
+				//runtime!("Could not write to {}.{}", self, varname);
+				// Are we sure we want set to return a Result?
+				panic!("Could not write var");
+			}
 		}
 	}
 
 	/// Gets a variable by name.
-	pub fn get<S: Into<string::StringRef>>(&self, name: S) -> Value<'b> {
+	pub fn get<S: Into<string::StringRef>>(&self, name: S) -> DMResult<'b> {
 		self.get_by_id(name.into().get_id())
 	}
 
 	/// Gets a variable by name and safely casts it to a float.
-	pub fn get_number<S: Into<string::StringRef>>(&self, name: S) -> Option<f32> {
-		self.get(name).as_number()
+	pub fn get_number<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<f32> {
+		match self.get(name)?.as_number() {
+			Some(num) => Ok(num),
+			None => runtime!("Attempt to interpret non-number value as float"),
+		}
 	}
 
 	/// Gets a variable by name and safely casts it to a string.
-	pub fn get_string<S: Into<string::StringRef>>(&self, name: S) -> Option<String> {
-		self.get(name).as_string()
+	pub fn get_string<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<String> {
+		match self.get(name)?.as_string() {
+			Some(s) => Ok(s),
+			None => runtime!("Attempt to interpret non-string value as String"),
+		}
 	}
 
 	/// Gets a variable by name and safely casts it to a [list::List].
-	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> Option<list::List> {
-		self.get(name).as_list()
+	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<list::List> {
+		match self.get(name)?.as_list() {
+			Some(lst) => Ok(lst),
+			None => runtime!("Attempt to interpret non-list value as List"),
+		}
 	}
 
 	/// Sets a variable by name to a given value.
