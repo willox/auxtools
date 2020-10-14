@@ -74,7 +74,11 @@ impl<'b> Value<'b> {
 		}
 	}
 
-	fn set_by_id(&self, name_id: u32, new_value: raw_types::values::Value) {
+	fn set_by_id(
+		&self,
+		name_id: u32,
+		new_value: raw_types::values::Value,
+	) -> Result<(), runtime::Runtime> {
 		// TODO: handle error
 		unsafe {
 			if raw_types::funcs::set_variable(
@@ -83,12 +87,11 @@ impl<'b> Value<'b> {
 				new_value,
 			) != 1
 			{
-				//let varname: String = string::StringRef::from_id(name_id).into();
-				//runtime!("Could not write to {}.{}", self, varname);
-				// Are we sure we want set to return a Result?
-				panic!("Could not write var");
+				let varname: String = string::StringRef::from_id(name_id).into();
+				runtime!("Could not write to {}.{}", self, varname);
 			}
 		}
+		Ok(())
 	}
 
 	/// Gets a variable by name.
