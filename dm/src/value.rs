@@ -10,7 +10,6 @@ use std::fmt;
 use std::marker::PhantomData;
 
 /// `Value` represents any value a DM variable can hold, such as numbers, strings, datums, etc.
-#[derive(Clone)]
 pub struct Value<'a> {
 	pub value: raw_types::values::Value,
 	pub phantom: PhantomData<&'a raw_types::values::Value>,
@@ -39,6 +38,17 @@ impl<'b> Value<'b> {
 			value: raw,
 			phantom: PhantomData {},
 		}
+	}
+
+	/// Equivalent to DM's `global.vars`.
+	pub fn globals() -> Value<'static> {
+		return Value {
+			value: raw_types::values::Value {
+				tag: raw_types::values::ValueTag::Null,
+				data: raw_types::values::ValueData { number: 0.0 },
+			},
+			phantom: PhantomData {},
+		};
 	}
 
 	/// Equivalent to DM's `null`.
@@ -116,8 +126,10 @@ impl<'b> Value<'b> {
 	}
 
 	/// Gets a variable by name and safely casts it to a [list::List].
-	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<list::List> {
-		match self.get(name)?.as_list() {
+	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<list::List<'b>> {
+		let var = self.get(name)?;
+
+		match var.as_list() {
 			Some(lst) => Ok(lst),
 			None => runtime!("Attempt to interpret non-list value as List"),
 		}
@@ -153,7 +165,7 @@ impl<'b> Value<'b> {
 	}
 
 	/// Check if the current value is a list and casts it.
-	pub fn as_list(&self) -> Option<list::List> {
+	pub fn as_list(&self) -> Option<list::List<'b>> {
 		match self.value.tag {
 			raw_types::values::ValueTag::List => unsafe {
 				Some(list::List::from_id(self.value.data.id))
@@ -204,6 +216,22 @@ impl<'b> Value<'b> {
 	/// blah blah lifetime is not verified with this so use at your peril
 	pub unsafe fn from_raw(v: raw_types::values::Value) -> Self {
 		Value::new(v.tag, v.data)
+	}
+
+	/// same as from_raw but does not increment the reference count (assumes we already own this reference)
+	pub unsafe fn from_raw_owned<'a>(v: raw_types::values::Value) -> Value<'a> {
+		Value {
+			value: v,
+			phantom: PhantomData {},
+		}
+	}
+}
+
+impl<'a> Clone for Value<'a> {
+	fn clone(&self) -> Value<'a> {
+		unsafe {
+			Value::from_raw(self.into_raw_value())
+		}
 	}
 }
 

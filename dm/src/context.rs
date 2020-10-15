@@ -37,7 +37,9 @@ impl<'a> DMContext<'_> {
 		&self,
 		name: S,
 	) -> ConversionResult<list::List> {
-		unsafe { Value::new(ValueTag::World, ValueData { id: 1 }).get_list(name) }
+		let globals = Value::globals();
+		let list = globals.get_list(name)?;
+		Ok(list)
 	}
 
 	pub fn get_world<S: Into<string::StringRef>>(&self, name: S) -> Value<'a> {
