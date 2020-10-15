@@ -116,7 +116,10 @@ impl<'b> Value<'b> {
 	}
 
 	/// Gets a variable by name and safely casts it to a [list::List].
-	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<list::List> {
+	pub fn get_list<S: Into<string::StringRef>>(
+		&self,
+		name: S,
+	) -> ConversionResult<list::List<'b>> {
 		match self.get(name)?.as_list() {
 			Some(lst) => Ok(lst),
 			None => runtime!("Attempt to interpret non-list value as List"),
@@ -153,7 +156,7 @@ impl<'b> Value<'b> {
 	}
 
 	/// Check if the current value is a list and casts it.
-	pub fn as_list(&self) -> Option<list::List> {
+	pub fn as_list(&self) -> Option<list::List<'b>> {
 		match self.value.tag {
 			raw_types::values::ValueTag::List => unsafe {
 				Some(list::List::from_id(self.value.data.id))
@@ -170,7 +173,7 @@ impl<'b> Value<'b> {
 	/// ```rust
 	/// src.call("explode", &[&Value::from(3.0)]);
 	/// ```
-	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Self]) -> Value<'b> {
+	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Self]) -> DMResult<'b> {
 		let mut ret = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
@@ -179,25 +182,25 @@ impl<'b> Value<'b> {
 		unsafe {
 			let procname = String::from(procname.as_ref()).replace("_", " ");
 			let args: Vec<_> = args.iter().map(|e| e.into_raw_value()).collect();
-			let name_ref = string::StringRef::from(procname);
+			let name_ref = string::StringRef::from(&procname);
 
 			// TODO: handle error
-			assert_eq!(
-				raw_types::funcs::call_datum_proc_by_name(
-					&mut ret,
-					Value::null().into_raw_value(),
-					2,
-					name_ref.value.value.data.string,
-					self.value,
-					args.as_ptr(),
-					args.len(),
-					0,
-					0
-				),
-				1
-			);
+			if raw_types::funcs::call_datum_proc_by_name(
+				&mut ret,
+				Value::null().into_raw_value(),
+				2,
+				name_ref.value.value.data.string,
+				self.value,
+				args.as_ptr(),
+				args.len(),
+				0,
+				0,
+			) != 1
+			{
+				runtime!("Error occurred while calling {}", procname)
+			}
 
-			Value::from_raw(ret)
+			Ok(Value::from_raw(ret))
 		}
 	}
 
