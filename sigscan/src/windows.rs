@@ -57,6 +57,7 @@ impl Scanner {
 		let mut data_current = self.data_begin;
 		let data_end = self.data_end;
 		let mut signature_offset = 0;
+		let mut result: Option<*mut u8> = None;
 
 		unsafe {
 			while data_current <= data_end {
@@ -64,9 +65,16 @@ impl Scanner {
 					|| signature[signature_offset] == Some(*data_current)
 				{
 					if signature.len() <= signature_offset + 1 {
-						return Some(data_current.offset(-(signature_offset as isize)));
+						if result.is_some() {
+							// Found two matches.
+							return None;
+						}
+						result = Some(data_current.offset(-(signature_offset as isize)));
+						data_current = data_current.offset(-(signature_offset as isize));
+						signature_offset = 0;
+					} else {
+						signature_offset += 1;
 					}
-					signature_offset += 1;
 				} else {
 					data_current = data_current.offset(-(signature_offset as isize));
 					signature_offset = 0;
@@ -76,7 +84,7 @@ impl Scanner {
 			}
 		}
 
-		None
+		result
 	}
 }
 
