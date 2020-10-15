@@ -63,14 +63,14 @@ impl fmt::Display for Value {
 }
 
 pub trait IntoRawValue {
-	unsafe fn into_raw_value(&self) -> Value;
+	unsafe fn into_raw_value(self) -> Value;
 }
 
 impl IntoRawValue for f32 {
-	unsafe fn into_raw_value(&self) -> Value {
+	unsafe fn into_raw_value(self) -> Value {
 		Value {
 			tag: ValueTag::Number,
-			data: ValueData { number: *self },
+			data: ValueData { number: self },
 		}
 	}
 }

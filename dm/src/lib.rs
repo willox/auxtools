@@ -187,9 +187,9 @@ byond_ffi_fn! { auxtools_init(_input) {
 fn hello_proc_hook(some_datum: Value) {
 	let mut l = list::List::new();
 
-	l.append(&12.0);
-	l.append(&12.0);
-	l.append(&12.0);
+	l.append(12.0);
+	l.append(12.0);
+	l.append(12.0);
 
 	Ok(l.into())
 }

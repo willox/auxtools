@@ -162,7 +162,7 @@ extern "C" fn call_proc_by_id_hook(
 
 			match result {
 				Ok(r) => {
-					let result_raw = unsafe { r.into_raw_value() };
+					let result_raw = unsafe { (&r).into_raw_value() };
 					// Stealing our reference out of the Value
 					std::mem::forget(r);
 					result_raw

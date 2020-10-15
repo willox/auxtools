@@ -105,7 +105,7 @@ impl<'a> List<'a> {
 		}
 	}
 
-	pub fn set<I: ListKey, V: IntoRawValue>(&mut self, index: I, value: &V) {
+	pub fn set<I: ListKey, V: IntoRawValue>(&mut self, index: I, value: V) {
 		// TODO: Should handle error
 		unsafe {
 			raw_types::funcs::set_assoc_element(
@@ -116,13 +116,13 @@ impl<'a> List<'a> {
 		}
 	}
 
-	pub fn append<V: IntoRawValue>(&mut self, value: &V) {
+	pub fn append<V: IntoRawValue>(&mut self, value: V) {
 		unsafe {
 			raw_types::funcs::append_to_list(self.value.into_raw_value(), value.into_raw_value());
 		}
 	}
 
-	pub fn remove<V: IntoRawValue>(&mut self, value: &V) {
+	pub fn remove<V: IntoRawValue>(&mut self, value: V) {
 		unsafe {
 			raw_types::funcs::remove_from_list(self.value.into_raw_value(), value.into_raw_value());
 		}
@@ -146,8 +146,8 @@ impl<'a> From<Value<'a>> for List<'a> {
 	}
 }
 
-impl<'a> raw_types::values::IntoRawValue for List<'a> {
-	unsafe fn into_raw_value(&self) -> raw_types::values::Value {
+impl<'a> raw_types::values::IntoRawValue for &List<'a> {
+	unsafe fn into_raw_value(self) -> raw_types::values::Value {
 		self.value.into_raw_value()
 	}
 }

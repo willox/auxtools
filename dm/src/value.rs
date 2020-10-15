@@ -139,7 +139,7 @@ impl<'b> Value<'b> {
 	pub fn set<S: Into<string::StringRef>, V: raw_types::values::IntoRawValue>(
 		&self,
 		name: S,
-		new_value: &V,
+		new_value: V,
 	) {
 		unsafe {
 			self.set_by_id(name.into().get_id(), new_value.into_raw_value());
@@ -324,8 +324,8 @@ impl From<bool> for Value<'_> {
 	}
 }
 
-impl raw_types::values::IntoRawValue for Value<'_> {
-	unsafe fn into_raw_value(&self) -> raw_types::values::Value {
+impl raw_types::values::IntoRawValue for &Value<'_> {
+	unsafe fn into_raw_value(self) -> raw_types::values::Value {
 		self.value
 	}
 }
