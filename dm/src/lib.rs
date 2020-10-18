@@ -185,12 +185,13 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 #[hook("/proc/react")]
 fn hello_proc_hook(some_datum: Value) {
-	let numba = some_datum.get_number("listvar")?;
-	if let Ok(num) = some_datum.get_number("hello") {
-		Ok(Value::from(num * 2.0))
-	} else {
-		Ok(Value::null())
-	}
+	let mut l = list::List::new();
+
+	l.append(12.0);
+	l.append(12.0);
+	l.append(12.0);
+
+	Ok(l.into())
 }
 
 /*

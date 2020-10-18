@@ -1,4 +1,4 @@
-use super::proc::Proc;
+use super::proc::{get_proc, Proc};
 use super::raw_types;
 use super::value::Value;
 use super::DMContext;
@@ -147,27 +147,23 @@ extern "C" fn call_proc_by_id_hook(
 			let mut args: Vec<Value>;
 
 			unsafe {
+				// TODO: ref count check
 				src = Value::from_raw(src_raw);
 				usr = Value::from_raw(usr_raw);
+
+				// Taking ownership of args here
 				args = std::slice::from_raw_parts(args_ptr, num_args)
 					.iter()
-					.map(|v| Value::from_raw(*v))
+					.map(|v| Value::from_raw_owned(*v))
 					.collect();
 			}
 
-			// Stealing our reference out of the Value
 			let result = hook(&ctx, src, usr, &mut args);
-
-			// We have to
-			for val in &args {
-				unsafe {
-					assert_eq!(raw_types::funcs::dec_ref_count(val.into_raw_value()), 1);
-				}
-			}
 
 			match result {
 				Ok(r) => {
-					let result_raw = unsafe { r.into_raw_value() };
+					let result_raw = unsafe { (&r).into_raw_value() };
+					// Stealing our reference out of the Value
 					std::mem::forget(r);
 					result_raw
 				}

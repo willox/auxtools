@@ -10,7 +10,6 @@ use std::fmt;
 use std::marker::PhantomData;
 
 /// `Value` represents any value a DM variable can hold, such as numbers, strings, datums, etc.
-#[derive(Clone)]
 pub struct Value<'a> {
 	pub value: raw_types::values::Value,
 	pub phantom: PhantomData<&'a raw_types::values::Value>,
@@ -39,6 +38,17 @@ impl<'b> Value<'b> {
 			value: raw,
 			phantom: PhantomData {},
 		}
+	}
+
+	/// Equivalent to DM's `global.vars`.
+	pub fn globals() -> Value<'static> {
+		return Value {
+			value: raw_types::values::Value {
+				tag: raw_types::values::ValueTag::Null,
+				data: raw_types::values::ValueData { number: 0.0 },
+			},
+			phantom: PhantomData {},
+		};
 	}
 
 	/// Equivalent to DM's `null`.
@@ -120,7 +130,9 @@ impl<'b> Value<'b> {
 		&self,
 		name: S,
 	) -> ConversionResult<list::List<'b>> {
-		match self.get(name)?.as_list() {
+		let var = self.get(name)?;
+
+		match var.as_list() {
 			Some(lst) => Ok(lst),
 			None => runtime!("Attempt to interpret non-list value as List"),
 		}
@@ -130,7 +142,7 @@ impl<'b> Value<'b> {
 	pub fn set<S: Into<string::StringRef>, V: raw_types::values::IntoRawValue>(
 		&self,
 		name: S,
-		new_value: &V,
+		new_value: V,
 	) {
 		unsafe {
 			self.set_by_id(name.into().get_id(), new_value.into_raw_value());
@@ -181,7 +193,14 @@ impl<'b> Value<'b> {
 
 		unsafe {
 			let procname = String::from(procname.as_ref()).replace("_", " ");
-			let args: Vec<_> = args.iter().map(|e| e.into_raw_value()).collect();
+			let args: Vec<_> = args
+				.iter()
+				.map(|e| {
+					let raw = e.into_raw_value();
+					raw_types::funcs::inc_ref_count(raw);
+					raw
+				})
+				.collect();
 			let name_ref = string::StringRef::from(&procname);
 
 			// TODO: handle error
@@ -207,6 +226,20 @@ impl<'b> Value<'b> {
 	/// blah blah lifetime is not verified with this so use at your peril
 	pub unsafe fn from_raw(v: raw_types::values::Value) -> Self {
 		Value::new(v.tag, v.data)
+	}
+
+	/// same as from_raw but does not increment the reference count (assumes we already own this reference)
+	pub unsafe fn from_raw_owned<'a>(v: raw_types::values::Value) -> Value<'a> {
+		Value {
+			value: v,
+			phantom: PhantomData {},
+		}
+	}
+}
+
+impl<'a> Clone for Value<'a> {
+	fn clone(&self) -> Value<'a> {
+		unsafe { Value::from_raw(self.into_raw_value()) }
 	}
 }
 
@@ -299,8 +332,8 @@ impl From<bool> for Value<'_> {
 	}
 }
 
-impl raw_types::values::IntoRawValue for Value<'_> {
-	unsafe fn into_raw_value(&self) -> raw_types::values::Value {
+impl raw_types::values::IntoRawValue for &Value<'_> {
+	unsafe fn into_raw_value(self) -> raw_types::values::Value {
 		self.value
 	}
 }
