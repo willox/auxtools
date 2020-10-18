@@ -2,7 +2,7 @@
 
 use context::DMContext;
 pub use dm_impl;
-use dm_impl::hook;
+pub use dm_impl::hook as hook;
 use runtime::DMResult;
 use std::ffi::c_void;
 use value::Value;
@@ -17,7 +17,7 @@ pub mod runtime;
 pub mod string;
 pub mod value;
 
-extern crate inventory;
+pub use inventory;
 
 macro_rules! signature {
 	($sig:tt) => {
@@ -182,17 +182,6 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 	Some("SUCCESS".to_owned())
 } }
-
-#[hook("/proc/react")]
-fn hello_proc_hook(some_datum: Value) {
-	let mut l = list::List::new();
-
-	l.append(12.0);
-	l.append(12.0);
-	l.append(12.0);
-
-	Ok(l.into())
-}
 
 /*
 #[hook("/datum/getvartest/proc/hookme")]

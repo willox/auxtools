@@ -1,4 +1,4 @@
-use super::proc::{get_proc, Proc};
+use super::proc::{Proc};
 use super::raw_types;
 use super::value::Value;
 use super::DMContext;

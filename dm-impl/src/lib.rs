@@ -107,19 +107,21 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 	let cthook_prelude = match proc {
 		Some(p) => quote! {
+			// Inventory's submit method needs "inventory" to be a valid identifier for the module
+			use dm::inventory as inventory;
 			inventory::submit!(
-				crate::hooks::CompileTimeHook::new(#p, #func_name)
+				dm::hooks::CompileTimeHook::new(#p, #func_name)
 			);
 		},
 		None => quote! {},
 	};
 	let signature = quote! {
 		fn #func_name<'a>(
-			ctx: &'a DMContext,
-			src: Value<'a>,
-			usr: Value<'a>,
-			args: &mut Vec<Value<'a>>,
-		) -> DMResult<'a>
+			ctx: &'a dm::context::DMContext,
+			src: dm::value::Value<'a>,
+			usr: dm::value::Value<'a>,
+			args: &mut Vec<dm::value::Value<'a>>,
+		) -> dm::runtime::DMResult<'a>
 	};
 
 	let body = &input.block;
@@ -146,13 +148,13 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	}
 	let _default_null = quote! {
 		#[allow(unreachable_code)]
-		Value::null()
+		dm::value::Value::null()
 	};
 	let result = quote! {
 		#cthook_prelude
 		#signature {
 			for i in 0..#args_len - args.len() {
-				args.push(Value::null())
+				args.push(dm::value::Value::null())
 			}
 			let (#arg_names) = (#proc_arg_unpacker);
 			#body
