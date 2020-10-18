@@ -8,7 +8,7 @@ mod context;
 pub mod hooks;
 mod list;
 mod proc;
-mod raw_types;
+pub mod raw_types;
 mod runtime;
 mod string;
 mod value;
@@ -185,26 +185,6 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 	Some("SUCCESS".to_owned())
 } }
-
-/*
-#[hook("/datum/getvartest/proc/hookme")]
-fn datum_proc_hook_test() {
-	if let Some(mut l) = src.get_list("listvar") {
-		l.set("bonk", &Value::from(7.0));
-
-		src.call(
-			"march_of_progress",
-			&[&1.0.into(), &2.0.into(), &src, &l.into()],
-		);
-	}
-
-	let mut list = list::List::new();
-	list.append(&Value::from(1.0));
-	list.append(&src.get("hello"));
-	list.remove(&Value::from(1.0));
-	Value::from(list.len() as f32)
-}
-*/
 
 #[cfg(test)]
 mod tests {

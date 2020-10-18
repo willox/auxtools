@@ -189,6 +189,11 @@ impl<'b> Value<'b> {
 		};
 
 		unsafe {
+			// Increment ref-count of args permenently before passing them on
+			for v in args {
+				raw_types::funcs::inc_ref_count(v.into_raw_value());
+			}
+
 			let procname = String::from(procname.as_ref()).replace("_", " ");
 			let args: Vec<_> = args.iter().map(|e| e.into_raw_value()).collect();
 			let name_ref = string::StringRef::from(procname);
