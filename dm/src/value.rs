@@ -123,7 +123,10 @@ impl<'b> Value<'b> {
 	}
 
 	/// Gets a variable by name and safely casts it to a [list::List].
-	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<list::List<'b>> {
+	pub fn get_list<S: Into<string::StringRef>>(
+		&self,
+		name: S,
+	) -> ConversionResult<list::List<'b>> {
 		let var = self.get(name)?;
 
 		match var.as_list() {
@@ -204,7 +207,8 @@ impl<'b> Value<'b> {
 				args.as_ptr(),
 				args.len(),
 				0,
-				0) == 1
+				0,
+			) == 1
 			{
 				return Ok(Value::from_raw_owned(ret));
 			}
@@ -220,12 +224,13 @@ impl<'b> Value<'b> {
 	/// let my_string = Value::from_string("Testing!");
 	/// ```
 	pub fn from_string<S: AsRef<str>>(data: S) -> ConversionResult<Value<'static>> {
-		let string = CString::new(data.as_ref())
-			.or(runtime!("attempt to convert string containing interior null byte(s) to byond string"))?;
+		let string = CString::new(data.as_ref()).or(runtime!(
+			"attempt to convert string containing interior null byte(s) to byond string"
+		))?;
 
 		unsafe {
 			let mut id = raw_types::strings::StringId(0);
-	
+
 			assert_eq!(
 				raw_types::funcs::get_string_id(&mut id, string.as_ptr(), 1, 0, 1),
 				1
@@ -233,11 +238,11 @@ impl<'b> Value<'b> {
 
 			let val = Value::new(
 				raw_types::values::ValueTag::String,
-				raw_types::values::ValueData { string: id }
+				raw_types::values::ValueData { string: id },
 			);
 
 			Ok(val)
-		}		
+		}
 	}
 
 	/// blah blah lifetime is not verified with this so use at your peril
@@ -256,9 +261,7 @@ impl<'b> Value<'b> {
 
 impl<'a> Clone for Value<'a> {
 	fn clone(&self) -> Value<'a> {
-		unsafe {
-			Value::from_raw(self.into_raw_value())
-		}
+		unsafe { Value::from_raw(self.into_raw_value()) }
 	}
 }
 

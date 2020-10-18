@@ -1,4 +1,4 @@
-use super::proc::{Proc};
+use super::proc::Proc;
 use super::raw_types;
 use super::value::Value;
 use super::DMContext;
@@ -8,8 +8,8 @@ use detour::RawDetour;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::sync::Once;
 use std::ffi::c_void;
+use std::sync::Once;
 
 pub struct CompileTimeHook {
 	pub proc_path: &'static str,
@@ -168,7 +168,11 @@ extern "C" fn call_proc_by_id_hook(
 				}
 				Err(e) => {
 					// TODO: Some info about the hook would be useful (as the hook is never part of byond's stack, the runtime won't show it.)
-					src.call("stack_trace", &[&Value::from_string(e.message.as_str()).unwrap()]).unwrap();
+					src.call(
+						"stack_trace",
+						&[&Value::from_string(e.message.as_str()).unwrap()],
+					)
+					.unwrap();
 					unsafe { Value::null().into_raw_value() }
 				}
 			}

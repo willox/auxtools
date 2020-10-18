@@ -93,25 +93,31 @@ impl<'a> List<'a> {
 
 		unsafe {
 			if raw_types::funcs::get_assoc_element(
-					&mut value,
-					self.value.into_raw_value(),
-					index.as_list_key()
-			) == 1 {
+				&mut value,
+				self.value.into_raw_value(),
+				index.as_list_key(),
+			) == 1
+			{
 				return Ok(Value::from_raw(value));
 			}
-			
+
 			runtime!("failed to get assoc list entry (probably given an invalid list or key)")
 		}
 	}
 
-	pub fn set<I: ListKey, V: IntoRawValue>(&mut self, index: I, value: V) -> Result<(), runtime::Runtime> {
+	pub fn set<I: ListKey, V: IntoRawValue>(
+		&mut self,
+		index: I,
+		value: V,
+	) -> Result<(), runtime::Runtime> {
 		unsafe {
 			if raw_types::funcs::set_assoc_element(
 				self.value.into_raw_value(),
 				index.as_list_key(),
 				value.into_raw_value(),
-			) == 1 {
-				return Ok(())
+			) == 1
+			{
+				return Ok(());
 			}
 
 			runtime!("failed to set assoc list entry (probably given an invalid list or key)")

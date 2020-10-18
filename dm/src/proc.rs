@@ -1,8 +1,8 @@
 use super::raw_types;
 use super::raw_types::procs::{ProcEntry, ProcId};
+use super::runtime;
 use super::string::StringRef;
 use super::value::Value;
-use super::runtime;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -68,7 +68,8 @@ impl<'a> Proc {
 				args.as_ptr(),
 				args.len(),
 				0,
-				0) == 1
+				0,
+			) == 1
 			{
 				return Ok(Value::from_raw_owned(ret));
 			}

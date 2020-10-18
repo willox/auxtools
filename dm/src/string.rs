@@ -1,6 +1,6 @@
 use super::raw_types;
-use super::value::Value;
 use super::runtime::ConversionResult;
+use super::value::Value;
 use std::ffi::CStr;
 use std::fmt;
 
