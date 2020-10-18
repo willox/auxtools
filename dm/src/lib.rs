@@ -1,21 +1,24 @@
 //! For when BYOND is not enough. Probably often.
 
-use context::DMContext;
-pub use dm_impl;
-pub use dm_impl::hook as hook;
-use runtime::DMResult;
+use dm_impl;
 use std::ffi::c_void;
-use value::Value;
 
-pub mod byond_ffi;
-pub mod context;
+mod byond_ffi;
+mod context;
 pub mod hooks;
-pub mod list;
-pub mod proc;
-pub mod raw_types;
-pub mod runtime;
-pub mod string;
-pub mod value;
+mod list;
+mod proc;
+mod raw_types;
+mod runtime;
+mod string;
+mod value;
+
+pub use context::DMContext;
+pub use dm_impl::hook;
+pub use list::List;
+pub use runtime::{DMResult, ConversionResult};
+pub use string::StringRef;
+pub use value::Value;
 
 pub use inventory;
 

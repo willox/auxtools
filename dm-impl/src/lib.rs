@@ -117,11 +117,11 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	};
 	let signature = quote! {
 		fn #func_name<'a>(
-			ctx: &'a dm::context::DMContext,
-			src: dm::value::Value<'a>,
-			usr: dm::value::Value<'a>,
-			args: &mut Vec<dm::value::Value<'a>>,
-		) -> dm::runtime::DMResult<'a>
+			ctx: &'a dm::DMContext,
+			src: dm::Value<'a>,
+			usr: dm::Value<'a>,
+			args: &mut Vec<dm::Value<'a>>,
+		) -> dm::DMResult<'a>
 	};
 
 	let body = &input.block;
@@ -148,13 +148,13 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	}
 	let _default_null = quote! {
 		#[allow(unreachable_code)]
-		dm::value::Value::null()
+		dm::Value::null()
 	};
 	let result = quote! {
 		#cthook_prelude
 		#signature {
 			for i in 0..#args_len - args.len() {
-				args.push(dm::value::Value::null())
+				args.push(dm::Value::null())
 			}
 			let (#arg_names) = (#proc_arg_unpacker);
 			#body
