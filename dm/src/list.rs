@@ -1,6 +1,6 @@
 use crate::raw_types;
 use crate::raw_types::values::IntoRawValue;
-use crate::string;
+use crate::runtime;
 use crate::value::Value;
 
 /// Represents a DM `list`.
@@ -85,34 +85,36 @@ impl<'a> List<'a> {
 		}
 	}
 
-	pub fn get<I: ListKey>(&self, index: I) -> Value<'a> {
+	pub fn get<I: ListKey>(&self, index: I) -> runtime::DMResult<'a> {
 		let mut value = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
 		};
 
-		// TODO: Should handle error
 		unsafe {
-			assert_eq!(
-				raw_types::funcs::get_assoc_element(
+			if raw_types::funcs::get_assoc_element(
 					&mut value,
 					self.value.into_raw_value(),
 					index.as_list_key()
-				),
-				1
-			);
-			Value::from_raw(value)
+			) == 1 {
+				return Ok(Value::from_raw(value));
+			}
+			
+			runtime!("failed to get assoc list entry (probably given an invalid list or key)")
 		}
 	}
 
-	pub fn set<I: ListKey, V: IntoRawValue>(&mut self, index: I, value: V) {
-		// TODO: Should handle error
+	pub fn set<I: ListKey, V: IntoRawValue>(&mut self, index: I, value: V) -> Result<(), runtime::Runtime> {
 		unsafe {
-			raw_types::funcs::set_assoc_element(
+			if raw_types::funcs::set_assoc_element(
 				self.value.into_raw_value(),
 				index.as_list_key(),
 				value.into_raw_value(),
-			);
+			) == 1 {
+				return Ok(())
+			}
+
+			runtime!("failed to set assoc list entry (probably given an invalid list or key)")
 		}
 	}
 
@@ -182,25 +184,5 @@ impl ListKey for u32 {
 				number: self as f32,
 			},
 		}
-	}
-}
-
-fn str_to_listkey<S: Into<String>>(s: S) -> raw_types::values::Value {
-	unsafe {
-		string::StringRef::new(s.into().as_str())
-			.value
-			.into_raw_value()
-	}
-}
-
-impl ListKey for &str {
-	fn as_list_key(self) -> raw_types::values::Value {
-		str_to_listkey(self)
-	}
-}
-
-impl ListKey for &String {
-	fn as_list_key(self) -> raw_types::values::Value {
-		str_to_listkey(self)
 	}
 }

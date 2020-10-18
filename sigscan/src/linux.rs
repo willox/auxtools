@@ -51,7 +51,6 @@ impl Scanner {
 		})
 	}
 
-	// TODO: Fail on multiple matches
 	pub fn find(&self, signature: Vec<Option<u8>>) -> Option<*mut u8> {
 		let module_name = CString::new(self.module_name.clone()).unwrap();
 		let module_name_ptr = module_name.as_ptr();

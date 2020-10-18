@@ -6,6 +6,9 @@ use super::values;
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
+// TODO: Doesn't belong here at all
+pub static mut IS_INITIALIZED: bool = false;
+
 // Function pointers exported by C++ but set by Rust
 // Rust shouldn't call these so we're going to treat them as void ptrs for simplicity
 extern "C" {

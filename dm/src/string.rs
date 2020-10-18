@@ -1,5 +1,6 @@
 use super::raw_types;
 use super::value::Value;
+use super::runtime::ConversionResult;
 use std::ffi::CStr;
 use std::fmt;
 
@@ -8,14 +9,13 @@ pub struct StringRef {
 }
 
 impl StringRef {
-	pub fn new(string: &str) -> Self {
-		StringRef {
-			value: Value::from(string),
-		}
+	pub fn new(string: &str) -> ConversionResult<Self> {
+		Ok(StringRef {
+			value: Value::from_string(string)?,
+		})
 	}
 
 	pub fn from_value(value: Value) -> Option<Self> {
-		// TODO: Check type with a nice api
 		if value.value.tag != raw_types::values::ValueTag::String {
 			return None;
 		}
@@ -27,7 +27,6 @@ impl StringRef {
 	}
 
 	pub unsafe fn from_id(id: u32) -> Self {
-		// TODO: Could check the string id is valid
 		StringRef {
 			value: Value::from_raw(raw_types::values::Value {
 				tag: raw_types::values::ValueTag::String,
@@ -49,27 +48,8 @@ impl Clone for StringRef {
 
 impl fmt::Debug for StringRef {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		// TODO: Show ref count? Escape special chars?
 		let data: String = self.clone().into();
 		write!(f, "{}", data)
-	}
-}
-
-impl From<&str> for StringRef {
-	fn from(s: &str) -> Self {
-		StringRef::new(s)
-	}
-}
-
-impl From<String> for StringRef {
-	fn from(s: String) -> Self {
-		StringRef::new(s.as_str())
-	}
-}
-
-impl From<&String> for StringRef {
-	fn from(s: &String) -> Self {
-		StringRef::new(s.as_str())
 	}
 }
 

@@ -44,7 +44,6 @@ macro_rules! signatures {
 const BYONDCORE: &'static str = "byondcore.dll";
 #[cfg(windows)]
 signatures! {
-	string_table => "A1 ?? ?? ?? ?? 8B 04 ?? 85 C0 0F 84 ?? ?? ?? ?? 80 3D ?? ?? ?? ?? 00 8B 18",
 	get_proc_array_entry => "E8 ?? ?? ?? ?? 8B C8 8D 45 ?? 6A 01 50 FF 76 ?? 8A 46 ?? FF 76 ?? FE C0",
 	get_string_id => "55 8B EC 8B 45 ?? 83 EC ?? 53 56 8B 35",
 	call_proc_by_id => "55 8B EC 81 EC ?? ?? ?? ?? A1 ?? ?? ?? ?? 33 C5 89 45 ?? 8B 55 ?? 8B 45",
@@ -67,7 +66,6 @@ signatures! {
 const BYONDCORE: &'static str = "libbyond.so";
 #[cfg(unix)]
 signatures! {
-	string_table => "A1 ?? ?? ?? ?? 8B 04 ?? 85 C0 74 ?? 8B 18 89 75 ?? 89 34 24 E8 ?? ?? ?? ??",
 	get_proc_array_entry => "E8 ?? ?? ?? ?? 8B 00 89 04 24 E8 ?? ?? ?? ?? 8B 00 89 44 24 ?? 8D 45 ??",
 	get_string_id => "55 89 E5 57 56 89 CE 53 89 D3 83 EC 5C 8B 55 ?? 85 C0 88 55 ?? 0F 84 ?? ?? ?? ??",
 	call_proc_by_id => "55 89 E5 81 EC D8 00 00 00 89 5D ?? 89 C3 0F B6 45 ?? 81 7D ?? FF FF 00 00",
@@ -119,7 +117,11 @@ macro_rules! with_scanner_by_call {
 }
 
 byond_ffi_fn! { auxtools_init(_input) {
-	// TODO: Don't initialize a second time
+	unsafe {
+		if raw_types::funcs::IS_INITIALIZED {
+			return Some("SUCCESS".to_owned())
+		}
+	}
 
 	let byondcore = match sigscan::Scanner::for_module(BYONDCORE) {
 		Some(v) => v,
@@ -148,17 +150,8 @@ byond_ffi_fn! { auxtools_init(_input) {
 		get_list_by_id
 	}
 
-	let string_table: *mut raw_types::strings::StringTable;
-	if let Some(ptr) = byondcore.find(SIGNATURES.string_table.to_vec()) {
-		unsafe {
-			// TODO: Could be nulls
-			string_table = *(ptr.offset(1) as *mut *mut raw_types::strings::StringTable);
-		}
-	} else {
-		return Some("FAILED (Couldn't find stringtable)".to_owned())
-	}
-
 	unsafe {
+		raw_types::funcs::IS_INITIALIZED = true;
 		raw_types::funcs::call_proc_by_id_byond = call_proc_by_id;
 		raw_types::funcs::call_datum_proc_by_name_byond = call_datum_proc_by_name;
 		raw_types::funcs::get_proc_array_entry_byond = get_proc_array_entry;

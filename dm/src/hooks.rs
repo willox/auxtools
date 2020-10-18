@@ -9,6 +9,7 @@ use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Once;
+use std::ffi::c_void;
 
 pub struct CompileTimeHook {
 	pub proc_path: &'static str,
@@ -25,7 +26,7 @@ inventory::collect!(CompileTimeHook);
 
 extern "C" {
 
-	static mut call_proc_by_id_original: *const ();
+	static mut call_proc_by_id_original: *const c_void;
 
 	fn call_proc_by_id_original_trampoline(
 		usr: raw_types::values::Value,
@@ -71,7 +72,6 @@ impl std::fmt::Debug for HookFailure {
 }
 
 pub fn init() -> Result<(), String> {
-	// TODO: clean up and pass on errors
 	unsafe {
 		let hook = RawDetour::new(
 			raw_types::funcs::call_proc_by_id_byond as *const (),
@@ -87,7 +87,7 @@ pub fn init() -> Result<(), String> {
 }
 
 pub type ProcHook =
-	for<'a, 'r> fn(&'a DMContext<'r>, Value<'a>, Value<'a>, &mut Vec<Value<'a>>) -> DMResult<'a>;
+	for<'a, 'r> fn(&'a DMContext<'r>, &Value<'a>, &Value<'a>, &mut Vec<Value<'a>>) -> DMResult<'a>;
 
 thread_local! {
 	static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new());
@@ -147,7 +147,6 @@ extern "C" fn call_proc_by_id_hook(
 			let mut args: Vec<Value>;
 
 			unsafe {
-				// TODO: ref count check
 				src = Value::from_raw(src_raw);
 				usr = Value::from_raw(usr_raw);
 
@@ -158,7 +157,7 @@ extern "C" fn call_proc_by_id_hook(
 					.collect();
 			}
 
-			let result = hook(&ctx, src, usr, &mut args);
+			let result = hook(&ctx, &src, &usr, &mut args);
 
 			match result {
 				Ok(r) => {
@@ -168,7 +167,8 @@ extern "C" fn call_proc_by_id_hook(
 					result_raw
 				}
 				Err(e) => {
-					msgbox::create("Wtf bro?", e.message.as_str(), msgbox::IconType::Error);
+					// TODO: Some info about the hook would be useful (as the hook is never part of byond's stack, the runtime won't show it.)
+					src.call("stack_trace", &[&Value::from_string(e.message.as_str()).unwrap()]).unwrap();
 					unsafe { Value::null().into_raw_value() }
 				}
 			}

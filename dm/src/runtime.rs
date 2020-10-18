@@ -1,6 +1,7 @@
 use crate::value::Value;
 use std::result;
 
+#[derive(Debug)]
 pub struct Runtime {
 	pub message: String,
 }
@@ -16,10 +17,10 @@ impl Runtime {
 #[macro_export]
 macro_rules! runtime {
 	($fmt:expr) => {
-		return Err($crate::runtime::Runtime::new($fmt));
+		Err($crate::runtime::Runtime::new($fmt));
 	};
 	($fmt: expr, $( $args:expr ),*) => {
-		return Err($crate::runtime::Runtime::new(format!( $fmt, $( $args, )* )));
+		Err($crate::runtime::Runtime::new(format!( $fmt, $( $args, )* )));
 	};
 }
 

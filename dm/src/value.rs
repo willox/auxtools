@@ -2,7 +2,6 @@ use super::raw_types;
 use super::string;
 use crate::list;
 use crate::raw_types::values::IntoRawValue;
-#[macro_use]
 use crate::runtime;
 use crate::runtime::{ConversionResult, DMResult};
 use std::ffi::CString;
@@ -68,7 +67,6 @@ impl<'b> Value<'b> {
 			data: raw_types::values::ValueData { id: 0 },
 		};
 
-		// TODO: Should handle error
 		unsafe {
 			if raw_types::funcs::get_variable(
 				&mut val,
@@ -77,7 +75,7 @@ impl<'b> Value<'b> {
 			) != 1
 			{
 				let varname: String = string::StringRef::from_id(name_id).into();
-				runtime!("Could not read {}.{}", &self, varname);
+				return runtime!("Could not read {}.{}", &self, varname);
 			}
 
 			Ok(Self::from_raw(val))
@@ -89,7 +87,6 @@ impl<'b> Value<'b> {
 		name_id: u32,
 		new_value: raw_types::values::Value,
 	) -> Result<(), runtime::Runtime> {
-		// TODO: handle error
 		unsafe {
 			if raw_types::funcs::set_variable(
 				self.value,
@@ -98,7 +95,7 @@ impl<'b> Value<'b> {
 			) != 1
 			{
 				let varname: String = string::StringRef::from_id(name_id).into();
-				runtime!("Could not write to {}.{}", self, varname);
+				return runtime!("Could not write to {}.{}", self, varname);
 			}
 		}
 		Ok(())
@@ -182,7 +179,7 @@ impl<'b> Value<'b> {
 	/// ```rust
 	/// src.call("explode", &[&Value::from(3.0)]);
 	/// ```
-	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Self]) -> Value<'b> {
+	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Self]) -> DMResult<'b> {
 		let mut ret = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
@@ -196,26 +193,52 @@ impl<'b> Value<'b> {
 
 			let procname = String::from(procname.as_ref()).replace("_", " ");
 			let args: Vec<_> = args.iter().map(|e| e.into_raw_value()).collect();
-			let name_ref = string::StringRef::from(procname);
+			let name_ref = string::StringRef::new(&procname).unwrap();
 
-			// TODO: handle error
+			if raw_types::funcs::call_datum_proc_by_name(
+				&mut ret,
+				Value::null().into_raw_value(),
+				2,
+				name_ref.value.value.data.string,
+				self.value,
+				args.as_ptr(),
+				args.len(),
+				0,
+				0) == 1
+			{
+				// TODO: ref count check
+				return Ok(Value::from_raw(ret));
+			}
+
+			runtime!("External proc call failed")
+		}
+	}
+
+	/// Creates a Value that references a byond string.
+	///
+	/// # Examples:
+	/// ```rust
+	/// let my_string = Value::from_string("Testing!");
+	/// ```
+	pub fn from_string<S: AsRef<str>>(data: S) -> ConversionResult<Value<'static>> {
+		let string = CString::new(data.as_ref())
+			.or(runtime!("attempt to convert string containing interior null byte(s) to byond string"))?;
+
+		unsafe {
+			let mut id = raw_types::strings::StringId(0);
+	
 			assert_eq!(
-				raw_types::funcs::call_datum_proc_by_name(
-					&mut ret,
-					Value::null().into_raw_value(),
-					2,
-					name_ref.value.value.data.string,
-					self.value,
-					args.as_ptr(),
-					args.len(),
-					0,
-					0
-				),
+				raw_types::funcs::get_string_id(&mut id, string.as_ptr(), 1, 0, 1),
 				1
 			);
 
-			Value::from_raw(ret)
-		}
+			let val = Value::new(
+				raw_types::values::ValueTag::String,
+				raw_types::values::ValueData { string: id }
+			);
+
+			Ok(val)
+		}		
 	}
 
 	/// blah blah lifetime is not verified with this so use at your peril
@@ -243,43 +266,6 @@ impl<'a> Clone for Value<'a> {
 impl fmt::Display for Value<'_> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(f, "{}", self.value)
-	}
-}
-
-fn string_to_raw_value(string: &str) -> Option<raw_types::values::Value> {
-	if let Ok(string) = CString::new(string) {
-		unsafe {
-			let mut index = raw_types::strings::StringId(0);
-
-			assert_eq!(
-				raw_types::funcs::get_string_id(&mut index, string.as_ptr(), 1, 0, 1),
-				1
-			);
-
-			return Some(raw_types::values::Value {
-				tag: raw_types::values::ValueTag::String,
-				data: raw_types::values::ValueData { string: index },
-			});
-		}
-	}
-	None
-}
-
-impl From<&str> for Value<'_> {
-	fn from(s: &str) -> Self {
-		unsafe { Value::from_raw(string_to_raw_value(s).unwrap()) }
-	}
-}
-
-impl From<String> for Value<'_> {
-	fn from(s: String) -> Self {
-		unsafe { Value::from_raw(string_to_raw_value(s.as_str()).unwrap()) }
-	}
-}
-
-impl From<&String> for Value<'_> {
-	fn from(s: &String) -> Self {
-		unsafe { Value::from_raw(string_to_raw_value(s.as_str()).unwrap()) }
 	}
 }
 

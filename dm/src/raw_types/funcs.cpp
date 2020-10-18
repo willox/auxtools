@@ -16,7 +16,6 @@ struct Value {
 // We use these wrappers to hackily handle that and let Rust know an exception happened instead of letting it propogate
 //
 
-// TODO: Could generate this entire file in rust build script
 #define DEFINE_byond(name, ret_type, params) \
     using Fn##name##_byond = ret_type(*)params; \
     extern "C" Fn##name##_byond name##_byond = nullptr;

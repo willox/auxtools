@@ -118,8 +118,8 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let signature = quote! {
 		fn #func_name<'a>(
 			ctx: &'a dm::DMContext,
-			src: dm::Value<'a>,
-			usr: dm::Value<'a>,
+			src: &dm::Value<'a>,
+			usr: &dm::Value<'a>,
 			args: &mut Vec<dm::Value<'a>>,
 		) -> dm::DMResult<'a>
 	};
@@ -153,8 +153,10 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let result = quote! {
 		#cthook_prelude
 		#signature {
-			for i in 0..#args_len - args.len() {
-				args.push(dm::Value::null())
+			if #args_len > args.len() {
+				for i in 0..#args_len - args.len() {
+					args.push(dm::Value::null())
+				}
 			}
 			let (#arg_names) = (#proc_arg_unpacker);
 			#body

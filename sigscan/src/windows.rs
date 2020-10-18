@@ -7,7 +7,7 @@ use winapi::um::processthreadsapi;
 use winapi::um::psapi;
 
 pub struct Scanner {
-	module: minwindef::HMODULE,
+	_module: minwindef::HMODULE,
 	data_begin: *mut u8,
 	data_end: *mut u8,
 }
@@ -46,13 +46,12 @@ impl Scanner {
 		}
 
 		Some(Scanner {
-			module,
+			_module: module,
 			data_begin,
 			data_end,
 		})
 	}
 
-	// TODO: Fail on multiple matches
 	pub fn find(&self, signature: Vec<Option<u8>>) -> Option<*mut u8> {
 		let mut data_current = self.data_begin;
 		let data_end = self.data_end;
