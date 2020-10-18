@@ -4,9 +4,13 @@ use super::value::Value;
 use std::ffi::CStr;
 use std::fmt;
 
+/// A wrapper around [Values](struct.Value.html) that make working with strings a little easier
 pub struct StringRef {
 	pub value: Value<'static>,
 }
+
+unsafe impl Send for StringRef {}
+unsafe impl Sync for StringRef {}
 
 impl StringRef {
 	pub fn new(string: &str) -> ConversionResult<Self> {

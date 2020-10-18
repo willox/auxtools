@@ -8,30 +8,30 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Once;
 
-/// Used to manipulate procs.
-///
-/// ### Override ID
-///
-/// Procs in DM can be defined multiple times.
-///
-/// ```
-/// /proc/hello() // Override #0 or base proc
-///		world << "Hello"
-///
-///	/hello() // Override #1
-///		..() // Calls override #0
-///		world << "World"
-///
-///	/hello() // Override #2
-///		..() // Calls override #1
-///		world << "!!!"
-///	```
-///
-///	To get the nth override, use [get_proc_override]: `let hello = get_proc_override("/proc/hello", n).unwrap()`
-/// [get_proc] retrieves the base proc.
-///
-///
+//
+// ### A note on Override IDs
+//
+// Procs in DM can be defined multiple times.
+//
+// ```
+// /proc/hello() // Override #0 or base proc
+//		world << "Hello"
+//
+//	/hello() // Override #1
+//		..() // Calls override #0
+//		world << "World"
+//
+//	/hello() // Override #2
+//		..() // Calls override #1
+//		world << "!!!"
+//	```
+//
+//	To get the nth override, use [get_proc_override]: `let hello = get_proc_override("/proc/hello", n).unwrap()`
+// [get_proc] retrieves the base proc.
+//
+//
 
+/// Used to hook and call procs.
 #[derive(Clone)]
 pub struct Proc {
 	pub id: ProcId,
@@ -39,11 +39,24 @@ pub struct Proc {
 	pub path: String,
 }
 
+unsafe impl Send for Proc {}
+unsafe impl Sync for Proc {}
+
 impl<'a> Proc {
-	pub fn find<S: Into<String>>(name: S) -> Option<Self> {
-		get_proc(name)
+	/// Finds the first proc with the given path
+	pub fn find<S: Into<String>>(path: S) -> Option<Self> {
+		get_proc(path)
 	}
 
+	/// Calls a global proc with the given arguments.
+	///
+	/// # Examples
+	///
+	/// This is equivalent to `do_explode(3)` in DM.
+	/// ```rust
+	/// let proc = Proc::find("/proc/do_explode").unwrap();
+	/// proc.call(&[&Value::from(3.0)])?;
+	/// ```
 	pub fn call(&self, args: &[&Value<'a>]) -> runtime::DMResult<'a> {
 		let mut ret = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,

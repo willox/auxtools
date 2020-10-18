@@ -110,7 +110,7 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 			// Inventory's submit method needs "inventory" to be a valid identifier for the module
 			use dm::inventory as inventory;
 			inventory::submit!(
-				dm::hooks::CompileTimeHook::new(#p, #func_name)
+				dm::CompileTimeHook::new(#p, #func_name)
 			);
 		},
 		None => quote! {},

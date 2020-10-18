@@ -5,22 +5,24 @@ use std::ffi::c_void;
 
 mod byond_ffi;
 mod context;
-pub mod hooks;
+mod hooks;
 mod list;
 mod proc;
-pub mod raw_types;
+mod raw_types;
 mod runtime;
 mod string;
 mod value;
 
 pub use context::DMContext;
 pub use dm_impl::hook;
+pub use hooks::CompileTimeHook;
 pub use list::List;
 pub use proc::Proc;
-pub use runtime::{ConversionResult, DMResult};
+pub use runtime::{ConversionResult, DMResult, Runtime};
 pub use string::StringRef;
 pub use value::Value;
 
+/// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
 pub use inventory;
 
 macro_rules! signature {

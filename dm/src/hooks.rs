@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::Once;
 
+#[doc(hidden)]
 pub struct CompileTimeHook {
 	pub proc_path: &'static str,
 	pub hook: ProcHook,
@@ -141,7 +142,7 @@ extern "C" fn call_proc_by_id_hook(
 ) -> raw_types::values::Value {
 	return PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
 		Some(hook) => {
-			let ctx = DMContext::new().unwrap();
+			let ctx = unsafe { DMContext::new() };
 			let src;
 			let usr;
 			let mut args: Vec<Value>;

@@ -9,10 +9,15 @@ use std::fmt;
 use std::marker::PhantomData;
 
 /// `Value` represents any value a DM variable can hold, such as numbers, strings, datums, etc.
+///
+/// There's a lot of lifetime shenanigans going on, the gist of it is to just not keep Values around for longer than your hook's execution.
 pub struct Value<'a> {
 	pub value: raw_types::values::Value,
-	pub phantom: PhantomData<&'a raw_types::values::Value>,
+	phantom: PhantomData<&'a raw_types::values::Value>,
 }
+
+unsafe impl Send for Value<'_> {}
+unsafe impl Sync for Value<'_> {}
 
 impl<'a> Drop for Value<'a> {
 	fn drop(&mut self) {

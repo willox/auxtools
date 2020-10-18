@@ -3,12 +3,15 @@ use crate::raw_types::values::IntoRawValue;
 use crate::runtime;
 use crate::value::Value;
 
-/// Represents a DM `list`.
+/// A wrapper around [Values](struct.Value.html) that make working with lists a little easier
 #[allow(unused)]
 pub struct List<'a> {
 	internal: *mut raw_types::lists::List,
 	value: Value<'a>,
 }
+
+unsafe impl Send for List<'_> {}
+unsafe impl Sync for List<'_> {}
 
 #[allow(unused)]
 impl<'a> List<'a> {
