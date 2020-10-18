@@ -6,7 +6,7 @@ use crate::runtime;
 use runtime::{ConversionResult, DMResult};
 use std::marker::PhantomData;
 
-/// The context is used to interact with global stuff. It should probably be renamed at this point.
+/// The context is used to interact with global stuff
 #[allow(unused)]
 pub struct DMContext<'a> {
 	phantom: PhantomData<&'a ()>,

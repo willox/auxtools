@@ -1,6 +1,8 @@
 use super::raw_types;
 use super::raw_types::procs::{ProcEntry, ProcId};
 use super::string::StringRef;
+use super::value::Value;
+use super::runtime;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -35,6 +37,45 @@ pub struct Proc {
 	pub id: ProcId,
 	pub entry: *mut ProcEntry,
 	pub path: String,
+}
+
+impl<'a> Proc {
+	pub fn find<S: Into<String>>(name: S) -> Option<Self> {
+		get_proc(name)
+	}
+
+	pub fn call(&self, args: &[&Value<'a>]) -> runtime::DMResult<'a> {
+		let mut ret = raw_types::values::Value {
+			tag: raw_types::values::ValueTag::Null,
+			data: raw_types::values::ValueData { id: 0 },
+		};
+
+		unsafe {
+			// Increment ref-count of args permenently before passing them on
+			for v in args {
+				raw_types::funcs::inc_ref_count(v.value);
+			}
+
+			let args: Vec<_> = args.iter().map(|e| e.value).collect();
+
+			if raw_types::funcs::call_proc_by_id(
+				&mut ret,
+				Value::null().value,
+				0,
+				self.id,
+				0,
+				Value::null().value,
+				args.as_ptr(),
+				args.len(),
+				0,
+				0) == 1
+			{
+				return Ok(Value::from_raw_owned(ret));
+			}
+		}
+
+		runtime!("External proc call failed")
+	}
 }
 
 thread_local!(static PROCS_BY_NAME: RefCell<HashMap<String, Vec<Proc>>> = RefCell::new(HashMap::new()));

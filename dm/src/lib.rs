@@ -15,6 +15,7 @@ mod value;
 
 pub use context::DMContext;
 pub use dm_impl::hook;
+pub use proc::Proc;
 pub use list::List;
 pub use runtime::{DMResult, ConversionResult};
 pub use string::StringRef;

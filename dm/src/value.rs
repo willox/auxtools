@@ -206,12 +206,11 @@ impl<'b> Value<'b> {
 				0,
 				0) == 1
 			{
-				// TODO: ref count check
-				return Ok(Value::from_raw(ret));
+				return Ok(Value::from_raw_owned(ret));
 			}
-
-			runtime!("External proc call failed")
 		}
+
+		runtime!("External proc call failed")
 	}
 
 	/// Creates a Value that references a byond string.
