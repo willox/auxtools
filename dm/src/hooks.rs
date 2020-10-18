@@ -171,7 +171,7 @@ extern "C" fn call_proc_by_id_hook(
 					// TODO: Some info about the hook would be useful (as the hook is never part of byond's stack, the runtime won't show it.)
 					src.call(
 						"stack_trace",
-						&[&Value::from_string(e.message.as_str()).unwrap()],
+						&[&Value::from_string(e.message.as_str())],
 					)
 					.unwrap();
 					unsafe { Value::null().into_raw_value() }

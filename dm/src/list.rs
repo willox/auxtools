@@ -10,9 +10,6 @@ pub struct List<'a> {
 	value: Value<'a>,
 }
 
-unsafe impl Send for List<'_> {}
-unsafe impl Sync for List<'_> {}
-
 #[allow(unused)]
 impl<'a> List<'a> {
 	pub unsafe fn from_id(id: u32) -> Self {

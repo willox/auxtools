@@ -1,5 +1,4 @@
 use super::raw_types;
-use super::runtime::ConversionResult;
 use super::value::Value;
 use std::ffi::CStr;
 use std::fmt;
@@ -9,14 +8,11 @@ pub struct StringRef {
 	pub value: Value<'static>,
 }
 
-unsafe impl Send for StringRef {}
-unsafe impl Sync for StringRef {}
-
 impl StringRef {
-	pub fn new(string: &str) -> ConversionResult<Self> {
-		Ok(StringRef {
-			value: Value::from_string(string)?,
-		})
+	pub fn new(string: &str) -> Self {
+		StringRef {
+			value: Value::from_string(string),
+		}
 	}
 
 	pub fn from_value(value: Value) -> Option<Self> {
@@ -54,6 +50,12 @@ impl fmt::Debug for StringRef {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		let data: String = self.clone().into();
 		write!(f, "{}", data)
+	}
+}
+
+impl From<&str> for StringRef {
+	fn from(string: &str) -> StringRef {
+		StringRef::new(string)
 	}
 }
 

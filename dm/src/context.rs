@@ -17,19 +17,16 @@ pub struct DMContext<'a> {
 	phantom: PhantomData<&'a ()>,
 }
 
-unsafe impl Send for DMContext<'_> {}
-unsafe impl Sync for DMContext<'_> {}
-
 #[allow(unused)]
 impl<'a> DMContext<'_> {
 	/// Fetch a global variable from BYOND. Will return a runtime if the variable does not exist.
 	///
 	/// # Example
-	/// ```rust
+	/// ```ignore
 	/// #[hook("/proc/my_proc")]
 	/// fn my_proc_hook() {
 	/// 	let glob_var = ctx.get_global("slime_count")?;
-	/// 	...
+	/// 	Ok(glob_var)
 	/// }
 	/// ```
 	pub fn get_global<S: Into<string::StringRef>>(&self, name: S) -> DMResult<'a> {

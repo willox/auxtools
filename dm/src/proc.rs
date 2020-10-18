@@ -39,9 +39,6 @@ pub struct Proc {
 	pub path: String,
 }
 
-unsafe impl Send for Proc {}
-unsafe impl Sync for Proc {}
-
 impl<'a> Proc {
 	/// Finds the first proc with the given path
 	pub fn find<S: Into<String>>(path: S) -> Option<Self> {
@@ -52,11 +49,12 @@ impl<'a> Proc {
 	///
 	/// # Examples
 	///
-	/// This is equivalent to `do_explode(3)` in DM.
-	/// ```rust
-	/// let proc = Proc::find("/proc/do_explode").unwrap();
-	/// proc.call(&[&Value::from(3.0)])?;
-	/// ```
+	/// This function function is equivalent to `return do_explode(3)` in DM.
+	/// #[hook("/proc/my_proc")]
+	/// fn my_proc_hook() -> DMResult {
+	/// 	let proc = Proc::find("/proc/do_explode").unwrap();
+	/// 	proc.call(&[&Value::from(3.0)])
+	/// }
 	pub fn call(&self, args: &[&Value<'a>]) -> runtime::DMResult<'a> {
 		let mut ret = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,

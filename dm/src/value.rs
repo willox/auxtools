@@ -16,9 +16,6 @@ pub struct Value<'a> {
 	phantom: PhantomData<&'a raw_types::values::Value>,
 }
 
-unsafe impl Send for Value<'_> {}
-unsafe impl Sync for Value<'_> {}
-
 impl<'a> Drop for Value<'a> {
 	fn drop(&mut self) {
 		unsafe {
@@ -184,7 +181,7 @@ impl<'b> Value<'b> {
 	/// # Examples:
 	///
 	/// This example is equivalent to `src.explode(3)` in DM.
-	/// ```rust
+	/// ```ignore
 	/// src.call("explode", &[&Value::from(3.0)]);
 	/// ```
 	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Self]) -> DMResult<'b> {
@@ -201,7 +198,7 @@ impl<'b> Value<'b> {
 
 			let procname = String::from(procname.as_ref()).replace("_", " ");
 			let args: Vec<_> = args.iter().map(|e| e.into_raw_value()).collect();
-			let name_ref = string::StringRef::new(&procname).unwrap();
+			let name_ref = string::StringRef::new(&procname);
 
 			if raw_types::funcs::call_datum_proc_by_name(
 				&mut ret,
@@ -223,15 +220,15 @@ impl<'b> Value<'b> {
 	}
 
 	/// Creates a Value that references a byond string.
+	/// Will panic if the given string contains null bytes
 	///
 	/// # Examples:
-	/// ```rust
+	/// ```ignore
 	/// let my_string = Value::from_string("Testing!");
 	/// ```
-	pub fn from_string<S: AsRef<str>>(data: S) -> ConversionResult<Value<'static>> {
-		let string = CString::new(data.as_ref()).or(runtime!(
-			"attempt to convert string containing interior null byte(s) to byond string"
-		))?;
+	pub fn from_string<S: AsRef<str>>(data: S) -> Value<'static> {
+		// TODO: This should be done differently
+		let string = CString::new(data.as_ref()).unwrap();
 
 		unsafe {
 			let mut id = raw_types::strings::StringId(0);
@@ -241,12 +238,10 @@ impl<'b> Value<'b> {
 				1
 			);
 
-			let val = Value::new(
+			Value::new(
 				raw_types::values::ValueTag::String,
 				raw_types::values::ValueData { string: id },
-			);
-
-			Ok(val)
+			)
 		}
 	}
 

@@ -71,10 +71,10 @@ pub fn byond_return(value: Option<Vec<u8>>) -> *const c_char {
 /// You should favour [hooks](attr.hook.html) over these when working with auxtools.
 ///
 /// # Examples
-/// ```rust
-/// byond_ffi_fn! { my_proc(_input) {
-/// 	Some("Hello, BYOND!".to_owned())
-/// }
+/// ```ignore
+/// // byond_ffi_fn! { my_proc(_input) {
+/// // 	Some("Hello, BYOND!".to_owned())
+/// // }
 /// ```
 #[macro_export]
 macro_rules! byond_ffi_fn {
