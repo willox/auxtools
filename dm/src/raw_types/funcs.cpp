@@ -33,7 +33,7 @@ struct Value {
 DEFINE_byond_REGPARM3(call_proc_by_id, Value, (Value, uint32_t, uint32_t, uint32_t, Value, const Value*, uint32_t, uint32_t, uint32_t))
 DEFINE_byond_REGPARM3(call_datum_proc_by_name, Value, (Value, uint32_t, uint32_t, Value, const Value*, uint32_t, uint32_t, uint32_t))
 DEFINE_byond(get_proc_array_entry, void*, (uint32_t))
-DEFINE_byond(get_string_id, uint32_t, (const char*, bool, bool, bool))
+DEFINE_byond_REGPARM3(get_string_id, uint32_t, (const char*, bool, bool, bool))
 DEFINE_byond(get_variable, Value, (Value, uint32_t))
 DEFINE_byond(set_variable, void, (Value, uint32_t, Value))
 DEFINE_byond(get_string_table_entry, void*, (uint32_t))

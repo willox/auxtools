@@ -105,7 +105,8 @@ impl<'b> Value<'b> {
 
 	/// Gets a variable by name.
 	pub fn get<S: Into<string::StringRef>>(&self, name: S) -> DMResult<'b> {
-		self.get_by_id(name.into().get_id())
+		let name = name.into();
+		self.get_by_id(name.get_id())
 	}
 
 	/// Gets a variable by name and safely casts it to a float.
