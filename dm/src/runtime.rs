@@ -21,10 +21,10 @@ impl Runtime {
 #[macro_export]
 macro_rules! runtime {
 	($fmt:expr) => {
-		$crate::runtime::Runtime::new($fmt);
+		$crate::Runtime::new($fmt);
 	};
 	($fmt: expr, $( $args:expr ),*) => {
-		$crate::runtime::Runtime::new(format!( $fmt, $( $args, )* ));
+		$crate::Runtime::new(format!( $fmt, $( $args, )* ));
 	};
 }
 
