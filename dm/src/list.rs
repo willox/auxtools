@@ -101,7 +101,7 @@ impl<'a> List<'a> {
 				return Ok(Value::from_raw(value));
 			}
 
-			runtime!("failed to get assoc list entry (probably given an invalid list or key)")
+			Err(runtime!("failed to get assoc list entry (probably given an invalid list or key)"))
 		}
 	}
 
@@ -120,7 +120,7 @@ impl<'a> List<'a> {
 				return Ok(());
 			}
 
-			runtime!("failed to set assoc list entry (probably given an invalid list or key)")
+			Err(runtime!("failed to set assoc list entry (probably given an invalid list or key)"))
 		}
 	}
 

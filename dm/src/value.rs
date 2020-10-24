@@ -77,7 +77,7 @@ impl<'b> Value<'b> {
 			) != 1
 			{
 				let varname: String = string::StringRef::from_id(name_id).into();
-				return runtime!("Could not read {}.{}", &self, varname);
+				return Err(runtime!("Could not read {}.{}", &self, varname));
 			}
 
 			Ok(Self::from_raw(val))
@@ -97,7 +97,7 @@ impl<'b> Value<'b> {
 			) != 1
 			{
 				let varname: String = string::StringRef::from_id(name_id).into();
-				return runtime!("Could not write to {}.{}", self, varname);
+				return Err(runtime!("Could not write to {}.{}", self, varname));
 			}
 		}
 		Ok(())
@@ -113,7 +113,7 @@ impl<'b> Value<'b> {
 	pub fn get_number<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<f32> {
 		match self.get(name)?.as_number() {
 			Some(num) => Ok(num),
-			None => runtime!("Attempt to interpret non-number value as float"),
+			None => Err(runtime!("Attempt to interpret non-number value as float")),
 		}
 	}
 
@@ -121,7 +121,7 @@ impl<'b> Value<'b> {
 	pub fn get_string<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<String> {
 		match self.get(name)?.as_string() {
 			Some(s) => Ok(s),
-			None => runtime!("Attempt to interpret non-string value as String"),
+			None => Err(runtime!("Attempt to interpret non-string value as String")),
 		}
 	}
 
@@ -134,7 +134,7 @@ impl<'b> Value<'b> {
 
 		match var.as_list() {
 			Some(lst) => Ok(lst),
-			None => runtime!("Attempt to interpret non-list value as List"),
+			None => Err(runtime!("Attempt to interpret non-list value as List")),
 		}
 	}
 
@@ -217,7 +217,7 @@ impl<'b> Value<'b> {
 			}
 		}
 
-		runtime!("External proc call failed")
+		Err(runtime!("External proc call failed"))
 	}
 
 	/// Creates a Value that references a byond string.

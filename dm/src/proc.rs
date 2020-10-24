@@ -86,7 +86,7 @@ impl<'a> Proc {
 			}
 		}
 
-		runtime!("External proc call failed")
+		Err(runtime!("External proc call failed"))
 	}
 }
 
