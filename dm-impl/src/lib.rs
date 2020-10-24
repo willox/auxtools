@@ -108,6 +108,7 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let cthook_prelude = match proc {
 		Some(p) => quote! {
 			dm::inventory::submit!(
+				#![crate = dm]
 				dm::CompileTimeHook::new(#p, #func_name)
 			);
 		},
