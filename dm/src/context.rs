@@ -66,7 +66,7 @@ impl<'a> DMContext<'_> {
 	}
 
 	/// Returns a [Value](struct.Value.html) representing the world object. It's the same as `world` in DM.
-	pub fn get_world<S: Into<string::StringRef>>(&self, name: S) -> Value<'a> {
+	pub fn get_world(&self) -> Value<'a> {
 		unsafe { Value::new(ValueTag::World, ValueData { id: 0 }) }
 	}
 
