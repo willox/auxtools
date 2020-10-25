@@ -87,8 +87,7 @@ pub fn init() -> Result<(), String> {
 	Ok(())
 }
 
-pub type ProcHook =
-	for<'a, 'r> fn(&'a DMContext<'r>, &Value<'a>, &Value<'a>, &mut Vec<Value<'a>>) -> DMResult<'a>;
+pub type ProcHook = fn(&DMContext, &Value, &Value, &mut Vec<Value>) -> DMResult;
 
 thread_local! {
 	static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new());
@@ -169,11 +168,8 @@ extern "C" fn call_proc_by_id_hook(
 				}
 				Err(e) => {
 					// TODO: Some info about the hook would be useful (as the hook is never part of byond's stack, the runtime won't show it.)
-					src.call(
-						"stack_trace",
-						&[&Value::from_string(e.message.as_str())],
-					)
-					.unwrap();
+					src.call("stack_trace", &[&Value::from_string(e.message.as_str())])
+						.unwrap();
 					unsafe { Value::null().into_raw_value() }
 				}
 			}

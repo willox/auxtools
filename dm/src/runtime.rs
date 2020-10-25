@@ -21,15 +21,15 @@ impl Runtime {
 #[macro_export]
 macro_rules! runtime {
 	($fmt:expr) => {
-		Err($crate::runtime::Runtime::new($fmt));
+		$crate::Runtime::new($fmt);
 	};
 	($fmt: expr, $( $args:expr ),*) => {
-		Err($crate::runtime::Runtime::new(format!( $fmt, $( $args, )* )));
+		$crate::Runtime::new(format!( $fmt, $( $args, )* ));
 	};
 }
 
 /// Used as a result for hooks and calls into BYOND.
-pub type DMResult<'a> = result::Result<Value<'a>, Runtime>;
+pub type DMResult = result::Result<Value, Runtime>;
 
 /// Used as a result for conversions between DM values and rust values
 pub type ConversionResult<T> = result::Result<T, Runtime>;

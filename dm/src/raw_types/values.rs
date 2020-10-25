@@ -56,8 +56,8 @@ impl fmt::Display for Value {
 			write!(f, "({}, {})", self.tag, unsafe { self.data.number })
 		} else if self.tag == ValueTag::String {
 			write!(f, "TODO")
-			//let content: String = unsafe { string::StringRef::from_id(self.data.id).into() };
-			//write!(f, "({}, {})", self.tag, content)
+		//let content: String = unsafe { string::StringRef::from_id(self.data.id).into() };
+		//write!(f, "({}, {})", self.tag, content)
 		} else {
 			write!(f, "({}, {})", self.tag, unsafe { self.data.id })
 		}
