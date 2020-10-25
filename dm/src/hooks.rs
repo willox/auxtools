@@ -87,8 +87,7 @@ pub fn init() -> Result<(), String> {
 	Ok(())
 }
 
-pub type ProcHook =
-	for<'a, 'r> fn(&'a DMContext<'r>, &Value<'a>, &Value<'a>, &mut Vec<Value<'a>>) -> DMResult<'a>;
+pub type ProcHook = fn(&DMContext, &Value, &Value, &mut Vec<Value>) -> DMResult;
 
 thread_local! {
 	static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new());

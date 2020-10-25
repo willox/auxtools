@@ -115,12 +115,12 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 		None => quote! {},
 	};
 	let signature = quote! {
-		fn #func_name<'a>(
-			ctx: &'a dm::DMContext,
-			src: &dm::Value<'a>,
-			usr: &dm::Value<'a>,
-			args: &mut Vec<dm::Value<'a>>,
-		) -> dm::DMResult<'a>
+		fn #func_name(
+			ctx: &dm::DMContext,
+			src: &dm::Value,
+			usr: &dm::Value,
+			args: &mut Vec<dm::Value>,
+		) -> dm::DMResult
 	};
 
 	let body = &input.block;

@@ -55,7 +55,7 @@ impl<'a> Proc {
 	/// 	let proc = Proc::find("/proc/do_explode").unwrap();
 	/// 	proc.call(&[&Value::from(3.0)])
 	/// }
-	pub fn call(&self, args: &[&Value<'a>]) -> runtime::DMResult<'a> {
+	pub fn call(&self, args: &[&Value]) -> runtime::DMResult {
 		let mut ret = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },

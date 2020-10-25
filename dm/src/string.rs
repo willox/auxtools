@@ -5,7 +5,7 @@ use std::fmt;
 
 /// A wrapper around [Values](struct.Value.html) that make working with strings a little easier
 pub struct StringRef {
-	pub value: Value<'static>,
+	pub value: Value,
 }
 
 impl StringRef {

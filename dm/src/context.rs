@@ -13,12 +13,10 @@ use std::marker::PhantomData;
 /// ## Note
 /// In order for global getters/setters to work, the DM code needs to contain usage of `global.vars["varname"]` somewhere.
 #[allow(unused)]
-pub struct DMContext<'a> {
-	phantom: PhantomData<&'a ()>,
-}
+pub struct DMContext {}
 
 #[allow(unused)]
-impl<'a> DMContext<'_> {
+impl DMContext {
 	/// Fetch a global variable from BYOND. Will return a runtime if the variable does not exist.
 	///
 	/// # Example
@@ -29,7 +27,7 @@ impl<'a> DMContext<'_> {
 	/// 	Ok(glob_var)
 	/// }
 	/// ```
-	pub fn get_global<S: Into<string::StringRef>>(&self, name: S) -> DMResult<'a> {
+	pub fn get_global<S: Into<string::StringRef>>(&self, name: S) -> DMResult {
 		unsafe {
 			Value::new(ValueTag::World, ValueData { id: 1 }).get(name)
 			// Tag World with value 1 means Global
@@ -66,14 +64,12 @@ impl<'a> DMContext<'_> {
 	}
 
 	/// Returns a [Value](struct.Value.html) representing the world object. It's the same as `world` in DM.
-	pub fn get_world(&self) -> Value<'a> {
+	pub fn get_world(&self) -> Value {
 		unsafe { Value::new(ValueTag::World, ValueData { id: 0 }) }
 	}
 
 	pub unsafe fn new() -> Self {
 		// Pretty dumb way to set the lifetime but im not changing it now
-		Self {
-			phantom: PhantomData,
-		}
+		Self {}
 	}
 }

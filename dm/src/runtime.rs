@@ -29,7 +29,7 @@ macro_rules! runtime {
 }
 
 /// Used as a result for hooks and calls into BYOND.
-pub type DMResult<'a> = result::Result<Value<'a>, Runtime>;
+pub type DMResult = result::Result<Value, Runtime>;
 
 /// Used as a result for conversions between DM values and rust values
 pub type ConversionResult<T> = result::Result<T, Runtime>;

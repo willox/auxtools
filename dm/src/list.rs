@@ -5,13 +5,13 @@ use crate::value::Value;
 
 /// A wrapper around [Values](struct.Value.html) that make working with lists a little easier
 #[allow(unused)]
-pub struct List<'a> {
+pub struct List {
 	internal: *mut raw_types::lists::List,
-	value: Value<'a>,
+	value: Value,
 }
 
 #[allow(unused)]
-impl<'a> List<'a> {
+impl List {
 	pub unsafe fn from_id(id: u32) -> Self {
 		let mut ptr: *mut raw_types::lists::List = std::ptr::null_mut();
 		assert_eq!(
@@ -46,7 +46,7 @@ impl<'a> List<'a> {
 	}
 
 	/// Creates a new empty list.
-	pub fn new() -> List<'static> {
+	pub fn new() -> List {
 		Self::with_size(0)
 	}
 
@@ -61,7 +61,7 @@ impl<'a> List<'a> {
 	}
 
 	/// Creates a new list filled with `capacity` nulls.
-	pub fn with_size(capacity: u32) -> List<'static> {
+	pub fn with_size(capacity: u32) -> List {
 		let mut id: raw_types::lists::ListId = raw_types::lists::ListId(0);
 		unsafe {
 			assert_eq!(raw_types::funcs::create_list(&mut id, capacity), 1);
@@ -85,7 +85,7 @@ impl<'a> List<'a> {
 		}
 	}
 
-	pub fn get<I: ListKey>(&self, index: I) -> runtime::DMResult<'a> {
+	pub fn get<I: ListKey>(&self, index: I) -> runtime::DMResult {
 		let mut value = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
@@ -101,7 +101,9 @@ impl<'a> List<'a> {
 				return Ok(Value::from_raw(value));
 			}
 
-			Err(runtime!("failed to get assoc list entry (probably given an invalid list or key)"))
+			Err(runtime!(
+				"failed to get assoc list entry (probably given an invalid list or key)"
+			))
 		}
 	}
 
@@ -120,7 +122,9 @@ impl<'a> List<'a> {
 				return Ok(());
 			}
 
-			Err(runtime!("failed to set assoc list entry (probably given an invalid list or key)"))
+			Err(runtime!(
+				"failed to set assoc list entry (probably given an invalid list or key)"
+			))
 		}
 	}
 
@@ -148,20 +152,20 @@ impl<'a> List<'a> {
 	}
 }
 
-impl<'a> From<Value<'a>> for List<'a> {
+impl From<Value> for List {
 	fn from(value: Value) -> Self {
 		unsafe { Self::from_id(value.value.data.id) }
 	}
 }
 
-impl<'a> raw_types::values::IntoRawValue for &List<'a> {
+impl raw_types::values::IntoRawValue for &List {
 	unsafe fn into_raw_value(self) -> raw_types::values::Value {
 		self.value.into_raw_value()
 	}
 }
 
-impl<'a> From<List<'a>> for Value<'a> {
-	fn from(list: List<'a>) -> Value<'a> {
+impl From<List> for Value {
+	fn from(list: List) -> Value {
 		list.value.clone()
 	}
 }
@@ -176,7 +180,7 @@ impl ListKey for &raw_types::values::Value {
 	}
 }
 
-impl ListKey for &Value<'_> {
+impl ListKey for &Value {
 	fn as_list_key(self) -> raw_types::values::Value {
 		unsafe { self.into_raw_value() }
 	}
