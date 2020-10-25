@@ -1,40 +1,93 @@
 use super::raw_types;
 use super::raw_types::procs::{ProcEntry, ProcId};
+use super::runtime;
 use super::string::StringRef;
+use super::value::Value;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Once;
 
-/// Used to manipulate procs.
-///
-/// ### Override ID
-///
-/// Procs in DM can be defined multiple times.
-///
-/// ```
-/// /proc/hello() // Override #0 or base proc
-///		world << "Hello"
-///
-///	/hello() // Override #1
-///		..() // Calls override #0
-///		world << "World"
-///
-///	/hello() // Override #2
-///		..() // Calls override #1
-///		world << "!!!"
-///	```
-///
-///	To get the nth override, use [get_proc_override]: `let hello = get_proc_override("/proc/hello", n).unwrap()`
-/// [get_proc] retrieves the base proc.
-///
-///
+//
+// ### A note on Override IDs
+//
+// Procs in DM can be defined multiple times.
+//
+// ```
+// /proc/hello() // Override #0 or base proc
+//		world << "Hello"
+//
+//	/hello() // Override #1
+//		..() // Calls override #0
+//		world << "World"
+//
+//	/hello() // Override #2
+//		..() // Calls override #1
+//		world << "!!!"
+//	```
+//
+//	To get the nth override, use [get_proc_override]: `let hello = get_proc_override("/proc/hello", n).unwrap()`
+// [get_proc] retrieves the base proc.
+//
+//
 
+/// Used to hook and call procs.
 #[derive(Clone)]
 pub struct Proc {
 	pub id: ProcId,
 	pub entry: *mut ProcEntry,
 	pub path: String,
+}
+
+impl<'a> Proc {
+	/// Finds the first proc with the given path
+	pub fn find<S: Into<String>>(path: S) -> Option<Self> {
+		get_proc(path)
+	}
+
+	/// Calls a global proc with the given arguments.
+	///
+	/// # Examples
+	///
+	/// This function function is equivalent to `return do_explode(3)` in DM.
+	/// #[hook("/proc/my_proc")]
+	/// fn my_proc_hook() -> DMResult {
+	/// 	let proc = Proc::find("/proc/do_explode").unwrap();
+	/// 	proc.call(&[&Value::from(3.0)])
+	/// }
+	pub fn call(&self, args: &[&Value]) -> runtime::DMResult {
+		let mut ret = raw_types::values::Value {
+			tag: raw_types::values::ValueTag::Null,
+			data: raw_types::values::ValueData { id: 0 },
+		};
+
+		unsafe {
+			// Increment ref-count of args permenently before passing them on
+			for v in args {
+				raw_types::funcs::inc_ref_count(v.value);
+			}
+
+			let args: Vec<_> = args.iter().map(|e| e.value).collect();
+
+			if raw_types::funcs::call_proc_by_id(
+				&mut ret,
+				Value::null().value,
+				0,
+				self.id,
+				0,
+				Value::null().value,
+				args.as_ptr(),
+				args.len(),
+				0,
+				0,
+			) == 1
+			{
+				return Ok(Value::from_raw_owned(ret));
+			}
+		}
+
+		Err(runtime!("External proc call failed"))
+	}
 }
 
 thread_local!(static PROCS_BY_NAME: RefCell<HashMap<String, Vec<Proc>>> = RefCell::new(HashMap::new()));

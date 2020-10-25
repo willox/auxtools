@@ -1,23 +1,29 @@
 //! For when BYOND is not enough. Probably often.
 
-use context::DMContext;
-pub use dm_impl;
-use dm_impl::hook;
-use runtime::DMResult;
+use dm_impl;
 use std::ffi::c_void;
-use value::Value;
 
-pub mod byond_ffi;
-pub mod context;
-pub mod hooks;
-pub mod list;
-pub mod proc;
-pub mod raw_types;
-pub mod runtime;
-pub mod string;
-pub mod value;
+mod byond_ffi;
+mod context;
+mod hooks;
+mod list;
+mod proc;
+mod raw_types;
+mod runtime;
+mod string;
+mod value;
 
-extern crate inventory;
+pub use context::DMContext;
+pub use dm_impl::hook;
+pub use hooks::CompileTimeHook;
+pub use list::List;
+pub use proc::Proc;
+pub use runtime::{ConversionResult, DMResult, Runtime};
+pub use string::StringRef;
+pub use value::Value;
+
+/// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
+pub use inventory;
 
 macro_rules! signature {
 	($sig:tt) => {
@@ -41,14 +47,13 @@ macro_rules! signatures {
 const BYONDCORE: &'static str = "byondcore.dll";
 #[cfg(windows)]
 signatures! {
-	string_table => "A1 ?? ?? ?? ?? 8B 04 ?? 85 C0 0F 84 ?? ?? ?? ?? 80 3D ?? ?? ?? ?? 00 8B 18",
 	get_proc_array_entry => "E8 ?? ?? ?? ?? 8B C8 8D 45 ?? 6A 01 50 FF 76 ?? 8A 46 ?? FF 76 ?? FE C0",
 	get_string_id => "55 8B EC 8B 45 ?? 83 EC ?? 53 56 8B 35",
 	call_proc_by_id => "55 8B EC 81 EC ?? ?? ?? ?? A1 ?? ?? ?? ?? 33 C5 89 45 ?? 8B 55 ?? 8B 45",
 	get_variable => "55 8B EC 8B 4D ?? 0F B6 C1 48 83 F8 ?? 0F 87 ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 ?? FF 75 ?? E8",
 	set_variable => "55 8B EC 8B 4D 08 0F B6 C1 48 57 8B 7D 10 83 F8 53 0F ?? ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 18 FF 75 14 57 FF 75 0C E8 ?? ?? ?? ?? 83 C4 10 5F 5D C3",
 	get_string_table_entry => "55 8B EC 8B 4D 08 3B 0D ?? ?? ?? ?? 73 10 A1",
-	call_datum_proc_by_name => "55 8B EC 83 EC 0C 53 8B 5D 10 8D 45 FF 56 8B 75 14 57 6A 01 50 FF 75 1C C6 45 FF 00 FF 75 18 6A 00 56 53 ",
+	call_datum_proc_by_name => "55 8B EC 83 EC 0C 53 8B 5D 10 8D 45 FF 56 8B 75 14 57 6A 01 50 FF 75 1C C6 45 FF 00 FF 75 18 6A 00 56",
 	dec_ref_count => "E8 ?? ?? ?? ?? 83 C4 0C 81 FF FF FF 00 00 74 ?? 85 FF 74 ?? 57 FF 75 ??",
 	inc_ref_count => "E8 ?? ?? ?? ?? FF 77 ?? FF 77 ?? E8 ?? ?? ?? ?? 8D 77 ?? 56 E8 ?? ?? ?? ??",
 	get_list_by_id => "E8 ?? ?? ?? ?? 83 C4 04 85 C0 75 13 68 ?? ?? ?? ?? E8 ?? ?? ?? ?? 83 C4 04 5D E9 ?? ?? ?? ?? 5D C3",
@@ -64,16 +69,22 @@ signatures! {
 const BYONDCORE: &'static str = "libbyond.so";
 #[cfg(unix)]
 signatures! {
-	string_table => "A1 ?? ?? ?? ?? 8B 04 ?? 85 C0 74 ?? 8B 18 89 75 ?? 89 34 24 E8 ?? ?? ?? ??",
 	get_proc_array_entry => "E8 ?? ?? ?? ?? 8B 00 89 04 24 E8 ?? ?? ?? ?? 8B 00 89 44 24 ?? 8D 45 ??",
 	get_string_id => "55 89 E5 57 56 89 CE 53 89 D3 83 EC 5C 8B 55 ?? 85 C0 88 55 ?? 0F 84 ?? ?? ?? ??",
 	call_proc_by_id => "55 89 E5 81 EC D8 00 00 00 89 5D ?? 89 C3 0F B6 45 ?? 81 7D ?? FF FF 00 00",
 	get_variable => "55 89 E5 81 EC C8 00 00 00 8B 55 ?? 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ??",
 	set_variable => "55 89 E5 81 EC A8 00 00 00 8B 55 ?? 8B 45 ?? 89 5D ?? 8B 5D ?? 89 7D ??",
 	get_string_table_entry => "55 89 E5 83 EC 18 8B 45 ?? 39 05 ?? ?? ?? ?? 76 ?? 8B 15 ?? ?? ?? ?? 8B 04 ??",
-	call_datum_proc_by_name => "00",
+	call_datum_proc_by_name => "55 89 E5 57 56 53 83 EC 5C 8B 55 ?? 0F B6 45 ?? 8B 4D ?? 8B 5D ?? 89 14 24 8B 55 ?? 88 45 ?? 0F B6 F8 8B 75 ?? 8D 45 ?? 89 44 24 ?? 89 F8 89 4C 24 ?? 31 C9 C6 45 ?? 00 C7 44 24 ?? 01 00 00 00",
 	dec_ref_count => "E8 ?? ?? ?? ?? 8B 4D ?? C7 44 24 ?? 00 00 00 00 C7 44 24 ?? 00 00 00 00 89 0C 24",
-	inc_ref_count => "E8 ?? ?? ?? ?? 8B 43 ?? 80 48 ?? 04 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC 5D"
+	inc_ref_count => "E8 ?? ?? ?? ?? 8B 43 ?? 80 48 ?? 04 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC 5D",
+	get_list_by_id => "E8 ?? ?? ?? ?? 85 C0 89 C7 0F 84 ?? ?? ?? ?? 8B 40 ?? 89 3C 24 83 C0 01",
+	get_assoc_element => "55 89 E5 83 EC 68 89 4D ?? B9 7B 00 00 00 89 5D ?? 89 D3 89 75 ?? 89 C6",
+	set_assoc_element => "55 B9 7C 00 00 00 89 E5 83 EC 58 89 7D ?? 8B 7D ?? 89 5D ?? 89 C3 8B 45 ??",
+	create_list => "55 89 E5 57 56 53 83 EC 2C A1 ?? ?? ?? ?? 8B 75 ?? 85 C0 0F 84 ?? ?? ?? ??",
+	append_to_list => "55 89 E5 83 EC 38 3C 54 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ?? 89 7D ?? 76 ??",
+	remove_from_list => "55 89 E5 83 EC 48 3C 54 89 5D ?? 89 C3 89 75 ?? 8B 75 ?? 89 7D ?? 8B 7D ??",
+	get_length => "55 89 E5 57 56 53 83 EC 6C 8B 45 ?? 8B 5D ?? 3C 54 76 ?? 31 F6 8D 65 ??"
 }
 
 macro_rules! find_function {
@@ -116,7 +127,11 @@ macro_rules! with_scanner_by_call {
 }
 
 byond_ffi_fn! { auxtools_init(_input) {
-	// TODO: Don't initialize a second time
+	unsafe {
+		if raw_types::funcs::IS_INITIALIZED {
+			return Some("SUCCESS".to_owned())
+		}
+	}
 
 	let byondcore = match sigscan::Scanner::for_module(BYONDCORE) {
 		Some(v) => v,
@@ -145,17 +160,8 @@ byond_ffi_fn! { auxtools_init(_input) {
 		get_list_by_id
 	}
 
-	let string_table: *mut raw_types::strings::StringTable;
-	if let Some(ptr) = byondcore.find(SIGNATURES.string_table.to_vec()) {
-		unsafe {
-			// TODO: Could be nulls
-			string_table = *(ptr.offset(1) as *mut *mut raw_types::strings::StringTable);
-		}
-	} else {
-		return Some("FAILED (Couldn't find stringtable)".to_owned())
-	}
-
 	unsafe {
+		raw_types::funcs::IS_INITIALIZED = true;
 		raw_types::funcs::call_proc_by_id_byond = call_proc_by_id;
 		raw_types::funcs::call_datum_proc_by_name_byond = call_datum_proc_by_name;
 		raw_types::funcs::get_proc_array_entry_byond = get_proc_array_entry;
@@ -182,37 +188,6 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 	Some("SUCCESS".to_owned())
 } }
-
-#[hook("/proc/react")]
-fn hello_proc_hook(some_datum: Value) {
-	let mut l = list::List::new();
-
-	l.append(12.0);
-	l.append(12.0);
-	l.append(12.0);
-
-	Ok(l.into())
-}
-
-/*
-#[hook("/datum/getvartest/proc/hookme")]
-fn datum_proc_hook_test() {
-	if let Some(mut l) = src.get_list("listvar") {
-		l.set("bonk", &Value::from(7.0));
-
-		src.call(
-			"march_of_progress",
-			&[&1.0.into(), &2.0.into(), &src, &l.into()],
-		);
-	}
-
-	let mut list = list::List::new();
-	list.append(&Value::from(1.0));
-	list.append(&src.get("hello"));
-	list.remove(&Value::from(1.0));
-	Value::from(list.len() as f32)
-}
-*/
 
 #[cfg(test)]
 mod tests {

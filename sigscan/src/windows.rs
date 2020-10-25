@@ -7,7 +7,7 @@ use winapi::um::processthreadsapi;
 use winapi::um::psapi;
 
 pub struct Scanner {
-	module: minwindef::HMODULE,
+	_module: minwindef::HMODULE,
 	data_begin: *mut u8,
 	data_end: *mut u8,
 }
@@ -46,17 +46,17 @@ impl Scanner {
 		}
 
 		Some(Scanner {
-			module,
+			_module: module,
 			data_begin,
 			data_end,
 		})
 	}
 
-	// TODO: Fail on multiple matches
 	pub fn find(&self, signature: Vec<Option<u8>>) -> Option<*mut u8> {
 		let mut data_current = self.data_begin;
 		let data_end = self.data_end;
 		let mut signature_offset = 0;
+		let mut result: Option<*mut u8> = None;
 
 		unsafe {
 			while data_current <= data_end {
@@ -64,9 +64,16 @@ impl Scanner {
 					|| signature[signature_offset] == Some(*data_current)
 				{
 					if signature.len() <= signature_offset + 1 {
-						return Some(data_current.offset(-(signature_offset as isize)));
+						if result.is_some() {
+							// Found two matches.
+							return None;
+						}
+						result = Some(data_current.offset(-(signature_offset as isize)));
+						data_current = data_current.offset(-(signature_offset as isize));
+						signature_offset = 0;
+					} else {
+						signature_offset += 1;
 					}
-					signature_offset += 1;
 				} else {
 					data_current = data_current.offset(-(signature_offset as isize));
 					signature_offset = 0;
@@ -76,7 +83,7 @@ impl Scanner {
 			}
 		}
 
-		None
+		result
 	}
 }
 

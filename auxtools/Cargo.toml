@@ -1,0 +1,12 @@
+[package]
+name = "auxtools"
+version = "0.1.0"
+authors = ["William Wallace <me@wiox.me>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+dm = { path = "../dm" }
+sigscan = { path = "../sigscan" }

@@ -2,20 +2,19 @@ use super::raw_types;
 use super::string;
 use crate::list;
 use crate::raw_types::values::IntoRawValue;
-#[macro_use]
 use crate::runtime;
 use crate::runtime::{ConversionResult, DMResult};
 use std::ffi::CString;
 use std::fmt;
-use std::marker::PhantomData;
 
 /// `Value` represents any value a DM variable can hold, such as numbers, strings, datums, etc.
-pub struct Value<'a> {
+///
+/// There's a lot of lifetime shenanigans going on, the gist of it is to just not keep Values around for longer than your hook's execution.
+pub struct Value {
 	pub value: raw_types::values::Value,
-	pub phantom: PhantomData<&'a raw_types::values::Value>,
 }
 
-impl<'a> Drop for Value<'a> {
+impl Drop for Value {
 	fn drop(&mut self) {
 		unsafe {
 			raw_types::funcs::dec_ref_count(self.into_raw_value());
@@ -24,51 +23,45 @@ impl<'a> Drop for Value<'a> {
 }
 
 #[allow(unused)]
-impl<'b> Value<'b> {
+impl Value {
 	/// Creates a new value from raw tag and data.
 	/// Use if you know what you are doing.
-	pub unsafe fn new<'a>(
+	pub unsafe fn new(
 		tag: raw_types::values::ValueTag,
 		data: raw_types::values::ValueData,
-	) -> Value<'a> {
+	) -> Value {
 		let raw = raw_types::values::Value { tag, data };
 		raw_types::funcs::inc_ref_count(raw);
 
-		Value {
-			value: raw,
-			phantom: PhantomData {},
-		}
+		Value { value: raw }
 	}
 
 	/// Equivalent to DM's `global.vars`.
-	pub fn globals() -> Value<'static> {
+	pub fn globals() -> Value {
 		return Value {
 			value: raw_types::values::Value {
 				tag: raw_types::values::ValueTag::Null,
 				data: raw_types::values::ValueData { number: 0.0 },
 			},
-			phantom: PhantomData {},
 		};
 	}
 
 	/// Equivalent to DM's `null`.
-	pub fn null() -> Value<'static> {
+	pub fn null() -> Value {
 		return Value {
 			value: raw_types::values::Value {
 				tag: raw_types::values::ValueTag::Null,
 				data: raw_types::values::ValueData { number: 0.0 },
 			},
-			phantom: PhantomData {},
 		};
 	}
 
-	fn get_by_id(&self, name_id: u32) -> DMResult<'b> {
+	fn get_by_id(&self, name_id: u32) -> DMResult {
 		let mut val = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
 		};
 
-		// TODO: Should handle error
 		unsafe {
 			if raw_types::funcs::get_variable(
 				&mut val,
@@ -77,7 +70,7 @@ impl<'b> Value<'b> {
 			) != 1
 			{
 				let varname: String = string::StringRef::from_id(name_id).into();
-				runtime!("Could not read {}.{}", &self, varname);
+				return Err(runtime!("Could not read {}.{}", &self, varname));
 			}
 
 			Ok(Self::from_raw(val))
@@ -89,7 +82,6 @@ impl<'b> Value<'b> {
 		name_id: u32,
 		new_value: raw_types::values::Value,
 	) -> Result<(), runtime::Runtime> {
-		// TODO: handle error
 		unsafe {
 			if raw_types::funcs::set_variable(
 				self.value,
@@ -98,22 +90,23 @@ impl<'b> Value<'b> {
 			) != 1
 			{
 				let varname: String = string::StringRef::from_id(name_id).into();
-				runtime!("Could not write to {}.{}", self, varname);
+				return Err(runtime!("Could not write to {}.{}", self, varname));
 			}
 		}
 		Ok(())
 	}
 
 	/// Gets a variable by name.
-	pub fn get<S: Into<string::StringRef>>(&self, name: S) -> DMResult<'b> {
-		self.get_by_id(name.into().get_id())
+	pub fn get<S: Into<string::StringRef>>(&self, name: S) -> DMResult {
+		let name = name.into();
+		self.get_by_id(name.get_id())
 	}
 
 	/// Gets a variable by name and safely casts it to a float.
 	pub fn get_number<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<f32> {
 		match self.get(name)?.as_number() {
 			Some(num) => Ok(num),
-			None => runtime!("Attempt to interpret non-number value as float"),
+			None => Err(runtime!("Attempt to interpret non-number value as float")),
 		}
 	}
 
@@ -121,20 +114,17 @@ impl<'b> Value<'b> {
 	pub fn get_string<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<String> {
 		match self.get(name)?.as_string() {
 			Some(s) => Ok(s),
-			None => runtime!("Attempt to interpret non-string value as String"),
+			None => Err(runtime!("Attempt to interpret non-string value as String")),
 		}
 	}
 
 	/// Gets a variable by name and safely casts it to a [list::List].
-	pub fn get_list<S: Into<string::StringRef>>(
-		&self,
-		name: S,
-	) -> ConversionResult<list::List<'b>> {
+	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<list::List> {
 		let var = self.get(name)?;
 
 		match var.as_list() {
 			Some(lst) => Ok(lst),
-			None => runtime!("Attempt to interpret non-list value as List"),
+			None => Err(runtime!("Attempt to interpret non-list value as List")),
 		}
 	}
 
@@ -168,7 +158,7 @@ impl<'b> Value<'b> {
 	}
 
 	/// Check if the current value is a list and casts it.
-	pub fn as_list(&self) -> Option<list::List<'b>> {
+	pub fn as_list(&self) -> Option<list::List> {
 		match self.value.tag {
 			raw_types::values::ValueTag::List => unsafe {
 				Some(list::List::from_id(self.value.data.id))
@@ -182,28 +172,25 @@ impl<'b> Value<'b> {
 	/// # Examples:
 	///
 	/// This example is equivalent to `src.explode(3)` in DM.
-	/// ```rust
+	/// ```ignore
 	/// src.call("explode", &[&Value::from(3.0)]);
 	/// ```
-	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Self]) -> DMResult<'b> {
+	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Self]) -> DMResult {
 		let mut ret = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
 		};
 
 		unsafe {
-			let procname = String::from(procname.as_ref()).replace("_", " ");
-			let args: Vec<_> = args
-				.iter()
-				.map(|e| {
-					let raw = e.into_raw_value();
-					raw_types::funcs::inc_ref_count(raw);
-					raw
-				})
-				.collect();
-			let name_ref = string::StringRef::from(&procname);
+			// Increment ref-count of args permenently before passing them on
+			for v in args {
+				raw_types::funcs::inc_ref_count(v.into_raw_value());
+			}
 
-			// TODO: handle error
+			let procname = String::from(procname.as_ref()).replace("_", " ");
+			let args: Vec<_> = args.iter().map(|e| e.into_raw_value()).collect();
+			let name_ref = string::StringRef::new(&procname);
+
 			if raw_types::funcs::call_datum_proc_by_name(
 				&mut ret,
 				Value::null().into_raw_value(),
@@ -214,12 +201,38 @@ impl<'b> Value<'b> {
 				args.len(),
 				0,
 				0,
-			) != 1
+			) == 1
 			{
-				runtime!("Error occurred while calling {}", procname)
+				return Ok(Value::from_raw_owned(ret));
 			}
+		}
 
-			Ok(Value::from_raw(ret))
+		Err(runtime!("External proc call failed"))
+	}
+
+	/// Creates a Value that references a byond string.
+	/// Will panic if the given string contains null bytes
+	///
+	/// # Examples:
+	/// ```ignore
+	/// let my_string = Value::from_string("Testing!");
+	/// ```
+	pub fn from_string<S: AsRef<str>>(data: S) -> Value {
+		// TODO: This should be done differently
+		let string = CString::new(data.as_ref()).unwrap();
+
+		unsafe {
+			let mut id = raw_types::strings::StringId(0);
+
+			assert_eq!(
+				raw_types::funcs::get_string_id(&mut id, string.as_ptr(), 1, 0, 1),
+				1
+			);
+
+			Value::new(
+				raw_types::values::ValueTag::String,
+				raw_types::values::ValueData { string: id },
+			)
 		}
 	}
 
@@ -229,64 +242,24 @@ impl<'b> Value<'b> {
 	}
 
 	/// same as from_raw but does not increment the reference count (assumes we already own this reference)
-	pub unsafe fn from_raw_owned<'a>(v: raw_types::values::Value) -> Value<'a> {
-		Value {
-			value: v,
-			phantom: PhantomData {},
-		}
+	pub unsafe fn from_raw_owned(v: raw_types::values::Value) -> Value {
+		Value { value: v }
 	}
 }
 
-impl<'a> Clone for Value<'a> {
-	fn clone(&self) -> Value<'a> {
+impl Clone for Value {
+	fn clone(&self) -> Value {
 		unsafe { Value::from_raw(self.into_raw_value()) }
 	}
 }
 
-impl fmt::Display for Value<'_> {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl fmt::Display for Value {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		write!(f, "{}", self.value)
 	}
 }
 
-fn string_to_raw_value(string: &str) -> Option<raw_types::values::Value> {
-	if let Ok(string) = CString::new(string) {
-		unsafe {
-			let mut index = raw_types::strings::StringId(0);
-
-			assert_eq!(
-				raw_types::funcs::get_string_id(&mut index, string.as_ptr(), 1, 0, 1),
-				1
-			);
-
-			return Some(raw_types::values::Value {
-				tag: raw_types::values::ValueTag::String,
-				data: raw_types::values::ValueData { string: index },
-			});
-		}
-	}
-	None
-}
-
-impl From<&str> for Value<'_> {
-	fn from(s: &str) -> Self {
-		unsafe { Value::from_raw(string_to_raw_value(s).unwrap()) }
-	}
-}
-
-impl From<String> for Value<'_> {
-	fn from(s: String) -> Self {
-		unsafe { Value::from_raw(string_to_raw_value(s.as_str()).unwrap()) }
-	}
-}
-
-impl From<&String> for Value<'_> {
-	fn from(s: &String) -> Self {
-		unsafe { Value::from_raw(string_to_raw_value(s.as_str()).unwrap()) }
-	}
-}
-
-impl From<f32> for Value<'_> {
+impl From<f32> for Value {
 	fn from(num: f32) -> Self {
 		unsafe {
 			Value::new(
@@ -297,7 +270,7 @@ impl From<f32> for Value<'_> {
 	}
 }
 
-impl From<i32> for Value<'_> {
+impl From<i32> for Value {
 	fn from(num: i32) -> Self {
 		unsafe {
 			Value::new(
@@ -308,7 +281,7 @@ impl From<i32> for Value<'_> {
 	}
 }
 
-impl From<u32> for Value<'_> {
+impl From<u32> for Value {
 	fn from(num: u32) -> Self {
 		unsafe {
 			Value::new(
@@ -319,7 +292,7 @@ impl From<u32> for Value<'_> {
 	}
 }
 
-impl From<bool> for Value<'_> {
+impl From<bool> for Value {
 	fn from(b: bool) -> Self {
 		unsafe {
 			Value::new(
@@ -332,7 +305,7 @@ impl From<bool> for Value<'_> {
 	}
 }
 
-impl raw_types::values::IntoRawValue for &Value<'_> {
+impl raw_types::values::IntoRawValue for &Value {
 	unsafe fn into_raw_value(self) -> raw_types::values::Value {
 		self.value
 	}

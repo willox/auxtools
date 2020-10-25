@@ -1,6 +1,6 @@
 [workspace]
 members = [
-	"cli",
+	"auxtools",
 	"dm",
 	"dm-impl",
 	"sigscan",

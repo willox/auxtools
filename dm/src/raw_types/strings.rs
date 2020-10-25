@@ -15,9 +15,3 @@ pub struct StringEntry {
 	pub unk_1: u32,
 	pub unk_2: u32,
 }
-
-#[repr(C)]
-pub struct StringTable {
-	pub strings: *mut *mut StringEntry,
-	pub size: u32,
-}

@@ -107,19 +107,20 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 	let cthook_prelude = match proc {
 		Some(p) => quote! {
-			inventory::submit!(
-				crate::hooks::CompileTimeHook::new(#p, #func_name)
+			dm::inventory::submit!(
+				#![crate = dm]
+				dm::CompileTimeHook::new(#p, #func_name)
 			);
 		},
 		None => quote! {},
 	};
 	let signature = quote! {
-		fn #func_name<'a>(
-			ctx: &'a DMContext,
-			src: Value<'a>,
-			usr: Value<'a>,
-			args: &mut Vec<Value<'a>>,
-		) -> DMResult<'a>
+		fn #func_name(
+			ctx: &dm::DMContext,
+			src: &dm::Value,
+			usr: &dm::Value,
+			args: &mut Vec<dm::Value>,
+		) -> dm::DMResult
 	};
 
 	let body = &input.block;
@@ -146,13 +147,15 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	}
 	let _default_null = quote! {
 		#[allow(unreachable_code)]
-		Value::null()
+		dm::Value::null()
 	};
 	let result = quote! {
 		#cthook_prelude
 		#signature {
-			for i in 0..#args_len - args.len() {
-				args.push(Value::null())
+			if #args_len > args.len() {
+				for i in 0..#args_len - args.len() {
+					args.push(dm::Value::null())
+				}
 			}
 			let (#arg_names) = (#proc_arg_unpacker);
 			#body

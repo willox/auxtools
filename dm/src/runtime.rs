@@ -1,33 +1,10 @@
 use crate::value::Value;
 use std::result;
 
-/// This struct represents a DM runtime error. Since we don't have exceptions in rust, we
-/// have to handle errors using [DMResult]. Some operations, such as attempting to read
-/// nonexistent variables, can return a Runtime; It can be either handled or bubbled up using the ? operator.
+/// Represents a byond runtime, sort of. This will probably drastically in the future.
 ///
-/// # Examples
-///
-/// ```ignore
-/// #[hook("/datum/proc/errorist")]
-/// fn throw() {
-///		let v = src.get("nonexistent_var")?;
-/// 	Ok(v)
-/// }
-/// ```
-///
-/// This hook attempts to read a variable that does not exist.
-///
-///
-///
-///
-///
-///
-///
-///
-///
-///
-///
-
+/// These are just simple error messages that our API and hooks can return as failure states.
+#[derive(Debug)]
 pub struct Runtime {
 	pub message: String,
 }
@@ -40,15 +17,19 @@ impl Runtime {
 	}
 }
 
+/// This macro makes instantiating [Runtimes](struct.Runtime.html) a (little bit) easier.
 #[macro_export]
 macro_rules! runtime {
 	($fmt:expr) => {
-		return Err($crate::runtime::Runtime::new($fmt));
+		$crate::Runtime::new($fmt);
 	};
 	($fmt: expr, $( $args:expr ),*) => {
-		return Err($crate::runtime::Runtime::new(format!( $fmt, $( $args, )* )));
+		$crate::Runtime::new(format!( $fmt, $( $args, )* ));
 	};
 }
 
-pub type DMResult<'a> = result::Result<Value<'a>, Runtime>;
+/// Used as a result for hooks and calls into BYOND.
+pub type DMResult = result::Result<Value, Runtime>;
+
+/// Used as a result for conversions between DM values and rust values
 pub type ConversionResult<T> = result::Result<T, Runtime>;

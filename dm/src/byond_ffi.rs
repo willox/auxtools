@@ -66,12 +66,22 @@ pub fn byond_return(value: Option<Vec<u8>>) -> *const c_char {
 	}
 }
 
+/// Creates a normal byond ffi function that can be called in DM with [call](http://www.byond.com/docs/ref/#/proc/call).
+///
+/// You should favour [hooks](attr.hook.html) over these when working with auxtools.
+///
+/// # Examples
+/// ```ignore
+/// // byond_ffi_fn! { my_proc(_input) {
+/// // 	Some("Hello, BYOND!".to_owned())
+/// // }
+/// ```
 #[macro_export]
 macro_rules! byond_ffi_fn {
     ($name:ident() $body:block) => {
         #[no_mangle]
         #[allow(clippy::missing_safety_doc)]
-        pub extern "C" fn $name(
+        extern "C" fn $name(
             _argc: ::std::os::raw::c_int, _argv: *const *const ::std::os::raw::c_char
         ) -> *const ::std::os::raw::c_char {
             let closure = || ($body);
@@ -82,7 +92,7 @@ macro_rules! byond_ffi_fn {
     ($name:ident($($arg:ident),* $(, ...$rest:ident)?) $body:block) => {
         #[no_mangle]
         #[allow(clippy::missing_safety_doc)]
-        pub extern "C" fn $name(
+        extern "C" fn $name(
             _argc: ::std::os::raw::c_int, _argv: *const *const ::std::os::raw::c_char
         ) -> *const ::std::os::raw::c_char {
             let __args;
