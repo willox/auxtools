@@ -1,0 +1,36 @@
+name: Generate Docs
+
+on:
+  push:
+    branches: [ master, feature/github-autogen-docs ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # The first job utilizes windows-latest (since auxtools needs windows currently)
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        persist-credentials: false # Necessary.
+
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable-i686-unknown-linux-gnu
+        target: i686-unknown-linux-gnu
+        override: true
+
+    - name: Install Dependencies
+      run: sudo apt install build-essential g++-multilib
+
+    - name: Build Docs
+      run: cargo doc --no-deps
+
+    - name: Deploy 🚀
+      uses: JamesIves/github-pages-deploy-action@3.7.1
+      with:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        BRANCH: docs        # The branch the action should deploy to.
+        FOLDER: target/doc  # The folder we deploy to Github Sites.
+        CLEAN: true         # Automatically remove deleted files from the deploy branch.
+        SINGLE_COMMIT: true # Keep only one commit for the docs branch.

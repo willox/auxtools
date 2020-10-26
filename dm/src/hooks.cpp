@@ -33,7 +33,6 @@ extern "C" Value LINUX_REGPARM3 call_proc_by_id_original_trampoline(
 	uint32_t unk_1,
 	uint32_t unk_2
 ) {
-	extern CallProcById_Hook_Ptr call_proc_by_id_original;
 	return call_proc_by_id_original(usr, proc_type, proc_id, unk_0, src, args, args_count, unk_1, unk_2);
 }
 
