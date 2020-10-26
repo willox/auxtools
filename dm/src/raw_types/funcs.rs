@@ -40,7 +40,7 @@ extern "C" {
 		unk_0: u32,
 		src: values::Value,
 		args: *const values::Value,
-		args_countL: usize,
+		args_count_l: usize,
 		unk_1: u32,
 		unk_2: u32,
 	) -> u8;
@@ -51,7 +51,7 @@ extern "C" {
 		proc_name: strings::StringId,
 		src: values::Value,
 		args: *const values::Value,
-		args_countL: usize,
+		args_count_l: usize,
 		unk_0: u32,
 		unk_1: u32,
 	) -> u8;

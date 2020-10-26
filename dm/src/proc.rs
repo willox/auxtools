@@ -53,8 +53,8 @@ impl<'a> Proc {
 	/// ```ignore
 	/// #[hook("/proc/my_proc")]
 	/// fn my_proc_hook() -> DMResult {
-	/// 	let proc = Proc::find("/proc/do_explode").unwrap();
-	/// 	proc.call(&[&Value::from(3.0)])
+	///     let proc = Proc::find("/proc/do_explode").unwrap();
+	///     proc.call(&[&Value::from(3.0)])
 	/// }
 	/// ```
 	pub fn call(&self, args: &[&Value]) -> runtime::DMResult {

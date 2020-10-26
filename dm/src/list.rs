@@ -80,7 +80,7 @@ impl List {
 			data: raw_types::values::ValueData { id: 0 },
 		};
 
-		let index = index.as_list_key();
+		let index = index.into_list_key();
 
 		// assoc funcs for everything else
 		unsafe {
@@ -101,13 +101,13 @@ impl List {
 		index: I,
 		value: V,
 	) -> Result<(), runtime::Runtime> {
-		let index = index.as_list_key();
+		let index = index.into_list_key();
 		let value = unsafe { value.into_raw_value() };
 
 		unsafe {
 			if raw_types::funcs::set_assoc_element(
 				self.value.into_raw_value(),
-				index.as_list_key(),
+				index.into_list_key(),
 				value,
 			) == 1
 			{
@@ -140,7 +140,7 @@ impl List {
 				1
 			);
 		}
-		return length;
+		length
 	}
 }
 
@@ -157,23 +157,23 @@ impl From<List> for Value {
 }
 
 pub trait ListKey {
-	fn as_list_key(self) -> raw_types::values::Value;
+	fn into_list_key(self) -> raw_types::values::Value;
 }
 
 impl ListKey for &raw_types::values::Value {
-	fn as_list_key(self) -> raw_types::values::Value {
+	fn into_list_key(self) -> raw_types::values::Value {
 		*self
 	}
 }
 
 impl ListKey for &Value {
-	fn as_list_key(self) -> raw_types::values::Value {
+	fn into_list_key(self) -> raw_types::values::Value {
 		unsafe { self.into_raw_value() }
 	}
 }
 
 impl ListKey for u32 {
-	fn as_list_key(self) -> raw_types::values::Value {
+	fn into_list_key(self) -> raw_types::values::Value {
 		raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Number,
 			data: raw_types::values::ValueData {

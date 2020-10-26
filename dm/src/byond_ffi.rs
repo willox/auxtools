@@ -73,7 +73,7 @@ pub fn byond_return(value: Option<Vec<u8>>) -> *const c_char {
 /// # Examples
 /// ```ignore
 /// // byond_ffi_fn! { my_proc(_input) {
-/// // 	Some("Hello, BYOND!".to_owned())
+/// //     Some("Hello, BYOND!".to_owned())
 /// // }
 /// ```
 #[macro_export]

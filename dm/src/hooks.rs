@@ -36,7 +36,7 @@ extern "C" {
 		unk_0: u32,
 		src: raw_types::values::Value,
 		args: *mut raw_types::values::Value,
-		args_countL: usize,
+		args_count_l: usize,
 		unk_1: u32,
 		unk_2: u32,
 	) -> raw_types::values::Value;
@@ -48,7 +48,7 @@ extern "C" {
 		unk_0: u32,
 		src: raw_types::values::Value,
 		args: *mut raw_types::values::Value,
-		args_countL: usize,
+		args_count_l: usize,
 		unk_1: u32,
 		unk_2: u32,
 	) -> raw_types::values::Value;
@@ -139,7 +139,7 @@ extern "C" fn call_proc_by_id_hook(
 	unknown2: u32,
 	unknown3: u32,
 ) -> raw_types::values::Value {
-	return PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
+	PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
 		Some(hook) => {
 			let ctx = unsafe { DMContext::new() };
 			let src;
@@ -180,5 +180,5 @@ extern "C" fn call_proc_by_id_hook(
 				unknown3,
 			)
 		},
-	});
+	})
 }

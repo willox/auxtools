@@ -30,13 +30,13 @@ impl StringRef {
 		StringRef {
 			value: Value::from_raw(raw_types::values::Value {
 				tag: raw_types::values::ValueTag::String,
-				data: raw_types::values::ValueData { id: id },
+				data: raw_types::values::ValueData { id },
 			}),
 		}
 	}
 
 	pub fn get_id(&self) -> u32 {
-		return unsafe { self.value.value.data.id };
+		unsafe { self.value.value.data.id }
 	}
 }
 

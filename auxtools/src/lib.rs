@@ -1,3 +1,5 @@
+#![deny(clippy::complexity, clippy::correctness, clippy::perf, clippy::style)]
+
 use dm::*;
 
 #[hook("/proc/hooked")]

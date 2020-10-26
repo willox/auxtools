@@ -1,12 +1,12 @@
-use proc_macro::TokenStream;
-use syn::spanned::Spanned;
+#![deny(clippy::complexity, clippy::correctness, clippy::perf, clippy::style)]
 
+use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Lit};
+use syn::{parse_macro_input, spanned::Spanned, Lit};
 
 fn from_signature(s: String) -> Vec<Option<u8>> {
 	s.trim()
-		.split(" ")
+		.split(' ')
 		.map(|byte| {
 			let byte = byte.trim();
 			match byte.len() {
@@ -27,7 +27,7 @@ fn from_signature(s: String) -> Vec<Option<u8>> {
 pub fn convert_signature(input: TokenStream) -> TokenStream {
 	let string = parse_macro_input!(input as Lit);
 	let string = match string {
-		Lit::Str(lit) => lit.value().to_string(),
+		Lit::Str(lit) => lit.value(),
 		_ => panic!("not string input"),
 	};
 
@@ -45,10 +45,10 @@ pub fn convert_signature(input: TokenStream) -> TokenStream {
 		})
 		.collect();
 
-	return quote! {
+	let result = quote! {
 		&[ #( #streams, )* ]
-	}
-	.into();
+	};
+	result.into()
 }
 
 fn extract_args(a: &syn::FnArg) -> &syn::PatType {
@@ -68,10 +68,10 @@ fn extract_args(a: &syn::FnArg) -> &syn::PatType {
 /// ```ignore
 /// #[hook]
 /// fn double_up(num: Value) {
-///		if let Some(num) = num.as_number() {
-///			Value::from(num * 2.0);
-///		}
-///		Value::null()
+///     if let Some(num) = num.as_number() {
+///         Value::from(num * 2.0);
+///     }
+///     Value::null()
 /// }
 /// ```
 ///
@@ -81,9 +81,9 @@ fn extract_args(a: &syn::FnArg) -> &syn::PatType {
 /// ```ignore
 /// #[hook("/mob/proc/on_honked")]
 /// fn on_honked(honker: Value) {
-///		src.call("gib", &[]);
-///		honker.call("laugh", &[]);
-///		Value::null()
+///     src.call("gib", &[]);
+///     honker.call("laugh", &[]);
+///     Value::null()
 /// }
 /// ```
 
@@ -131,19 +131,16 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 		syn::Token![,],
 	> = syn::punctuated::Punctuated::new();
 	for arg in args.iter().map(extract_args) {
-		match &*arg.pat {
-			syn::Pat::Ident(p) => {
-				arg_names.push(p.ident.clone());
-				let index = arg_names.len() - 1;
-				proc_arg_unpacker.push(
-					(quote! {
-						&args[#index]
-					})
-					.into(),
-				)
-			}
-			_ => {}
-		};
+		if let syn::Pat::Ident(p) = &*arg.pat {
+			arg_names.push(p.ident.clone());
+			let index = arg_names.len() - 1;
+			proc_arg_unpacker.push(
+				(quote! {
+					&args[#index]
+				})
+				.into(),
+			);
+		}
 	}
 	let _default_null = quote! {
 		#[allow(unreachable_code)]

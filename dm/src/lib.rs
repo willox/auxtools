@@ -1,7 +1,6 @@
-//! For when BYOND is not enough. Probably often.
+#![deny(clippy::complexity, clippy::correctness, clippy::perf, clippy::style)]
 
-use dm_impl;
-use std::ffi::c_void;
+//! For when BYOND is not enough. Probably often.
 
 mod byond_ffi;
 mod context;
@@ -19,6 +18,7 @@ pub use hooks::CompileTimeHook;
 pub use list::List;
 pub use proc::Proc;
 pub use runtime::{ConversionResult, DMResult, Runtime};
+use std::ffi::c_void;
 pub use string::StringRef;
 pub use value::Value;
 
@@ -27,7 +27,7 @@ pub use inventory;
 
 macro_rules! signature {
 	($sig:tt) => {
-		$crate::dm_impl::convert_signature!($sig)
+		dm_impl::convert_signature!($sig)
 	};
 }
 
@@ -44,7 +44,7 @@ macro_rules! signatures {
 }
 
 #[cfg(windows)]
-const BYONDCORE: &'static str = "byondcore.dll";
+const BYONDCORE: &str = "byondcore.dll";
 #[cfg(windows)]
 signatures! {
 	get_proc_array_entry => "E8 ?? ?? ?? ?? 8B C8 8D 45 ?? 6A 01 50 FF 76 ?? 8A 46 ?? FF 76 ?? FE C0",
@@ -66,7 +66,7 @@ signatures! {
 }
 
 #[cfg(unix)]
-const BYONDCORE: &'static str = "libbyond.so";
+const BYONDCORE: &str = "libbyond.so";
 #[cfg(unix)]
 signatures! {
 	get_proc_array_entry => "E8 ?? ?? ?? ?? 8B 00 89 04 24 E8 ?? ?? ?? ?? 8B 00 89 44 24 ?? 8D 45 ??",
@@ -106,7 +106,7 @@ macro_rules! find_function_by_call {
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name.to_vec()) {
 			unsafe {
 				let offset = *(ptr.offset(1) as *const isize);
-				$name = std::mem::transmute(ptr.offset(5).offset(offset) as *const ());
+				$name = ptr.offset(5).offset(offset) as *const () as *const std::ffi::c_void;
 				}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));

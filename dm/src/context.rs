@@ -22,8 +22,8 @@ impl DMContext {
 	/// ```ignore
 	/// #[hook("/proc/my_proc")]
 	/// fn my_proc_hook() {
-	/// 	let glob_var = ctx.get_global("slime_count")?;
-	/// 	Ok(glob_var)
+	///     let glob_var = ctx.get_global("slime_count")?;
+	///     Ok(glob_var)
 	/// }
 	/// ```
 	pub fn get_global<S: Into<string::StringRef>>(&self, name: S) -> DMResult {
