@@ -1,4 +1,5 @@
 use crate::hook;
+use crate::raw_types::values::IntoRawValue;
 use crate::runtime;
 use crate::value::Value;
 use std::sync::Mutex;
@@ -35,25 +36,28 @@ lazy_static! {
 /// ```
 ///
 ///
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Callback {
-	// dm_callback: Value,
-	// args: Vec<Value>,
+	dm_callback: crate::raw_types::values::Value,
+	args: Box<dyn Fn() -> Vec<Value> + Send>,
 }
 
 impl Callback {
-	fn new<V: AsRef<Value>>(cb: V) -> Result<Self, runtime::Runtime> {
+	pub fn new<V: AsRef<Value>>(cb: V) -> Result<Self, runtime::Runtime> {
 		// TODO: Verify this is indeed a /datum/callback
 		Ok(Self {
-			// dm_callback: cb.as_ref().clone(),
-			// args: Vec::new(),
+			dm_callback: unsafe { cb.as_ref().into_raw_value() },
+			args: Vec::new(),
 		})
 	}
 
 	/// Queues this callback for execution on next timer tick.
-	fn invoke<V: AsRef<Value>>(&self, args: &[V]) {
+	pub fn invoke<V: AsRef<Value>>(&self, args: &[V]) {
 		let mut perfect_reflection = self.clone();
-		// perfect_reflection.args = args.iter().map(|a| a.as_ref().clone()).collect();
+		perfect_reflection.args = args
+			.iter()
+			.map(|a| unsafe { a.as_ref().into_raw_value() })
+			.collect();
 		READY_CALLBACKS.lock().unwrap().push(perfect_reflection);
 	}
 }
@@ -65,7 +69,16 @@ fn process_callbacks() {
 	// We don't care if a callback runtimes.
 	#[allow(unused_must_use)]
 	for cb in cbs.iter() {
-		// cb.dm_callback.call("Invoke", cb.args.as_slice());
+		unsafe {
+			Value::from_raw_owned(cb.dm_callback).call(
+				"Invoke",
+				cb.args
+					.iter()
+					.map(|v| Value::from_raw_owned(*v))
+					.collect::<Vec<Value>>()
+					.as_slice(),
+			)
+		};
 	}
 	cbs.clear();
 

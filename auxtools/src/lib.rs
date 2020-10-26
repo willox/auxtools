@@ -1,4 +1,8 @@
+#![deny(clippy::complexity, clippy::correctness, clippy::perf, clippy::style)]
+
 use dm::*;
+use std::thread;
+use std::time::Duration;
 
 #[hook("/proc/hooked")]
 fn hello_proc_hook() {
@@ -13,4 +17,20 @@ fn hello_proc_hook() {
 	}
 
 	Ok(Value::null())
+}
+
+#[hook("/proc/auxtools_download_file")]
+fn download_file(url: Value, cb: Value) {
+	let url = url.as_string()?;
+	let cb = Callback::new(cb)?;
+
+	thread::spawn(move || {
+		thread::sleep(Duration::from_secs(3));
+		cb.invoke(&[Value::from_string("Top secret file contents")]);
+	});
+
+	Ok(Value::from_string(format!(
+		"Starting download of {}...",
+		url
+	)))
 }
