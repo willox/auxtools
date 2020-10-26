@@ -37,23 +37,23 @@ lazy_static! {
 ///
 #[derive(Clone, Debug)]
 pub struct Callback {
-	dm_callback: Value,
-	args: Vec<Value>,
+	// dm_callback: Value,
+	// args: Vec<Value>,
 }
 
 impl Callback {
 	fn new<V: AsRef<Value>>(cb: V) -> Result<Self, runtime::Runtime> {
 		// TODO: Verify this is indeed a /datum/callback
 		Ok(Self {
-			dm_callback: cb.as_ref().clone(),
-			args: Vec::new(),
+			// dm_callback: cb.as_ref().clone(),
+			// args: Vec::new(),
 		})
 	}
 
 	/// Queues this callback for execution on next timer tick.
 	fn invoke<V: AsRef<Value>>(&self, args: &[V]) {
 		let mut perfect_reflection = self.clone();
-		perfect_reflection.args = args.iter().map(|a| a.as_ref().clone()).collect();
+		// perfect_reflection.args = args.iter().map(|a| a.as_ref().clone()).collect();
 		READY_CALLBACKS.lock().unwrap().push(perfect_reflection);
 	}
 }
@@ -65,7 +65,7 @@ fn process_callbacks() {
 	// We don't care if a callback runtimes.
 	#[allow(unused_must_use)]
 	for cb in cbs.iter() {
-		cb.dm_callback.call("Invoke", cb.args.as_slice());
+		// cb.dm_callback.call("Invoke", cb.args.as_slice());
 	}
 	cbs.clear();
 
