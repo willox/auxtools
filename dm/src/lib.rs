@@ -8,7 +8,7 @@ mod context;
 mod hooks;
 mod list;
 mod proc;
-mod raw_types;
+pub mod raw_types;
 mod runtime;
 mod string;
 mod value;

@@ -1,9 +1,16 @@
 use dm::*;
 
-#[hook("/datum/gas_mixture/proc/react")]
+#[hook("/proc/hooked")]
 fn hello_proc_hook() {
-	let world = ctx.get_world();
-	let maxx = world.get_number("maxx")?;
+	let obj = &args[0];
+	let vars = obj.get_list("vars")?;
+
+	let mut var_names = Vec::new();
+
+	for i in 1..=vars.len() {
+		let name = vars.get(i)?;
+		var_names.push(name.as_string()?);
+	}
 
 	Ok(Value::null())
 }

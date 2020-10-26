@@ -104,28 +104,18 @@ impl Value {
 
 	/// Gets a variable by name and safely casts it to a float.
 	pub fn get_number<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<f32> {
-		match self.get(name)?.as_number() {
-			Some(num) => Ok(num),
-			None => Err(runtime!("Attempt to interpret non-number value as float")),
-		}
+		self.get(name)?.as_number()
 	}
 
 	/// Gets a variable by name and safely casts it to a string.
 	pub fn get_string<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<String> {
-		match self.get(name)?.as_string() {
-			Some(s) => Ok(s),
-			None => Err(runtime!("Attempt to interpret non-string value as String")),
-		}
+		self.get(name)?.as_string()
 	}
 
 	/// Gets a variable by name and safely casts it to a [list::List].
 	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<list::List> {
 		let var = self.get(name)?;
-
-		match var.as_list() {
-			Some(lst) => Ok(lst),
-			None => Err(runtime!("Attempt to interpret non-list value as List")),
-		}
+		var.as_list()
 	}
 
 	/// Sets a variable by name to a given value.
@@ -140,31 +130,26 @@ impl Value {
 	}
 
 	/// Check if the current value is a number and casts it.
-	pub fn as_number(&self) -> Option<f32> {
+	pub fn as_number(&self) -> ConversionResult<f32> {
 		match self.value.tag {
-			raw_types::values::ValueTag::Number => unsafe { Some(self.value.data.number) },
-			_ => None,
+			raw_types::values::ValueTag::String => unsafe { Ok(self.value.data.number) },
+			_ => Err(runtime!("Attempt to interpret non-string value as String")),
 		}
 	}
 
 	/// Check if the current value is a string and casts it.
-	pub fn as_string(&self) -> Option<String> {
+	pub fn as_string(&self) -> ConversionResult<String> {
 		match self.value.tag {
 			raw_types::values::ValueTag::String => unsafe {
-				Some(string::StringRef::from_id(self.value.data.id).into())
+				Ok(string::StringRef::from_id(self.value.data.id).into())
 			},
-			_ => None,
+			_ => Err(runtime!("Attempt to interpret non-string value as String")),
 		}
 	}
 
 	/// Check if the current value is a list and casts it.
-	pub fn as_list(&self) -> Option<list::List> {
-		match self.value.tag {
-			raw_types::values::ValueTag::List => unsafe {
-				Some(list::List::from_id(self.value.data.id))
-			},
-			_ => None,
-		}
+	pub fn as_list(&self) -> ConversionResult<list::List> {
+		list::List::from_value(self)
 	}
 
 	/// Calls a method of the value with the given arguments.
@@ -254,8 +239,14 @@ impl Clone for Value {
 }
 
 impl fmt::Display for Value {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(f, "{}", self.value)
+	}
+}
+
+impl fmt::Debug for Value {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "{:?}", self.value)
 	}
 }
 
