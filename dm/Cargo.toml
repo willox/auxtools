@@ -12,6 +12,7 @@ dm-impl = { path = "../dm-impl" }
 sigscan = { path = "../sigscan" }
 once_cell = "1.4"
 inventory = "0.1"
+lazy_static = "1.4.0"
 
 [dependencies.detour]
 version = "0.7"

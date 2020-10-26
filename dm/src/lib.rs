@@ -3,6 +3,7 @@
 //! For when BYOND is not enough. Probably often.
 
 mod byond_ffi;
+mod callback;
 mod context;
 mod hooks;
 mod list;
@@ -12,6 +13,7 @@ mod runtime;
 mod string;
 mod value;
 
+pub use callback::Callback;
 pub use context::DMContext;
 pub use dm_impl::hook;
 pub use hooks::CompileTimeHook;
