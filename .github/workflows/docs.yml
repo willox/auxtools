@@ -34,3 +34,4 @@ jobs:
         FOLDER: target/doc  # The folder we deploy to Github Sites.
         CLEAN: true         # Automatically remove deleted files from the deploy branch.
         SINGLE_COMMIT: true # Keep only one commit for the docs branch.
+        CLEAN_EXCLUDE: '["index.html"]' # Exclude the index from being deleted, since it's not generated. https://github.com/rust-lang/rust/issues/73185
