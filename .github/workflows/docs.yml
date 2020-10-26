@@ -2,7 +2,7 @@ name: Generate Docs
 
 on:
   push:
-    branches: [ master, feature/github-autogen-docs ]
+    branches: [ master ]
 
 jobs:
   build:
