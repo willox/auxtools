@@ -1,5 +1,6 @@
-use super::super::string;
+use super::funcs;
 use super::strings;
+use std::ffi::CStr;
 use std::fmt;
 
 #[repr(u8)]
@@ -7,24 +8,82 @@ use std::fmt;
 #[allow(unused)]
 #[non_exhaustive]
 pub enum ValueTag {
-	Null,   // 0x00
-	Turf,   // 0x01
-	Obj,    // 0x02
-	Mob,    // 0x03
-	Area,   // 0x04
-	Client, // 0x05
-	String, // 0x06
+	Null = 0x00,
+	Turf = 0x01,
+	Obj = 0x02,
+	Mob = 0x03,
+	Area = 0x04,
+	Client = 0x05,
+	String = 0x06,
 
-	MobTypepath = 0x08, // 0x08
-	ObjTypepath,        // 0x09
-	TurfTypepath,       // 0x0A
-	AreaTypepath,       // 0x0B
-	Resource,           // 0x0C
-	Image,              // 0x0D
-	World,              // 0x0E
-	List,               // 0x0F
+	MobTypepath = 0x08,
+	ObjTypepath = 0x09,
+	TurfTypepath = 0x0A,
+	AreaTypepath = 0x0B,
+	Resource = 0x0C,
+	Image = 0x0D,
+	World = 0x0E,
 
-	Number = 0x2A, // 0x2A
+	// Lists
+	List = 0x0F,
+	MobVars = 0x2C,
+	ObjVars = 0x2D,
+	TurfVars = 0x2E,
+	AreaVars = 0x2F,
+	ClientVars = 0x30,
+	Vars = 0x31,
+	MobOverlays = 0x32,
+	MobUnderlays = 0x33,
+	ObjOverlays = 0x34,
+	ObjUnderlays = 0x35,
+	TurfOverlays = 0x36,
+	TurfUnderlays = 0x37,
+	AreaOverlays = 0x38,
+	AreaUnderlays = 0x39,
+	ImageVars = 0x42,
+	WorldVars = 0x51,
+	GlobalVars = 0x52,
+
+	Number = 0x2A,
+	Appearance = 0x3A,
+}
+
+impl fmt::Display for Value {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		unsafe {
+			match self.tag {
+				ValueTag::Number => write!(f, "{}", self.data.number),
+				ValueTag::String => {
+					let id = self.data.string;
+					let mut entry: *mut strings::StringEntry = std::ptr::null_mut();
+					assert_eq!(funcs::get_string_table_entry(&mut entry, id), 1);
+					write!(f, "{}", CStr::from_ptr((*entry).data).to_string_lossy())
+				}
+				_ => write!(f, "Value({}, {})", self.tag as u8, self.data.id),
+			}
+		}
+	}
+}
+
+impl fmt::Debug for Value {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		unsafe {
+			match self.tag {
+				ValueTag::Number => write!(f, "Number({:?}", self.data.number),
+				ValueTag::String => {
+					let id = self.data.string;
+					let mut entry: *mut strings::StringEntry = std::ptr::null_mut();
+					assert_eq!(funcs::get_string_table_entry(&mut entry, id), 1);
+					write!(
+						f,
+						"String({:?})",
+						CStr::from_ptr((*entry).data).to_string_lossy()
+					)
+				}
+				_ => write!(f, "Value({}, {})", self.tag as u8, self.data.id),
+			}
+		}
+	}
 }
 
 impl fmt::Display for ValueTag {
@@ -48,20 +107,6 @@ pub union ValueData {
 pub struct Value {
 	pub tag: ValueTag,
 	pub data: ValueData,
-}
-
-impl fmt::Display for Value {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		if self.tag == ValueTag::Number {
-			write!(f, "({}, {})", self.tag, unsafe { self.data.number })
-		} else if self.tag == ValueTag::String {
-			write!(f, "TODO")
-		//let content: String = unsafe { string::StringRef::from_id(self.data.id).into() };
-		//write!(f, "({}, {})", self.tag, content)
-		} else {
-			write!(f, "({}, {})", self.tag, unsafe { self.data.id })
-		}
-	}
 }
 
 pub trait IntoRawValue {

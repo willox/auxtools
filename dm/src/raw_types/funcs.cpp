@@ -13,6 +13,10 @@ struct Value {
 	uint32_t value;
 };
 
+static void clean(Value& val) {
+    val.type &= 0xFF;
+}
+
 //
 // BYOND likes to use C++ exceptions for some stuff (like runtimes) - Rust can't catch them and code will just unroll back to before our hooks
 // We use these wrappers to hackily handle that and let Rust know an exception happened instead of letting it propogate
@@ -79,6 +83,8 @@ extern "C" uint8_t call_datum_proc_by_name(
 	uint32_t unk_1
 ) {
     try {
+        clean(usr);
+        clean(src);
         *out = call_datum_proc_by_name_byond(usr, proc_type, proc_name, src, args, args_count, unk_0, unk_1);
         return 1;
     } catch(...) {
@@ -106,6 +112,7 @@ extern "C" uint8_t get_string_id(uint32_t* out, const char* data, bool a, bool b
 
 extern "C" uint8_t get_variable(Value* out, Value datum, uint32_t string_id) {
     try {
+        clean(datum);
         *out = get_variable_byond(datum, string_id);
         return 1;
     } catch(...) {
@@ -115,6 +122,8 @@ extern "C" uint8_t get_variable(Value* out, Value datum, uint32_t string_id) {
 
 extern "C" uint8_t set_variable(Value datum, uint32_t string_id, Value value) {
     try {
+        clean(datum);
+        clean(value);
         set_variable_byond(datum, string_id, value);
         return 1;
     } catch(...) {
@@ -133,6 +142,7 @@ extern "C" uint8_t get_string_table_entry(void** out, uint32_t string_id) {
 
 extern "C" uint8_t inc_ref_count(Value value) {
     try {
+        clean(value);
         inc_ref_count_byond(value);
         return 1;
     } catch(...) {
@@ -142,6 +152,7 @@ extern "C" uint8_t inc_ref_count(Value value) {
 
 extern "C" uint8_t dec_ref_count(Value value) {
     try {
+        clean(value);
         dec_ref_count_byond(value);
         return 1;
     } catch(...) {
@@ -160,6 +171,8 @@ extern "C" uint8_t get_list_by_id(void** out, uint32_t list_id) {
 
 extern "C" uint8_t get_assoc_element(Value* out, Value datum, Value index) {
     try {
+        clean(datum);
+        clean(index);
         *out = get_assoc_element_byond(datum, index);
         return 1;
     } catch(...) {
@@ -169,6 +182,9 @@ extern "C" uint8_t get_assoc_element(Value* out, Value datum, Value index) {
 
 extern "C" uint8_t set_assoc_element(Value datum, Value index, Value value) {
     try {
+        clean(datum);
+        clean(index);
+        clean(value);
         set_assoc_element_byond(datum, index, value);
         return 1;
     } catch(...) {
@@ -187,6 +203,8 @@ extern "C" uint8_t create_list(uint32_t* out, uint32_t reserve_capacity) {
 
 extern "C" uint8_t append_to_list(Value list, Value value) {
     try {
+        clean(list);
+        clean(value);
         append_to_list_byond(list, value);
         return 1;
     } catch(...) {
@@ -196,6 +214,8 @@ extern "C" uint8_t append_to_list(Value list, Value value) {
 
 extern "C" uint8_t remove_from_list(Value list, Value value) {
     try {
+        clean(list);
+        clean(value);
         remove_from_list_byond(list, value);
         return 1;
     } catch(...) {
@@ -205,6 +225,7 @@ extern "C" uint8_t remove_from_list(Value list, Value value) {
 
 extern "C" uint8_t get_length(uint32_t* out, Value value) {
     try {
+        clean(value);
         *out = get_length_byond(value);
         return 1;
     } catch(...) {

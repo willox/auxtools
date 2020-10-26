@@ -4,7 +4,6 @@ use super::string;
 use super::value::Value;
 use crate::runtime;
 use runtime::{ConversionResult, DMResult};
-use std::marker::PhantomData;
 
 /// Used to interact with global variables.
 ///
