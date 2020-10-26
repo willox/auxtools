@@ -132,8 +132,8 @@ impl Value {
 	/// Check if the current value is a number and casts it.
 	pub fn as_number(&self) -> ConversionResult<f32> {
 		match self.value.tag {
-			raw_types::values::ValueTag::String => unsafe { Ok(self.value.data.number) },
-			_ => Err(runtime!("Attempt to interpret non-string value as String")),
+			raw_types::values::ValueTag::Number => unsafe { Ok(self.value.data.number) },
+			_ => Err(runtime!("Attempt to interpret non-number value as number")),
 		}
 	}
 
