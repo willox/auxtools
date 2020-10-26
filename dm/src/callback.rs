@@ -1,3 +1,16 @@
+use crate::hook;
+use crate::runtime;
+use crate::value::Value;
+use std::sync::Mutex;
+
+use crate as dm;
+
+use lazy_static::lazy_static;
+
+lazy_static! {
+	static ref READY_CALLBACKS: Mutex<Vec<Callback>> = Mutex::new(Vec::new());
+}
+
 /// # Callbacks
 ///
 /// Allows you to pass callbacks from dm code. Invoking them is thread safe.
@@ -22,19 +35,6 @@
 /// ```
 ///
 ///
-use crate::hook;
-use crate::runtime;
-use crate::value::Value;
-use std::sync::Mutex;
-
-use crate as dm;
-
-use lazy_static::lazy_static;
-
-lazy_static! {
-	static ref READY_CALLBACKS: Mutex<Vec<Callback>> = Mutex::new(Vec::new());
-}
-
 #[derive(Clone, Debug)]
 pub struct Callback {
 	dm_callback: Value,
