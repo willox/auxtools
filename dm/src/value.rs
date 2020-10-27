@@ -35,29 +35,32 @@ impl Value {
 		let raw = raw_types::values::Value { tag, data };
 		raw_types::funcs::inc_ref_count(raw);
 
-		Value { value: raw, phantom: PhantomData {} }
+		Value {
+			value: raw,
+			phantom: PhantomData {},
+		}
 	}
 
 	/// Equivalent to DM's `global.vars`.
 	pub fn globals() -> Value {
-		return Value {
+		Value {
 			value: raw_types::values::Value {
 				tag: raw_types::values::ValueTag::Null,
 				data: raw_types::values::ValueData { number: 0.0 },
 			},
 			phantom: PhantomData {},
-		};
+		}
 	}
 
 	/// Equivalent to DM's `null`.
 	pub fn null() -> Value {
-		return Value {
+		Value {
 			value: raw_types::values::Value {
 				tag: raw_types::values::ValueTag::Null,
 				data: raw_types::values::ValueData { number: 0.0 },
 			},
 			phantom: PhantomData {},
-		};
+		}
 	}
 
 	fn get_by_id(&self, name_id: u32) -> DMResult {
@@ -232,7 +235,10 @@ impl Value {
 
 	/// same as from_raw but does not increment the reference count (assumes we already own this reference)
 	pub unsafe fn from_raw_owned(v: raw_types::values::Value) -> Value {
-		Value { value: v, phantom: PhantomData {} }
+		Value {
+			value: v,
+			phantom: PhantomData {},
+		}
 	}
 }
 

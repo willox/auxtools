@@ -26,7 +26,8 @@ fn download_file(url: Value, cb: Value) {
 
 	thread::spawn(move || {
 		thread::sleep(Duration::from_secs(3));
-		cb.invoke(&[Value::from_string("Top secret file contents")]);
+		let result = "Top secret file contents";
+		cb.invoke(move || vec![Value::from_string(result)]);
 	});
 
 	Ok(Value::from_string(format!(
