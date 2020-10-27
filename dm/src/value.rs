@@ -167,7 +167,7 @@ impl Value {
 	/// ```ignore
 	/// src.call("explode", &[&Value::from(3.0)]);
 	/// ```
-	pub fn call<S: AsRef<str>, V: AsRef<Self>>(&self, procname: S, args: &[V]) -> DMResult {
+	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Self]) -> DMResult {
 		let mut ret = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
@@ -176,11 +176,11 @@ impl Value {
 		unsafe {
 			// Increment ref-count of args permenently before passing them on
 			for v in args {
-				raw_types::funcs::inc_ref_count(v.as_ref().into_raw_value());
+				raw_types::funcs::inc_ref_count(v.into_raw_value());
 			}
 
 			let procname = String::from(procname.as_ref()).replace("_", " ");
-			let args: Vec<_> = args.iter().map(|e| e.as_ref().into_raw_value()).collect();
+			let args: Vec<_> = args.iter().map(|e| e.into_raw_value()).collect();
 			let name_ref = string::StringRef::new(&procname);
 
 			if raw_types::funcs::call_datum_proc_by_name(
@@ -309,11 +309,5 @@ impl From<bool> for Value {
 impl raw_types::values::IntoRawValue for &Value {
 	unsafe fn into_raw_value(self) -> raw_types::values::Value {
 		self.value
-	}
-}
-
-impl AsRef<Value> for Value {
-	fn as_ref(&self) -> &Value {
-		&self
 	}
 }
