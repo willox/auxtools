@@ -6,12 +6,14 @@ use crate::runtime;
 use crate::runtime::{ConversionResult, DMResult};
 use std::ffi::CString;
 use std::fmt;
+use std::marker::PhantomData;
 
 /// `Value` represents any value a DM variable can hold, such as numbers, strings, datums, etc.
 ///
 /// There's a lot of lifetime shenanigans going on, the gist of it is to just not keep Values around for longer than your hook's execution.
 pub struct Value {
 	pub value: raw_types::values::Value,
+	phantom: PhantomData<*mut ()>,
 }
 
 impl Drop for Value {
@@ -33,27 +35,32 @@ impl Value {
 		let raw = raw_types::values::Value { tag, data };
 		raw_types::funcs::inc_ref_count(raw);
 
-		Value { value: raw }
+		Value {
+			value: raw,
+			phantom: PhantomData {},
+		}
 	}
 
 	/// Equivalent to DM's `global.vars`.
 	pub fn globals() -> Value {
-		return Value {
+		Value {
 			value: raw_types::values::Value {
 				tag: raw_types::values::ValueTag::Null,
 				data: raw_types::values::ValueData { number: 0.0 },
 			},
-		};
+			phantom: PhantomData {},
+		}
 	}
 
 	/// Equivalent to DM's `null`.
 	pub fn null() -> Value {
-		return Value {
+		Value {
 			value: raw_types::values::Value {
 				tag: raw_types::values::ValueTag::Null,
 				data: raw_types::values::ValueData { number: 0.0 },
 			},
-		};
+			phantom: PhantomData {},
+		}
 	}
 
 	fn get_by_id(&self, name_id: u32) -> DMResult {
@@ -228,7 +235,10 @@ impl Value {
 
 	/// same as from_raw but does not increment the reference count (assumes we already own this reference)
 	pub unsafe fn from_raw_owned(v: raw_types::values::Value) -> Value {
-		Value { value: v }
+		Value {
+			value: v,
+			phantom: PhantomData {},
+		}
 	}
 }
 
