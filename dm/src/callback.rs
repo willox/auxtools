@@ -3,7 +3,6 @@ use crate::runtime;
 use crate::value::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::Mutex;
 
 use crate as dm;
@@ -12,12 +11,12 @@ use lazy_static::lazy_static;
 
 lazy_static! {
 	static ref READY_CALLBACKS: Mutex<Vec<FinishedCallback>> = Mutex::new(Vec::new());
-	static ref DROPPED_CALLBACKS: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+	static ref DROPPED_CALLBACKS: Mutex<Vec<CallbackId>> = Mutex::new(Vec::new());
 }
 
-static mut NEXT_CALLBACK_ID: usize = 0;
+static mut NEXT_CALLBACK_ID: CallbackId = CallbackId { 0: 0 };
 thread_local! {
-	static CALLBACKS: RefCell<HashMap<usize, Callback>> = RefCell::new(HashMap::new());
+	static CALLBACKS: RefCell<HashMap<CallbackId, Callback>> = RefCell::new(HashMap::new());
 }
 
 /// # Callbacks
@@ -25,6 +24,9 @@ thread_local! {
 /// Allows you to pass callbacks from dm code. Invoking them is thread safe.
 /// Use these as a building block for operations that may take a long time, and
 /// as such the usual call()() or hook are unsuitable.
+///
+/// Due to the fact that Values are not thread safe, you need to wrap the returned
+/// Vec in a closure. Refer to the example for details.
 ///
 /// Callbacks may be called multiple times.
 ///
@@ -35,27 +37,31 @@ thread_local! {
 ///		let cb = Callback::new(cb)?;
 /// 	thread::spawn(move || {
 ///			let result = /* e.g some networking stuff... */
-/// 		cb.invoke(&[Value::from(result)]);
+/// 		cb.invoke(move || vec![Value::from(result)]);
 /// 		// The callback will execute in the main thread in the near future.
+///			// As [Value] cannot be created on other threads, you have to return
+///			// a closure that will produce your desired Values on the main thread.
 /// 	});
 ///
 /// 	Ok(Value::null())
 ///}
 /// ```
-///
-///
 #[derive(Clone)]
 pub struct Callback {
 	dm_callback: Value,
 }
 
-pub struct FinishedCallback {
-	id: usize,
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+struct CallbackId(u64);
+
+struct FinishedCallback {
+	id: CallbackId,
 	closure: Box<dyn Fn() -> Vec<Value> + Send + Sync>,
 }
 
+/// Invoke callbacks using this.
 pub struct CallbackHandle {
-	id: usize,
+	id: CallbackId,
 }
 
 impl Drop for CallbackHandle {
@@ -80,27 +86,23 @@ impl CallbackHandle {
 }
 
 impl Callback {
-	pub fn new<V: AsRef<Value>>(cb: V) -> Result<Arc<CallbackHandle>, runtime::Runtime> {
+	/// Creates a new callback. The passed Value must be of type `/datum/callback`,
+	/// otherwise a [runtime::Runtime] is produced.
+	pub fn new<V: AsRef<Value>>(cb: V) -> Result<CallbackHandle, runtime::Runtime> {
 		// TODO: Verify this is indeed a /datum/callback
 
-		let cb = cb.as_ref();
-
-		// TODO: LEAKS LEAKS LEAKS
+		let cb = cb.as_ref().clone();
 
 		CALLBACKS.with(|h| {
-			h.borrow_mut().insert(
-				unsafe { NEXT_CALLBACK_ID },
-				Self {
-					dm_callback: cb.as_ref().clone(),
-				},
-			)
+			h.borrow_mut()
+				.insert(unsafe { NEXT_CALLBACK_ID }, Self { dm_callback: cb })
 		});
 
-		let handle = Arc::new(CallbackHandle {
+		let handle = CallbackHandle {
 			id: unsafe { NEXT_CALLBACK_ID },
-		});
+		};
 
-		unsafe { NEXT_CALLBACK_ID += 1 };
+		unsafe { NEXT_CALLBACK_ID.0 += 1 };
 
 		Ok(handle)
 	}
