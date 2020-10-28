@@ -3,10 +3,10 @@ use super::raw_types::procs::{ProcEntry, ProcId};
 use super::runtime;
 use super::string::StringRef;
 use super::value::Value;
+
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::sync::Once;
 
 //
 // ### A note on Override IDs
@@ -98,7 +98,7 @@ fn strip_path(p: String) -> String {
 	p.replace("/proc/", "/").replace("/verb/", "/")
 }
 
-fn populate_procs() {
+pub fn populate_procs() {
 	let mut i: u32 = 0;
 	loop {
 		let mut proc_entry: *mut ProcEntry = std::ptr::null_mut();
@@ -133,12 +133,11 @@ fn populate_procs() {
 	}
 }
 
-static LOAD_PROCS: Once = Once::new();
+pub fn clear_procs() {
+	PROCS_BY_NAME.with(|h| h.borrow_mut().clear())
+}
 
 pub fn get_proc_override<S: Into<String>>(path: S, override_id: usize) -> Option<Proc> {
-	LOAD_PROCS.call_once(|| {
-		populate_procs();
-	});
 	let s = strip_path(path.into());
 	PROCS_BY_NAME.with(|h| match h.borrow().get(&s)?.get(override_id) {
 		Some(p) => Some(p.clone()),

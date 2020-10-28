@@ -20,3 +20,4 @@ default-features = false
 
 [target.'cfg(windows)'.dependencies]
 msgbox = "0.4"
+winapi = "0.3.9"
