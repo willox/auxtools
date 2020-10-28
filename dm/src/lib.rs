@@ -2,6 +2,9 @@
 
 //! For when BYOND is not enough. Probably often.
 
+#[cfg(not(target_pointer_width = "32"))]
+compile_error!("Auxtools must be compiled for a 32-bit target");
+
 mod byond_ffi;
 mod callback;
 mod context;
