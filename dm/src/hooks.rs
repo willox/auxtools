@@ -9,7 +9,6 @@ use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::sync::Once;
 
 #[doc(hidden)]
 pub struct CompileTimeHook {
