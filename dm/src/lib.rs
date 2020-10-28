@@ -135,6 +135,34 @@ macro_rules! with_scanner_by_call {
 	};
 }
 
+// This strange section of code retrieves our DLL using the init function's address.
+// This increments the DLL reference count, which prevents unloading.
+#[cfg(windows)]
+fn pin_dll() -> Result<(), ()> {
+	unsafe {
+		use winapi::um::libloaderapi::{
+			GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+			GET_MODULE_HANDLE_EX_FLAG_PIN,
+		};
+		let mut module = std::ptr::null_mut();
+
+		let res = GetModuleHandleExW(
+			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+			pin_dll as *const _,
+			&mut module,
+		);
+
+		if res == 0 {
+			return Err(());
+		}
+	}
+	Ok(())
+}
+#[cfg(unix)]
+fn pin_dll() -> Result<(), ()> {
+	Ok(())
+}
+
 byond_ffi_fn! { auxtools_init(_input) {
 	if get_init_level() == RequiredInitLevel::None {
 		return Some("SUCCESS (Already initialized)".to_owned())
@@ -188,19 +216,9 @@ byond_ffi_fn! { auxtools_init(_input) {
 		}
 
 
-		// This strange section of code retrieves our DLL using the init function's address.
-		// This increments the DLL reference count, which prevents unloading.
-		if cfg!(windows) {
-			unsafe {
-				use winapi::um::libloaderapi::{GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_PIN};
-				let mut module = std::ptr::null_mut();
 
-				let res = GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN, auxtools_init as *const _, &mut module);
-
-				if res == 0 {
-					return Some("FAILED (Could not pin auxtools in memory)".to_owned());
-				}
-			}
+		if pin_dll().is_err() {
+			return Some("FAILED (Could not pin the library in memory.)".to_owned());
 		}
 
 		set_init_level(RequiredInitLevel::Partial);
