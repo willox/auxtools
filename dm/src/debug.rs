@@ -13,13 +13,13 @@ pub struct StackFrame {
 	pub locals: Vec<(StringRef, Value)>,
 	pub file_name: Option<StringRef>,
 	pub line_number: Option<u32>,
-	pub time_to_resume: Option<u32>,
+	// pub time_to_resume: Option<u32>,
 	// TODO: current instruction & bytecode offset
 }
 
 pub struct CallStacks {
 	pub active: Vec<StackFrame>,
-	pub suspended: Vec<Vec<StackFrame>>,
+	// pub suspended: Vec<Vec<StackFrame>>,
 }
 
 impl StackFrame {
@@ -54,6 +54,7 @@ impl StackFrame {
 			})
 			.collect();
 
+		// Only populate the line number if we've got a file-name
 		let mut file_name = None;
 		let mut line_number = None;
 		if (*context).filename.valid() {
@@ -62,7 +63,7 @@ impl StackFrame {
 		}
 
 		// TODO: When set this? For all sleepers?
-		let time_to_resume = None;
+		// let time_to_resume = None;
 
 		StackFrame {
 			proc,
@@ -73,7 +74,7 @@ impl StackFrame {
 			locals,
 			file_name,
 			line_number,
-			time_to_resume,
+			// time_to_resume,
 		}
 	}
 }
@@ -82,7 +83,7 @@ impl CallStacks {
 	pub fn new(_: &DMContext) -> CallStacks {
 		CallStacks {
 			active: unsafe { CallStacks::from_context(*funcs::CURRENT_EXECUTION_CONTEXT) },
-			suspended: vec![],
+			// suspended: vec![],
 		}
 	}
 

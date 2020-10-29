@@ -6,7 +6,6 @@ use dm::*;
 fn hello_proc_hook() {
 
 	let frames = CallStacks::new(ctx).active;
-
 	let mut buf = String::new();
 
 	for frame in &frames {
