@@ -26,17 +26,35 @@ impl StringRef {
 		})
 	}
 
-	pub unsafe fn from_id(id: u32) -> Self {
+	pub unsafe fn from_id(id: raw_types::strings::StringId) -> Self {
 		StringRef {
 			value: Value::from_raw(raw_types::values::Value {
 				tag: raw_types::values::ValueTag::String,
-				data: raw_types::values::ValueData { id },
+				data: raw_types::values::ValueData { string: id },
 			}),
 		}
 	}
 
-	pub fn get_id(&self) -> u32 {
-		unsafe { self.value.value.data.id }
+	pub unsafe fn from_variable_id(id: raw_types::strings::VariableId) -> Self {
+		let string_id = *(raw_types::funcs::VARIABLE_NAMES.add(id.0 as usize));
+
+		for x in 0..=69 {
+			let string_id = *(raw_types::funcs::VARIABLE_NAMES.add(x));
+			let str = String::from(StringRef::from_id(string_id));
+			println!("{}", str);
+		}
+
+
+		StringRef {
+			value: Value::from_raw(raw_types::values::Value {
+				tag: raw_types::values::ValueTag::String,
+				data: raw_types::values::ValueData { string: string_id },
+			}),
+		}
+	}
+
+	pub fn get_id(&self) -> raw_types::strings::StringId {
+		unsafe { self.value.value.data.string }
 	}
 }
 
@@ -59,13 +77,19 @@ impl From<&str> for StringRef {
 	}
 }
 
-impl Into<String> for StringRef {
-	fn into(self) -> String {
+impl From<&StringRef> for String {
+	fn from(string: &StringRef) -> String {
 		unsafe {
-			let id = self.value.value.data.string;
+			let id = string.value.value.data.string;
 			let mut entry: *mut raw_types::strings::StringEntry = std::ptr::null_mut();
 			assert_eq!(raw_types::funcs::get_string_table_entry(&mut entry, id), 1);
 			CStr::from_ptr((*entry).data).to_string_lossy().into()
 		}
+	}
+}
+
+impl From<StringRef> for String {
+	fn from(string: StringRef) -> String {
+		String::from(&string)
 	}
 }

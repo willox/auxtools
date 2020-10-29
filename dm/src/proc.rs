@@ -1,4 +1,6 @@
 use super::raw_types;
+use super::raw_types::misc;
+use super::raw_types::misc::AsMiscId;
 use super::raw_types::procs::{ProcEntry, ProcId};
 use super::runtime;
 use super::string::StringRef;
@@ -43,6 +45,57 @@ impl<'a> Proc {
 	/// Finds the first proc with the given path
 	pub fn find<S: Into<String>>(path: S) -> Option<Self> {
 		get_proc(path)
+	}
+
+	pub fn from_id(id: ProcId) -> Option<Self> {
+		let mut proc_entry: *mut ProcEntry = std::ptr::null_mut();
+		unsafe {
+			assert_eq!(
+				raw_types::funcs::get_proc_array_entry(&mut proc_entry, id),
+				1
+			);
+		}
+		if proc_entry.is_null() {
+			return None;
+		}
+		let proc_name = strip_path(unsafe { StringRef::from_id((*proc_entry).path).into() });
+		Some(Proc {
+			id: id,
+			entry: proc_entry,
+			path: proc_name.clone(),
+		})
+	}
+
+	pub fn parameter_names(&self) -> Vec<StringRef> {
+		let mut misc: *mut misc::Misc = std::ptr::null_mut();
+		unsafe {
+			assert_eq!(
+				raw_types::funcs::get_misc_by_id(&mut misc, (*self.entry).parameters.as_misc_id()),
+				1
+			);
+
+			let count = (*misc).parameters.count();
+			let data = (*misc).parameters.data;
+			(0..count)
+				.map(|i| StringRef::from_variable_id((*data.add(i as usize)).name))
+				.collect()
+		}
+	}
+
+	pub fn local_names(&self) -> Vec<StringRef> {
+		let mut misc: *mut misc::Misc = std::ptr::null_mut();
+		unsafe {
+			assert_eq!(
+				raw_types::funcs::get_misc_by_id(&mut misc, (*self.entry).locals.as_misc_id()),
+				1
+			);
+
+			let count = (*misc).locals.count;
+			let names = (*misc).locals.names;
+			(0..count)
+				.map(|i| StringRef::from_variable_id(*names.add(i as usize)))
+				.collect()
+		}
 	}
 
 	/// Calls a global proc with the given arguments.
@@ -101,25 +154,14 @@ fn strip_path(p: String) -> String {
 fn populate_procs() {
 	let mut i: u32 = 0;
 	loop {
-		let mut proc_entry: *mut ProcEntry = std::ptr::null_mut();
-		unsafe {
-			assert_eq!(
-				raw_types::funcs::get_proc_array_entry(&mut proc_entry, ProcId(i)),
-				1
-			);
-		}
-		if proc_entry.is_null() {
+		let proc = Proc::from_id(ProcId(i));
+		if proc.is_none() {
 			break;
 		}
-		let proc_name = strip_path(unsafe { StringRef::from_id((*proc_entry).path.0).into() });
-		let proc = Proc {
-			id: ProcId(i),
-			entry: proc_entry,
-			path: proc_name.clone(),
-		};
+		let proc = proc.unwrap();
 
 		PROCS_BY_NAME.with(|h| {
-			match h.borrow_mut().entry(proc_name) {
+			match h.borrow_mut().entry(proc.path.clone()) {
 				Entry::Occupied(o) => {
 					o.into_mut().push(proc);
 				}

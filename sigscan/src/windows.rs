@@ -52,7 +52,7 @@ impl Scanner {
 		})
 	}
 
-	pub fn find(&self, signature: Vec<Option<u8>>) -> Option<*mut u8> {
+	pub fn find(&self, signature: &[Option<u8>]) -> Option<*mut u8> {
 		let mut data_current = self.data_begin;
 		let data_end = self.data_end;
 		let mut signature_offset = 0;

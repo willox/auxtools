@@ -1,3 +1,4 @@
+use super::misc;
 use super::strings;
 use super::values;
 
@@ -8,50 +9,48 @@ pub struct ProcId(pub u32);
 #[repr(C)]
 pub struct ProcEntry {
 	pub path: strings::StringId,
-	name: strings::StringId,
-	desc: strings::StringId,
-	category: strings::StringId,
+	pub name: strings::StringId,
+	pub desc: strings::StringId,
+	pub category: strings::StringId,
 	flags: u32,
 	unk_1: u32,
-
-	// TODO:
-	bytecode: u32,
-	locals: u32,
-	misc: u32,
+	pub bytecode: misc::BytecodeId,
+	pub locals: misc::LocalsId,
+	pub parameters: misc::ParametersId,
 }
 
 #[repr(C)]
 pub struct ProcInstance {
-	proc: ProcId,
+	pub proc: ProcId,
 	unk_0: u32,
-	usr: values::Value,
-	src: values::Value,
-	context: *mut ExecutionContext,
+	pub usr: values::Value,
+	pub src: values::Value,
+	pub context: *mut ExecutionContext,
 	argslist_idx: values::ValueData,
 	unk_1: u32,
 	unk_2: u32,
-	arg_count: u32,
-	args: *mut values::Value,
+	pub args_count: u32,
+	pub args: *mut values::Value,
 	unk_3: [u8; 0x58],
-	time_to_resume: u32,
+	pub time_to_resume: u32,
 }
 
 #[repr(C)]
 pub struct ExecutionContext {
-	proc_instance: *mut ProcInstance,
-	parent_context: *mut ExecutionContext,
-	dbg_proc_file: strings::StringId,
-	dbg_current_line: u32,
-	bytecode: *mut u32,
-	current_opcode: u16,
+	pub proc_instance: *mut ProcInstance,
+	pub parent_context: *mut ExecutionContext,
+	pub filename: strings::StringId,
+	pub line: u32,
+	pub bytecode: *mut u32,
+	pub current_opcode: u16,
 	test_flag: u8,
 	unk_0: u8,
 	cached_datum: values::Value,
 	unk_1: [u8; 0x10],
-	dot: values::Value,
-	local_variables: *mut values::Value,
+	pub dot: values::Value,
+	pub locals: *mut values::Value,
 	stack: *mut values::Value,
-	local_var_count: u16,
+	pub locals_count: u16,
 	stack_size: u16,
 	unk_2: u32,
 	current_iterator: *mut values::Value,
@@ -68,4 +67,12 @@ pub struct ExecutionContext {
 	unk_8: [u8; 0x02],
 	paused: u8,
 	unk_9: [u8; 0x33],
+}
+
+#[repr(C)]
+pub struct SuspendedProcs {
+	pub buffer: *mut *mut ProcInstance,
+	pub front: usize,
+	pub back: usize,
+	pub capacity: usize,
 }

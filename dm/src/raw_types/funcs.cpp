@@ -50,6 +50,7 @@ DEFINE_byond(create_list, uint32_t, (uint32_t))
 DEFINE_byond_REGPARM2(append_to_list, void, (Value, Value))
 DEFINE_byond_REGPARM2(remove_from_list, void, (Value, Value))
 DEFINE_byond(get_length, uint32_t, (Value))
+DEFINE_byond(get_misc_by_id, void*, (uint32_t))
 
 extern "C" uint8_t call_proc_by_id(
     Value* out,
@@ -227,6 +228,15 @@ extern "C" uint8_t get_length(uint32_t* out, Value value) {
     try {
         clean(value);
         *out = get_length_byond(value);
+        return 1;
+    } catch(...) {
+        return 0;
+    }
+}
+
+extern "C" uint8_t get_misc_by_id(void** out, uint32_t index) {
+    try {
+        *out = get_misc_by_id_byond(index);
         return 1;
     } catch(...) {
         return 0;

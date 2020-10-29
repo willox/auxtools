@@ -63,19 +63,14 @@ impl Value {
 		}
 	}
 
-	fn get_by_id(&self, name_id: u32) -> DMResult {
+	fn get_by_id(&self, name_id: raw_types::strings::StringId) -> DMResult {
 		let mut val = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
 		};
 
 		unsafe {
-			if raw_types::funcs::get_variable(
-				&mut val,
-				self.value,
-				raw_types::strings::StringId(name_id),
-			) != 1
-			{
+			if raw_types::funcs::get_variable(&mut val, self.value, name_id) != 1 {
 				let varname: String = string::StringRef::from_id(name_id).into();
 				return Err(runtime!("Could not read {}.{}", &self, varname));
 			}
@@ -86,16 +81,11 @@ impl Value {
 
 	fn set_by_id(
 		&self,
-		name_id: u32,
+		name_id: raw_types::strings::StringId,
 		new_value: raw_types::values::Value,
 	) -> Result<(), runtime::Runtime> {
 		unsafe {
-			if raw_types::funcs::set_variable(
-				self.value,
-				raw_types::strings::StringId(name_id),
-				new_value,
-			) != 1
-			{
+			if raw_types::funcs::set_variable(self.value, name_id, new_value) != 1 {
 				let varname: String = string::StringRef::from_id(name_id).into();
 				return Err(runtime!("Could not write to {}.{}", self, varname));
 			}
@@ -148,7 +138,7 @@ impl Value {
 	pub fn as_string(&self) -> ConversionResult<String> {
 		match self.value.tag {
 			raw_types::values::ValueTag::String => unsafe {
-				Ok(string::StringRef::from_id(self.value.data.id).into())
+				Ok(string::StringRef::from_id(self.value.data.string).into())
 			},
 			_ => Err(runtime!("Attempt to interpret non-string value as String")),
 		}

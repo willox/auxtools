@@ -5,6 +5,10 @@ use std::os::raw::c_char;
 pub struct StringId(pub u32);
 
 #[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct VariableId(pub u32);
+
+#[repr(C)]
 #[derive(Debug)]
 pub struct StringEntry {
 	pub data: *mut c_char,

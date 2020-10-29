@@ -5,6 +5,7 @@
 mod byond_ffi;
 mod callback;
 mod context;
+mod debug;
 mod hooks;
 mod list;
 mod proc;
@@ -15,6 +16,7 @@ mod value;
 
 pub use callback::Callback;
 pub use context::DMContext;
+pub use debug::CallStacks;
 pub use dm_impl::hook;
 pub use hooks::CompileTimeHook;
 pub use list::List;
@@ -50,7 +52,7 @@ const BYONDCORE: &str = "byondcore.dll";
 #[cfg(windows)]
 signatures! {
 	get_proc_array_entry => "E8 ?? ?? ?? ?? 8B C8 8D 45 ?? 6A 01 50 FF 76 ?? 8A 46 ?? FF 76 ?? FE C0",
-	get_string_id => "55 8B EC 8B 45 ?? 83 EC ?? 53 56 8B 35",
+	get_string_id => "55 8B EC 8B 45 ?? 83 EC 1C 53 56 8B 35 ?? ?? ?? ?? 57 85 C0 75 ?? 68 ?? ?? ?? ??",
 	call_proc_by_id => "55 8B EC 81 EC ?? ?? ?? ?? A1 ?? ?? ?? ?? 33 C5 89 45 ?? 8B 55 ?? 8B 45",
 	get_variable => "55 8B EC 8B 4D ?? 0F B6 C1 48 83 F8 ?? 0F 87 ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 ?? FF 75 ?? E8",
 	set_variable => "55 8B EC 8B 4D 08 0F B6 C1 48 57 8B 7D 10 83 F8 53 0F ?? ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 18 FF 75 14 57 FF 75 0C E8 ?? ?? ?? ?? 83 C4 10 5F 5D C3",
@@ -64,7 +66,8 @@ signatures! {
 	create_list => "55 8B EC 8B ?? ?? ?? ?? ?? 56 85 C9 74 1B A1 ?? ?? ?? ?? 49 89 ?? ?? ?? ?? ?? 8B 34 88 81 FE ?? ?? ?? ?? 0F 85 ?? ?? ?? ?? 8B ?? ?? ?? ?? ?? 8B F1 81 F9 ?? ?? ?? ?? 75 1B 51 68 ?? ?? ?? ?? 68 ?? ?? ?? ?? E8 ?? ?? ?? ?? 83 C4 0C B8 ?? ?? ?? ?? 5E 5D C3",
 	append_to_list => "55 8B EC 8B 4D 08 0F B6 C1 48 56 83 F8 53 0F 87 ?? ?? ?? ?? 0F B6 ?? ?? ?? ?? ?? FF 24 ?? ?? ?? ?? ?? FF 75 0C E8 ?? ?? ?? ?? 8B F0 83 C4 04 85 F6 0F 84 ?? ?? ?? ?? 8B 46 0C 40 50 56 E8 ?? ?? ?? ?? 8B 56 0C 83 C4 08 85 D2",
 	remove_from_list => "55 8B EC 8B 4D 08 83 EC 0C 0F B6 C1 48 53 83 F8 53 0F 87 ?? ?? ?? ?? 0F B6 ?? ?? ?? ?? ?? 8B 55 10 FF 24 ?? ?? ?? ?? ?? 6A 0F FF 75 0C 51 E8 ?? ?? ?? ?? 50 E8 ?? ?? ?? ?? 83 C4 10 85 C0 0F 84 ?? ?? ?? ?? 8B 48 0C 8B 10 85 C9 0F 84 ?? ?? ?? ?? 8B 45 14 8B 5D 10",
-	get_length => "55 8B EC 8B 4D 08 83 EC 18 0F B6 C1 48 53 56 57 83 F8 53 0F 87 ?? ?? ?? ?? 0F B6 ?? ?? ?? ?? ?? FF 24 ?? ?? ?? ?? ?? FF 75 0C"
+	get_length => "55 8B EC 8B 4D 08 83 EC 18 0F B6 C1 48 53 56 57 83 F8 53 0F 87 ?? ?? ?? ?? 0F B6 ?? ?? ?? ?? ?? FF 24 ?? ?? ?? ?? ?? FF 75 0C",
+	get_misc_by_id => "E8 ?? ?? ?? ?? 83 C4 04 85 C0 75 ?? FF 75 ?? E8 ?? ?? ?? ?? FF 30 68 ?? ?? ?? ?? E8 ?? ?? ?? ?? A1 ?? ?? ?? ??"
 }
 
 #[cfg(unix)]
@@ -92,7 +95,7 @@ signatures! {
 macro_rules! find_function {
 	($scanner:ident, $name:ident) => {
 		let $name: *const c_void;
-		if let Some(ptr) = $scanner.find(SIGNATURES.$name.to_vec()) {
+		if let Some(ptr) = $scanner.find(SIGNATURES.$name) {
 			unsafe {
 				$name = std::mem::transmute(ptr as *const c_void);
 				}
@@ -105,7 +108,7 @@ macro_rules! find_function {
 macro_rules! find_function_by_call {
 	($scanner:ident, $name:ident) => {
 		let $name: *const c_void;
-		if let Some(ptr) = $scanner.find(SIGNATURES.$name.to_vec()) {
+		if let Some(ptr) = $scanner.find(SIGNATURES.$name) {
 			unsafe {
 				let offset = *(ptr.offset(1) as *const isize);
 				$name = ptr.offset(5).offset(offset) as *const () as *const std::ffi::c_void;
@@ -159,11 +162,48 @@ byond_ffi_fn! { auxtools_init(_input) {
 		get_proc_array_entry,
 		dec_ref_count,
 		inc_ref_count,
-		get_list_by_id
+		get_list_by_id,
+		get_misc_by_id
+	}
+
+	let mut current_execution_context = std::ptr::null_mut();
+	{
+		if cfg!(windows) {
+			if let Some(ptr) = byondcore.find(signature!("A1 ?? ?? ?? ?? FF 75 ?? 89 4D ?? 8B 4D ?? 8B 00 6A 00 52 6A 12 FF 70 ??")) {
+				current_execution_context = unsafe { *((ptr.add(1)) as *mut *mut *mut raw_types::procs::ExecutionContext) };
+			}
+		}
+
+		if cfg!(unix) {
+
+		}
+
+		if current_execution_context.is_null() {
+			return Some("FAILED (Couldn't find current_execution_context)".to_owned());
+		}
+	}
+
+	let mut variable_names = std::ptr::null();
+	{
+		if cfg!(windows) {
+			if let Some(ptr) = byondcore.find(signature!("8B 1D ?? ?? ?? ?? 2B 0C ?? 8B 5D ?? 74 ?? 85 C9 79 ?? 0F B7 D0 EB ?? 83 C0 02")) {
+				variable_names = unsafe { **((ptr.add(2)) as *mut *mut *mut raw_types::strings::StringId) };
+			}
+		}
+
+		if cfg!(unix) {
+
+		}
+
+		if variable_names.is_null() {
+			return Some("FAILED (Couldn't find variable_names)".to_owned());
+		}
 	}
 
 	unsafe {
 		raw_types::funcs::IS_INITIALIZED = true;
+		raw_types::funcs::CURRENT_EXECUTION_CONTEXT = current_execution_context;
+		raw_types::funcs::VARIABLE_NAMES = variable_names;
 		raw_types::funcs::call_proc_by_id_byond = call_proc_by_id;
 		raw_types::funcs::call_datum_proc_by_name_byond = call_datum_proc_by_name;
 		raw_types::funcs::get_proc_array_entry_byond = get_proc_array_entry;
@@ -180,6 +220,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 		raw_types::funcs::append_to_list_byond = append_to_list;
 		raw_types::funcs::remove_from_list_byond = remove_from_list;
 		raw_types::funcs::get_length_byond = get_length;
+		raw_types::funcs::get_misc_by_id_byond = get_misc_by_id;
 	}
 
 	for cthook in inventory::iter::<hooks::CompileTimeHook> {
