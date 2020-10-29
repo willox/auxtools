@@ -1,6 +1,8 @@
 pub mod instructions;
 pub mod opcodes;
 
+use std::iter::Peekable;
+
 pub use instructions::{Instruction, Variable};
 
 use crate::raw_types;
@@ -11,8 +13,7 @@ use opcodes::{AccessModifier, OpCode};
 
 enum DisassembleError {
 	UnexpectedEnd,
-	UnknownInstruction,
-	UnknownOperand,
+	UnknownOp(OpCode),
 	UnknownAccessModifier,
 	Finished, // bad
 }
@@ -24,7 +25,7 @@ struct Disassembler<'a, I>
 where
 	I: Iterator<Item = &'a u32>,
 {
-	iter: I,
+	iter: Peekable<I>,
 	current_offset: u32,
 }
 
@@ -32,9 +33,9 @@ impl<'a, I> Disassembler<'a, I>
 where
 	I: Iterator<Item = &'a u32>,
 {
-	fn new(mut iter: I) -> Self {
+	fn new(iter: I) -> Self {
 		Self {
-			iter,
+			iter: iter.peekable(),
 			current_offset: 0
 		}
 	}
@@ -54,10 +55,11 @@ where
 	
 		let res = match opcode {
 			OpCode::GetVar => Instruction::GetVar(self.disassemble_variable_operand()?),
+			OpCode::SetVar => Instruction::SetVar(self.disassemble_variable_operand()?),
 			OpCode::PushVal => Instruction::PushVal(self.disassemble_pushval_operand()?),
 			OpCode::DbgFile => Instruction::DbgFile(self.disassemble_string_operand()?),
 			OpCode::DbgLine => Instruction::DbgLine(self.disassemble_u32_operand()?),
-			_ => return Err(UnknownInstruction),
+			_ => return Err(UnknownOp(opcode)),
 		};
 
 		Ok((starting_offset, self.current_offset - 1, res))
@@ -109,29 +111,40 @@ where
 	
 	fn disassemble_variable_field_chain(&mut self) -> Result<Variable, DisassembleError>
 	{
-		let obj = self.disassemble_access_modifier_type()?;
-		let obj = self.disassemble_access_modifier_operands(obj)?;
-	
+		// This is either a string-ref or an AccessModifier
+		let param = self.peek_u32_operand()?;
+
 		let mut fields = vec![];
+
+		let obj = if AccessModifier::in_range(param) {
+			let modifier = self.disassemble_access_modifier_type()?;
+			self.disassemble_access_modifier_operands(modifier)?
+		} else {
+			fields.push(self.disassemble_string_operand()?);
+			Variable::Cache
+		};
 	
 		loop {
 			// This is either a string-ref. AccessModifier::Field or AccessModifier::Initial
-			let data = self.disassemble_u32_operand()?;
-	
-			if AccessModifier::Field as u32 == data {
-				fields.push(self.disassemble_string_operand()?);
-				continue;
+			let data = self.peek_u32_operand()?;
+
+			if AccessModifier::in_range(data) {
+				match self.disassemble_access_modifier_type()? {
+					AccessModifier::Field => {
+						fields.push(self.disassemble_string_operand()?);
+						continue;
+					}
+					// Initial is always last (i think,) so just grab the last string and ret
+					AccessModifier::Initial => {
+						fields.push(self.disassemble_string_operand()?);
+						return Ok(Variable::InitialField(Box::new(obj), fields));
+					}
+					_ => return Err(UnknownAccessModifier)
+				}
 			}
-	
-			if AccessModifier::Initial as u32 == data {
-				fields.push(self.disassemble_string_operand()?);
-				return Ok(Variable::InitialField(Box::new(obj), fields));
-			}
-	
-			fields.push( unsafe {
-				StringRef::from_id(raw_types::strings::StringId(data))
-			});
-	
+
+			// We hit our last key
+			fields.push(self.disassemble_string_operand()?);
 			return Ok(Variable::Field(Box::new(obj), fields));
 		}
 	}
@@ -164,7 +177,13 @@ where
 	
 		unsafe { Ok(Value::new(tag, raw_types::values::ValueData { id: data })) }
 	}
-	
+
+	fn peek_u32_operand(&mut self) -> Result<u32, DisassembleError>
+	{
+		let operand = self.iter.peek().ok_or(UnexpectedEnd)?;
+		Ok(**operand)
+	}
+
 	fn disassemble_u32_operand(&mut self) -> Result<u32, DisassembleError>
 	{
 		let operand = self.next().ok_or(UnexpectedEnd)?;
@@ -198,11 +217,17 @@ pub fn disassemble(proc: &Proc) -> Option<Vec<(u32, u32, Instruction)>> {
 
 	let mut ret = vec![];
 	loop {
-		let offset = dism.current_offset;
-		if let Ok(res) = dism.disassemble_instruction() {
-			ret.push(res);
-			continue;
-		}
+		match dism.disassemble_instruction() {
+			Ok(ins_data) => {
+				ret.push(ins_data);
+				continue;
+			},
+			Err(e) => {
+				if let UnknownOp(op) = e {
+					println!("{}", op as u32);
+				}
+			}
+		} 
 		break;
 	}
 

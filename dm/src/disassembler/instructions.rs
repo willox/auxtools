@@ -72,7 +72,7 @@ pub enum Instruction {
 	Log10(),
 	Log(),
 	GetVar(Variable),
-	SetVar(),
+	SetVar(Variable),
 	SetVarCopy(),
 	GetFlag(),
 	Teq(),

@@ -301,6 +301,7 @@ pub enum OpCode {
 #[allow(dead_code)]
 pub enum AccessModifier {
 	Src = 0xFFCE,
+	Usr = 0xFFCD,
 	Args = 0xFFCF,
 	Dot = 0xFFD0,
 	Cache = 0xFFD8,
@@ -312,7 +313,23 @@ pub enum AccessModifier {
 	SrcProc = 0xFFDE,
 	Proc = 0xFFDF,
 	ProcNoRet = 0xFFE0,
+	// TODO: What are these?
+	// 0xFFE1
+	// 0xFFE2
+	// 0xFFE3
+	// 0xFFE4
 	World = 0xFFE5,
 	Null = 0xFFE6,
 	Initial = 0xFFE7,
+}
+
+impl AccessModifier {
+	pub fn in_range(value: u32) -> bool {
+		value >= (Self::Src as u32) && value <= (Self::Initial as u32)
+	}
+
+	pub fn from_u32(value: u32) -> AccessModifier {
+		assert!(Self::in_range(value));
+		unsafe { std::mem::transmute(value) }
+	}
 }
