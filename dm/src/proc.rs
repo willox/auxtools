@@ -1,3 +1,4 @@
+use super::disassembler;
 use super::raw_types;
 use super::raw_types::misc;
 use super::raw_types::misc::AsMiscId;
@@ -96,6 +97,20 @@ impl<'a> Proc {
 				.map(|i| StringRef::from_variable_id(*names.add(i as usize)))
 				.collect()
 		}
+	}
+
+	pub unsafe fn bytecode(&self) -> (*mut u32, usize) {
+		let mut misc: *mut misc::Misc = std::ptr::null_mut();
+		assert_eq!(
+			raw_types::funcs::get_misc_by_id(&mut misc, (*self.entry).bytecode.as_misc_id()),
+			1
+		);
+
+		((*misc).bytecode.bytecode, (*misc).bytecode.count as usize)
+	}
+
+	pub fn disassemble(&self) -> Option<Vec<disassembler::Instruction>> {
+		disassembler::disassemble(self)
 	}
 
 	/// Calls a global proc with the given arguments.

@@ -44,7 +44,6 @@ impl StringRef {
 			println!("{}", str);
 		}
 
-
 		StringRef {
 			value: Value::from_raw(raw_types::values::Value {
 				tag: raw_types::values::ValueTag::String,
@@ -67,7 +66,7 @@ impl Clone for StringRef {
 impl fmt::Debug for StringRef {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		let data: String = self.clone().into();
-		write!(f, "{}", data)
+		write!(f, "{:?}", data)
 	}
 }
 

@@ -9,6 +9,7 @@ mod byond_ffi;
 mod callback;
 mod context;
 mod debug;
+mod disassembler;
 mod hooks;
 mod init;
 mod list;
@@ -174,12 +175,12 @@ byond_ffi_fn! { auxtools_init(_input) {
 		return Some("SUCCESS (Already initialized)".to_owned())
 	}
 
-	if get_init_level() == RequiredInitLevel::Full {
-		let byondcore = match sigscan::Scanner::for_module(BYONDCORE) {
-			Some(v) => v,
-			None => return Some("FAILED (Couldn't create scanner for byondcore.dll)".to_owned())
-		};
+	let byondcore = match sigscan::Scanner::for_module(BYONDCORE) {
+		Some(v) => v,
+		None => return Some("FAILED (Couldn't create scanner for byondcore.dll)".to_owned())
+	};
 
+	if get_init_level() == RequiredInitLevel::Full {
 		with_scanner! { byondcore,
 			get_string_id,
 			call_proc_by_id,
@@ -210,36 +211,18 @@ byond_ffi_fn! { auxtools_init(_input) {
 					current_execution_context = unsafe { *((ptr.add(1)) as *mut *mut *mut raw_types::procs::ExecutionContext) };
 				}
 			}
-	
+
 			if cfg!(unix) {
-	
+
 			}
-	
+
 			if current_execution_context.is_null() {
 				return Some("FAILED (Couldn't find current_execution_context)".to_owned());
 			}
 		}
-	
-		let mut variable_names = std::ptr::null();
-		{
-			if cfg!(windows) {
-				if let Some(ptr) = byondcore.find(signature!("8B 1D ?? ?? ?? ?? 2B 0C ?? 8B 5D ?? 74 ?? 85 C9 79 ?? 0F B7 D0 EB ?? 83 C0 02")) {
-					variable_names = unsafe { **((ptr.add(2)) as *mut *mut *mut raw_types::strings::StringId) };
-				}
-			}
-	
-			if cfg!(unix) {
-	
-			}
-	
-			if variable_names.is_null() {
-				return Some("FAILED (Couldn't find variable_names)".to_owned());
-			}
-		}
-	
+
 		unsafe {
 			raw_types::funcs::CURRENT_EXECUTION_CONTEXT = current_execution_context;
-			raw_types::funcs::VARIABLE_NAMES = variable_names;
 			raw_types::funcs::call_proc_by_id_byond = call_proc_by_id;
 			raw_types::funcs::call_datum_proc_by_name_byond = call_datum_proc_by_name;
 			raw_types::funcs::get_proc_array_entry_byond = get_proc_array_entry;
@@ -259,8 +242,6 @@ byond_ffi_fn! { auxtools_init(_input) {
 			raw_types::funcs::get_misc_by_id_byond = get_misc_by_id;
 		}
 
-
-
 		if pin_dll().is_err() {
 			return Some("FAILED (Could not pin the library in memory.)".to_owned());
 		}
@@ -270,6 +251,28 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 
 	if get_init_level() == RequiredInitLevel::Partial {
+		// This is a heap ptr so fetch it on partial loads
+		let mut variable_names = std::ptr::null();
+		{
+			if cfg!(windows) {
+				if let Some(ptr) = byondcore.find(signature!("8B 1D ?? ?? ?? ?? 2B 0C ?? 8B 5D ?? 74 ?? 85 C9 79 ?? 0F B7 D0 EB ?? 83 C0 02")) {
+					variable_names = unsafe { **((ptr.add(2)) as *mut *mut *mut raw_types::strings::StringId) };
+				}
+			}
+
+			if cfg!(unix) {
+
+			}
+
+			if variable_names.is_null() {
+				return Some("FAILED (Couldn't find variable_names)".to_owned());
+			}
+		}
+
+		unsafe {
+			raw_types::funcs::VARIABLE_NAMES = variable_names;
+		}
+
 		proc::populate_procs();
 		if let Err(_) = hooks::init() {
 			return Some("Failed (Couldn't initialize proc hooking)".to_owned());
@@ -290,6 +293,10 @@ byond_ffi_fn! { auxtools_init(_input) {
 byond_ffi_fn! { auxtools_shutdown(_input) {
 	hooks::clear_hooks();
 	proc::clear_procs();
+
+	unsafe {
+		raw_types::funcs::VARIABLE_NAMES = std::ptr::null();
+	}
 
 	set_init_level(RequiredInitLevel::Partial);
 	Some("SUCCESS".to_owned())

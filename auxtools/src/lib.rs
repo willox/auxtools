@@ -4,7 +4,17 @@ use dm::*;
 
 #[hook("/proc/auxtools_stack_trace")]
 fn hello_proc_hook() {
+	let proc = Proc::find("/proc/wew").unwrap();
+	let dism = proc.disassemble().unwrap();
 
+	let mut buf = String::new();
+	for x in &dism {
+		buf.push_str(format!("{:?}\n", x).as_str());
+	}
+
+	Ok(Value::from_string(buf))
+
+	/*
 	let frames = CallStacks::new(ctx).active;
 	let mut buf = String::new();
 
@@ -51,4 +61,5 @@ fn hello_proc_hook() {
 	}
 
 	Ok(Value::from_string(buf))
+	*/
 }

@@ -12,7 +12,6 @@ pub static mut CURRENT_EXECUTION_CONTEXT: *mut *mut procs::ExecutionContext = st
 // pub static mut SUSPENDED_PROCS: *mut procs::SuspendedProcs = std::ptr::null_mut();
 pub static mut VARIABLE_NAMES: *const strings::StringId = std::ptr::null();
 
-
 // Function pointers exported by C++ but set by Rust
 // Rust shouldn't call these so we're going to treat them as void ptrs for simplicity
 extern "C" {
