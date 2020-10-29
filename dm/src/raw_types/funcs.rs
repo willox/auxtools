@@ -8,9 +8,8 @@ use std::ffi::c_void;
 use std::os::raw::c_char;
 
 // TODO: Doesn't belong here at all
-pub static mut IS_INITIALIZED: bool = false;
 pub static mut CURRENT_EXECUTION_CONTEXT: *mut *mut procs::ExecutionContext = std::ptr::null_mut();
-pub static mut SUSPENDED_PROCS: *mut procs::SuspendedProcs = std::ptr::null_mut();
+// pub static mut SUSPENDED_PROCS: *mut procs::SuspendedProcs = std::ptr::null_mut();
 pub static mut VARIABLE_NAMES: *const strings::StringId = std::ptr::null();
 
 

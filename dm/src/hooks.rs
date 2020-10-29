@@ -9,7 +9,6 @@ use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::sync::Once;
 
 #[doc(hidden)]
 pub struct CompileTimeHook {
@@ -93,14 +92,7 @@ thread_local! {
 	static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new());
 }
 
-static PROC_HOOKS_INIT: Once = Once::new();
-
 fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFailure> {
-	PROC_HOOKS_INIT.call_once(|| {
-		if let Err(e) = init() {
-			panic!(e);
-		}
-	});
 	PROC_HOOKS.with(|h| {
 		let mut map = h.borrow_mut();
 		match map.entry(id) {
@@ -111,6 +103,10 @@ fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFa
 			Entry::Occupied(_) => Err(HookFailure::AlreadyHooked),
 		}
 	})
+}
+
+pub fn clear_hooks() {
+	PROC_HOOKS.with(|h| h.borrow_mut().clear());
 }
 
 pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure> {
@@ -139,7 +135,7 @@ extern "C" fn call_proc_by_id_hook(
 	unknown2: u32,
 	unknown3: u32,
 ) -> raw_types::values::Value {
-	PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
+	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
 		Some(hook) => {
 			let ctx = unsafe { DMContext::new() };
 			let src;
@@ -164,21 +160,24 @@ extern "C" fn call_proc_by_id_hook(
 					let result_raw = unsafe { (&r).into_raw_value() };
 					// Stealing our reference out of the Value
 					std::mem::forget(r);
-					result_raw
+					Some(result_raw)
 				}
 				Err(e) => {
 					// TODO: Some info about the hook would be useful (as the hook is never part of byond's stack, the runtime won't show it.)
 					src.call("stack_trace", &[&Value::from_string(e.message.as_str())])
 						.unwrap();
-					unsafe { Value::null().into_raw_value() }
+					unsafe { Some(Value::null().into_raw_value()) }
 				}
 			}
 		}
+		None => None,
+	}) {
+		Some(result) => result,
 		None => unsafe {
 			call_proc_by_id_original_trampoline(
 				usr_raw, proc_type, proc_id, unknown1, src_raw, args_ptr, num_args, unknown2,
 				unknown3,
 			)
 		},
-	})
+	}
 }
