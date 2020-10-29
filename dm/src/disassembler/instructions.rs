@@ -21,7 +21,7 @@ pub enum Variable {
     Local(u32),
     Global(StringRef),
     Field(Box<Variable>, Vec<StringRef>),
-
+    InitialField(Box<Variable>, Vec<StringRef>),
     // TODO: Proc ones
 }
 

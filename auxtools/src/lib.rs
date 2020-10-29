@@ -9,7 +9,7 @@ fn hello_proc_hook() {
 
 	let mut buf = String::new();
 	for x in &dism {
-		buf.push_str(format!("{:?}\n", x).as_str());
+		buf.push_str(format!("{}-{}: {:?}\n", x.0, x.1, x.2).as_str());
 	}
 
 	Ok(Value::from_string(buf))
