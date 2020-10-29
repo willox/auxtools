@@ -4,7 +4,7 @@ use dm::*;
 
 #[hook("/proc/auxtools_stack_trace")]
 fn hello_proc_hook() {
-	let proc = Proc::find("/proc/wew").unwrap();
+	let proc = Proc::find("/datum/x/proc/wew").unwrap();
 	let dism = proc.disassemble().unwrap();
 
 	let mut buf = String::new();

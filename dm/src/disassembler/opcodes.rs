@@ -307,7 +307,7 @@ pub enum AccessModifier {
 	Arg = 0xFFD9,
 	Local = 0xFFDA,
 	Global = 0xFFDB,
-	SubVar = 0xFFDC,
+	Field = 0xFFDC,
 	SrcProcSpec = 0xFFDD,
 	SrcProc = 0xFFDE,
 	Proc = 0xFFDF,

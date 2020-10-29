@@ -13,12 +13,13 @@ enum DisassembleError {
 	UnexpectedEnd,
 	UnknownInstruction,
 	UnknownOperand,
+	UnknownAccessModifier,
 	Finished, // bad
 }
 
 use DisassembleError::*;
 
-fn disassemble_access_modifier_operand<'a, I>(
+fn disassemble_access_modifier_type<'a, I>(
 	mut iter: I,
 ) -> Result<AccessModifier, DisassembleError>
 where
@@ -28,63 +29,81 @@ where
 	Ok(unsafe { std::mem::transmute(operand) })
 }
 
-fn disassemble_variable_chain<'a, I>(mut iter: I) -> Result<Vec<StringRef>, DisassembleError>
+fn disassemble_access_modifier_operands<'a, I>(mut iter: I, modifier: AccessModifier) -> Result<Variable, DisassembleError>
 where
 	I: Iterator<Item = &'a u32>,
 {
-	let mut res = vec![];
+	match modifier {
+		AccessModifier::Null => {
+			Ok(Variable::Null)
+		},
+		AccessModifier::World => {
+			Ok(Variable::World)
+		},
+		AccessModifier::Src => {
+			Ok(Variable::Src)
+		}
+		AccessModifier::Dot => {
+			Ok(Variable::Dot)
+		},
+		AccessModifier::Cache => {
+			Ok(Variable::Cache)
+		},
+		AccessModifier::Arg => {
+			Ok(Variable::Arg(disassemble_u32_operand(&mut iter)?))
+		}
+		AccessModifier::Local => {
+			Ok(Variable::Local(disassemble_u32_operand(&mut iter)?))
+		}
+		AccessModifier::Global => {
+			Ok(Variable::Global(disassemble_variable_name_operand(&mut iter)?))
+		}
+		AccessModifier::Field => {
+			Err(UnknownAccessModifier)
+		}
+		_ => Err(UnknownAccessModifier),
+	}
+}
+
+fn disassemble_variable_field_chain<'a, I>(mut iter: I) -> Result<Variable, DisassembleError>
+where
+	I: Iterator<Item = &'a u32>,
+{
+	let obj = disassemble_access_modifier_type(&mut iter)?;
+	let obj = disassemble_access_modifier_operands(&mut iter, obj)?;
+
+	let mut fields = vec![];
 
 	loop {
-		match disassemble_access_modifier_operand(&mut iter)? {
-			AccessModifier::SubVar | AccessModifier::Cache => {
-				res.push(disassemble_string_operand(&mut iter)?);
-			}
-			AccessModifier::ProcNoRet
-			| AccessModifier::Proc
-			| AccessModifier::SrcProc
-			| AccessModifier::SrcProcSpec => return Ok(res),
-			_ => {
-				// TODO:
-				res.push(disassemble_string_operand(&mut iter)?);
-				return Ok(res);
-			}
+		// This is either a string-ref or AccessModifier::Field
+		let data = disassemble_u32_operand(&mut iter)?;
+
+		if AccessModifier::Field as u32 == data {
+			fields.push(disassemble_string_operand(&mut iter)?);
+			continue;
 		}
+
+		fields.push( unsafe {
+			StringRef::from_id(raw_types::strings::StringId(data))
+		});
+
+		break;
 	}
+
+	Ok(Variable::Field(Box::new(obj), fields))
 }
 
 fn disassemble_variable_operand<'a, I>(mut iter: I) -> Result<Variable, DisassembleError>
 where
 	I: Iterator<Item = &'a u32>,
 {
-	let mod1 = disassemble_access_modifier_operand(&mut iter)?;
+	let modifier = disassemble_access_modifier_type(&mut iter)?;
 
-	match mod1 {
-		AccessModifier::SubVar => {
-			let mod2 = disassemble_access_modifier_operand(&mut iter)?;
-
-			match mod2 {
-				AccessModifier::Src
-				| AccessModifier::World
-				| AccessModifier::Cache
-				| AccessModifier::Dot => {}
-				_ => {
-					let _unknown_id = disassemble_access_modifier_operand(&mut iter)?;
-				}
-			};
-
-			Ok(Variable::Unknown)
-		}
-		AccessModifier::Local => {
-			Ok(Variable::Local(disassemble_u32_operand(&mut iter)?))
-		}
-		AccessModifier::Arg => {
-			Ok(Variable::Arg(disassemble_u32_operand(&mut iter)?))
-		}
-		AccessModifier::Global => {
-			Ok(Variable::Global(disassemble_variable_name_operand(&mut iter)?))
-		}
-
-		_ => Err(UnknownOperand),
+	match modifier {
+		AccessModifier::Field => {
+			Ok(disassemble_variable_field_chain(&mut iter)?)
+		},
+		_ => disassemble_access_modifier_operands(&mut iter, modifier),
 	}
 }
 

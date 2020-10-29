@@ -12,10 +12,17 @@ pub struct _Variable {
 
 #[derive(Debug)]
 pub enum Variable {
+    Null,
+    World,
+    Src,
+    Dot,
+    Cache,
     Arg(u32),
     Local(u32),
     Global(StringRef),
-    Unknown
+    Field(Box<Variable>, Vec<StringRef>),
+
+    // TODO: Proc ones
 }
 
 #[derive(Debug)]
