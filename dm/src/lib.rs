@@ -224,15 +224,16 @@ byond_ffi_fn! { auxtools_init(_input) {
 			return Some("FAILED (Could not pin the library in memory.)".to_owned());
 		}
 
+		if let Err(_) = hooks::init() {
+			return Some("Failed (Couldn't initialize proc hooking)".to_owned());
+		}
+
 		set_init_level(RequiredInitLevel::Partial);
 	}
 
 
 	if get_init_level() == RequiredInitLevel::Partial {
 		proc::populate_procs();
-		if let Err(_) = hooks::init() {
-			return Some("Failed (Couldn't initialize proc hooking)".to_owned());
-		}
 
 		for cthook in inventory::iter::<hooks::CompileTimeHook> {
 			if let Err(e) = hooks::hook(cthook.proc_path, cthook.hook) {
