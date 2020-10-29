@@ -52,6 +52,7 @@ impl fmt::Display for Value {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		unsafe {
 			match self.tag {
+				ValueTag::Null => write!(f, "{}", "NULL"),
 				ValueTag::Number => write!(f, "{}", self.data.number),
 				ValueTag::String => {
 					let id = self.data.string;
@@ -69,7 +70,8 @@ impl fmt::Debug for Value {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		unsafe {
 			match self.tag {
-				ValueTag::Number => write!(f, "Number({:?}", self.data.number),
+				ValueTag::Null => write!(f, "{}", "NULL"),
+				ValueTag::Number => write!(f, "Number({:?})", self.data.number),
 				ValueTag::String => {
 					let id = self.data.string;
 					let mut entry: *mut strings::StringEntry = std::ptr::null_mut();

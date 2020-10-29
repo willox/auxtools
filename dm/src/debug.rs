@@ -30,8 +30,6 @@ impl StackFrame {
 		let param_names = proc.parameter_names();
 		let local_names = proc.local_names();
 
-		let names: Vec<String> = param_names.iter().map(|x| String::from(x)).collect();
-
 		let usr = Value::from_raw((*instance).usr);
 		let src = Value::from_raw((*instance).src);
 		let dot = Value::from_raw((*context).dot);
@@ -56,9 +54,12 @@ impl StackFrame {
 			})
 			.collect();
 
-		// TODO: When not set this?
-		let file_name = Some(StringRef::from_id((*context).filename));
-		let line_number = Some((*context).line);
+		let mut file_name = None;
+		let mut line_number = None;
+		if (*context).filename.valid() {
+			file_name = Some(StringRef::from_id((*context).filename));
+			line_number = Some((*context).line);
+		}
 
 		// TODO: When set this? For all sleepers?
 		let time_to_resume = None;
