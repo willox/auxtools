@@ -45,8 +45,8 @@ impl Value {
 	pub fn globals() -> Value {
 		Value {
 			value: raw_types::values::Value {
-				tag: raw_types::values::ValueTag::Null,
-				data: raw_types::values::ValueData { number: 0.0 },
+				tag: raw_types::values::ValueTag::World,
+				data: raw_types::values::ValueData { id: 1 },
 			},
 			phantom: PhantomData {},
 		}
