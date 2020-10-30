@@ -2,6 +2,7 @@
 #[derive(PartialEq, Eq, Copy, Clone)]
 #[non_exhaustive]
 #[allow(dead_code)]
+#[derive(Debug)]
 pub enum OpCode {
 	End = 0x00,
 	New = 0x01,
@@ -47,7 +48,7 @@ pub enum OpCode {
 	IsIcon = 0x28,
 	Call = 0x29,
 	//
-	CallNr = 0x2A,
+	CallNoReturn = 0x2A,
 	CallPath = 0x2B,
 	CallParent = 0x2C,
 	//
@@ -82,7 +83,7 @@ pub enum OpCode {
 	AugXor = 0x4C,
 	AugLShift = 0x4D,
 	AugRShift = 0x4E,
-	PushI = 0x50,
+	PushInt = 0x50,
 	Pop = 0x51,
 	IterLoad = 0x52,
 	IterNext = 0x53,
@@ -300,7 +301,7 @@ pub enum OpCode {
 #[non_exhaustive]
 #[allow(dead_code)]
 pub enum AccessModifier {
-	Src = 0xFFCE,
+	Src = 0xFFCE,			// 65486
 	Usr = 0xFFCD,
 	Args = 0xFFCF,
 	Dot = 0xFFD0,
@@ -308,10 +309,10 @@ pub enum AccessModifier {
 	Arg = 0xFFD9,
 	Local = 0xFFDA,
 	Global = 0xFFDB,
-	Field = 0xFFDC,
-	SrcProcSpec = 0xFFDD,
+	Field = 0xFFDC,			// 65500
+	SrcProcNoRet = 0xFFDD,
 	SrcProc = 0xFFDE,
-	Proc = 0xFFDF,
+	Proc = 0xFFDF,			// 65503
 	ProcNoRet = 0xFFE0,
 	// TODO: What are these?
 	// 0xFFE1
@@ -326,10 +327,5 @@ pub enum AccessModifier {
 impl AccessModifier {
 	pub fn in_range(value: u32) -> bool {
 		value >= (Self::Src as u32) && value <= (Self::Initial as u32)
-	}
-
-	pub fn from_u32(value: u32) -> AccessModifier {
-		assert!(Self::in_range(value));
-		unsafe { std::mem::transmute(value) }
 	}
 }

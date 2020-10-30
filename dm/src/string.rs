@@ -66,7 +66,7 @@ impl Clone for StringRef {
 impl fmt::Debug for StringRef {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		let data: String = self.clone().into();
-		write!(f, "{:?}", data)
+		write!(f, "{}", data)
 	}
 }
 

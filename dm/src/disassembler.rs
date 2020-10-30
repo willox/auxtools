@@ -3,7 +3,7 @@ pub mod opcodes;
 
 use std::iter::Peekable;
 
-pub use instructions::{Instruction, Variable};
+pub use instructions::{Instruction, Variable, Call, ProcAccessor};
 
 use crate::raw_types;
 use crate::Proc;
@@ -11,10 +11,13 @@ use crate::StringRef;
 use crate::Value;
 use opcodes::{AccessModifier, OpCode};
 
+#[derive(Debug)]
 enum DisassembleError {
 	UnexpectedEnd,
 	UnknownOp(OpCode),
 	UnknownAccessModifier,
+	InvalidProcId,
+	InvalidProcAccessor,
 	Finished, // bad
 }
 
@@ -54,6 +57,17 @@ where
 		let opcode: OpCode = unsafe { std::mem::transmute(*opcode) };
 	
 		let res = match opcode {
+			OpCode::End => Instruction::End(),
+			OpCode::Pop => Instruction::Pop(),
+			OpCode::Output => Instruction::Output(),
+			OpCode::CallNoReturn => Instruction::CallNoReturn(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),
+			OpCode::Call => Instruction::Call(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),
+			OpCode::Add => Instruction::Add(),
+			OpCode::PushInt => Instruction::PushInt(self.disassemble_i32_operand()?),
+			OpCode::Ret => Instruction::Ret(),
+			OpCode::CallGlob => Instruction::CallGlob(self.disassemble_callglob_operands()?),
+			OpCode::Jz => Instruction::Jz(self.disassemble_u32_operand()?),
+			OpCode::Test => Instruction::Test(),
 			OpCode::GetVar => Instruction::GetVar(self.disassemble_variable_operand()?),
 			OpCode::SetVar => Instruction::SetVar(self.disassemble_variable_operand()?),
 			OpCode::PushVal => Instruction::PushVal(self.disassemble_pushval_operand()?),
@@ -63,6 +77,20 @@ where
 		};
 
 		Ok((starting_offset, self.current_offset - 1, res))
+	}
+
+	fn disassemble_proc_operand(&mut self) -> Result<Proc, DisassembleError> {
+		let id = raw_types::procs::ProcId(self.disassemble_u32_operand()?);
+		Proc::from_id(id).ok_or(InvalidProcId)
+	}
+
+	fn disassemble_callglob_operands(&mut self) -> Result<Call, DisassembleError> {
+		let args = self.disassemble_u32_operand()?;
+		let proc = self.disassemble_proc_operand()?;
+
+		Ok(Call {
+			args, proc
+		})
 	}
 
 	fn disassemble_access_modifier_type(&mut self) -> Result<AccessModifier, DisassembleError>
@@ -139,6 +167,15 @@ where
 						fields.push(self.disassemble_string_operand()?);
 						return Ok(Variable::InitialField(Box::new(obj), fields));
 					}
+					// Similar to initial
+					AccessModifier::Proc | AccessModifier::ProcNoRet => {
+						let proc = self.disassemble_proc_operand()?;
+						return Ok(Variable::StaticProcField(Box::new(obj), fields, proc));
+					}
+					AccessModifier::SrcProc | AccessModifier::SrcProcNoRet => {
+						let proc = self.disassemble_string_operand()?;
+						return Ok(Variable::RuntimeProcField(Box::new(obj), fields, proc));
+					}
 					_ => return Err(UnknownAccessModifier)
 				}
 			}
@@ -184,6 +221,11 @@ where
 		Ok(**operand)
 	}
 
+	fn disassemble_i32_operand(&mut self) -> Result<i32, DisassembleError>
+	{
+		Ok(self.disassemble_u32_operand()? as i32)
+	}
+
 	fn disassemble_u32_operand(&mut self) -> Result<u32, DisassembleError>
 	{
 		let operand = self.next().ok_or(UnexpectedEnd)?;
@@ -219,6 +261,9 @@ pub fn disassemble(proc: &Proc) -> Option<Vec<(u32, u32, Instruction)>> {
 	loop {
 		match dism.disassemble_instruction() {
 			Ok(ins_data) => {
+				if let Instruction::End() = ins_data.2 {
+					break;
+				}
 				ret.push(ins_data);
 				continue;
 			},
@@ -226,6 +271,8 @@ pub fn disassemble(proc: &Proc) -> Option<Vec<(u32, u32, Instruction)>> {
 				if let UnknownOp(op) = e {
 					println!("{}", op as u32);
 				}
+				let str = format!("{:?}", e);
+				println!("{}", str);
 			}
 		} 
 		break;

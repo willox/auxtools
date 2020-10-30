@@ -1,14 +1,6 @@
-use super::opcodes::AccessModifier;
 use crate::StringRef;
+use crate::Proc;
 use crate::Value;
-
-// This sucks
-#[derive(Debug)]
-pub struct _Variable {
-	pub access_modifier: AccessModifier,
-	pub id: Option<StringRef>,
-	pub chain: Option<Vec<StringRef>>,
-}
 
 #[derive(Debug)]
 pub enum Variable {
@@ -21,8 +13,22 @@ pub enum Variable {
     Local(u32),
     Global(StringRef),
     Field(Box<Variable>, Vec<StringRef>),
-    InitialField(Box<Variable>, Vec<StringRef>),
+	InitialField(Box<Variable>, Vec<StringRef>),
+	StaticProcField(Box<Variable>, Vec<StringRef>, Proc),
+	RuntimeProcField(Box<Variable>, Vec<StringRef>, StringRef)
     // TODO: Proc ones
+}
+
+#[derive(Debug)]
+pub struct Call {
+	pub args: u32,
+	pub proc: Proc,
+}
+
+#[derive(Debug)]
+pub enum ProcAccessor {
+	StaticProc(Proc),
+	RuntimeProc(StringRef),
 }
 
 #[derive(Debug)]
@@ -42,7 +48,7 @@ pub enum Instruction {
 	Not(),
 	Jmp(),
 	Jnz(),
-	Jz(),
+	Jz(u32),
 	Ret(),
 	IsLoc(),
 	IsMob(),
@@ -64,11 +70,11 @@ pub enum Instruction {
 	Spawn(),
 	BrowseRSC(),
 	IsIcon(),
-	Call(),
-	CallNr(),
+	Call(Variable, u32),
+	CallNoReturn(Variable, u32),
 	CallPath(),
 	CallParent(),
-	CallGlob(),
+	CallGlob(Call),
 	Log10(),
 	Log(),
 	GetVar(Variable),
@@ -99,7 +105,7 @@ pub enum Instruction {
 	AugXor(),
 	AugLShift(),
 	AugRShift(),
-	PushI(),
+	PushInt(i32),
 	Pop(),
 	IterLoad(),
 	IterNext(),

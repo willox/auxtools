@@ -7,6 +7,7 @@ use super::runtime;
 use super::string::StringRef;
 use super::value::Value;
 
+use std::fmt;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -157,6 +158,13 @@ impl<'a> Proc {
 		}
 
 		Err(runtime!("External proc call failed"))
+	}
+}
+
+impl fmt::Debug for Proc {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		let path = unsafe { (*self.entry).path };
+		write!(f, "Proc({:?})", unsafe { StringRef::from_id(path) })
 	}
 }
 
