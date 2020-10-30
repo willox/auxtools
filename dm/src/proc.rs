@@ -110,7 +110,7 @@ impl<'a> Proc {
 		((*misc).bytecode.bytecode, (*misc).bytecode.count as usize)
 	}
 
-	pub fn disassemble(&self) -> Option<Vec<(u32, u32, disassembler::Instruction)>> {
+	pub fn disassemble(&self) -> (Vec<(u32, u32, disassembler::Instruction)>, Option<disassembler::DisassembleError>) {
 		disassembler::disassemble(self)
 	}
 

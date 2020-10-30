@@ -3,7 +3,7 @@ pub mod opcodes;
 
 use std::iter::Peekable;
 
-pub use instructions::{Instruction, Variable, Call, ProcAccessor};
+pub use instructions::{Instruction, Variable, Call, ParamCount, Loc};
 
 use crate::raw_types;
 use crate::Proc;
@@ -12,17 +12,15 @@ use crate::Value;
 use opcodes::{AccessModifier, OpCode};
 
 #[derive(Debug)]
-enum DisassembleError {
+pub enum DisassembleError {
 	UnexpectedEnd,
 	UnknownOp(OpCode),
 	UnknownAccessModifier,
 	InvalidProcId,
-	InvalidProcAccessor,
 	Finished, // bad
 }
 
 use DisassembleError::*;
-
 
 struct Disassembler<'a, I>
 where
@@ -57,17 +55,26 @@ where
 		let opcode: OpCode = unsafe { std::mem::transmute(*opcode) };
 	
 		let res = match opcode {
+			OpCode::IsNull => Instruction::IsNull,
+			OpCode::NewList => Instruction::NewList(self.disassemble_u32_operand()?),
+			OpCode::Try => Instruction::Try(self.disassemble_loc_operand()?),
+			OpCode::Catch => Instruction::Catch(self.disassemble_loc_operand()?),
+			OpCode::CallName => Instruction::CallName(self.disassemble_param_count_operand()?),
 			OpCode::End => Instruction::End(),
-			OpCode::Pop => Instruction::Pop(),
-			OpCode::Output => Instruction::Output(),
+			OpCode::Rand => Instruction::Rand,
+			OpCode::RandRange => Instruction::RandRange,
+			OpCode::New => Instruction::New(self.disassemble_param_count_operand()?),
+			OpCode::Pop => Instruction::Pop,
+			OpCode::Stat => Instruction::Stat,
+			OpCode::Output => Instruction::Output,
 			OpCode::CallNoReturn => Instruction::CallNoReturn(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),
 			OpCode::Call => Instruction::Call(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),
-			OpCode::Add => Instruction::Add(),
+			OpCode::Add => Instruction::Add,
 			OpCode::PushInt => Instruction::PushInt(self.disassemble_i32_operand()?),
-			OpCode::Ret => Instruction::Ret(),
+			OpCode::Ret => Instruction::Ret,
 			OpCode::CallGlob => Instruction::CallGlob(self.disassemble_callglob_operands()?),
 			OpCode::Jz => Instruction::Jz(self.disassemble_u32_operand()?),
-			OpCode::Test => Instruction::Test(),
+			OpCode::Test => Instruction::Test,
 			OpCode::GetVar => Instruction::GetVar(self.disassemble_variable_operand()?),
 			OpCode::SetVar => Instruction::SetVar(self.disassemble_variable_operand()?),
 			OpCode::PushVal => Instruction::PushVal(self.disassemble_pushval_operand()?),
@@ -85,7 +92,7 @@ where
 	}
 
 	fn disassemble_callglob_operands(&mut self) -> Result<Call, DisassembleError> {
-		let args = self.disassemble_u32_operand()?;
+		let args = self.disassemble_param_count_operand()?;
 		let proc = self.disassemble_proc_operand()?;
 
 		Ok(Call {
@@ -231,6 +238,16 @@ where
 		let operand = self.next().ok_or(UnexpectedEnd)?;
 		Ok(*operand)
 	}
+
+	fn disassemble_param_count_operand(&mut self) -> Result<ParamCount, DisassembleError>
+	{
+		Ok(ParamCount(self.disassemble_u32_operand()?))
+	}
+
+	fn disassemble_loc_operand(&mut self) -> Result<Loc, DisassembleError>
+	{
+		Ok(Loc(self.disassemble_u32_operand()?))
+	}	
 	
 	fn disassemble_variable_name_operand(&mut self) -> Result<StringRef, DisassembleError>
 	{
@@ -249,7 +266,7 @@ where
 	}
 }
 
-pub fn disassemble(proc: &Proc) -> Option<Vec<(u32, u32, Instruction)>> {
+pub fn disassemble(proc: &Proc) -> (Vec<(u32, u32, Instruction)>, Option<DisassembleError>) {
 	let bytecode = unsafe {
 		let (ptr, count) = proc.bytecode();
 		std::slice::from_raw_parts(ptr, count)
@@ -262,23 +279,19 @@ pub fn disassemble(proc: &Proc) -> Option<Vec<(u32, u32, Instruction)>> {
 		match dism.disassemble_instruction() {
 			Ok(ins_data) => {
 				if let Instruction::End() = ins_data.2 {
+					ret.push(ins_data);
 					break;
 				}
 				ret.push(ins_data);
 				continue;
 			},
 			Err(e) => {
-				if let UnknownOp(op) = e {
-					println!("{}", op as u32);
-				}
-				let str = format!("{:?}", e);
-				println!("{}", str);
+				return (ret, Some(e))
 			}
-		} 
-		break;
+		}
 	}
 
 	// TODO: Error
 
-	Some(ret)
+	(ret, None)
 }

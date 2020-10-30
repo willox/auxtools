@@ -4,15 +4,30 @@ use dm::*;
 
 #[hook("/proc/auxtools_stack_trace")]
 fn hello_proc_hook() {
-	let proc = Proc::find("/datum/x/proc/wew").unwrap();
-	let dism = proc.disassemble().unwrap();
 
-	let mut buf = String::new();
-	for x in &dism {
-		buf.push_str(format!("{}-{}: {:?}\n", x.0, x.1, x.2).as_str());
+	let mut proc_id: u32 = 0;
+	loop {
+		let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));
+		if proc.is_none() {
+			break;
+		}
+		let proc = proc.unwrap();
+
+		let (dism, err) = proc.disassemble();
+		if let Some(err) = err {
+			let mut buf = format!("Dism for {:?}\n", proc);
+			for x in &dism {
+				buf.push_str(format!("\t{}-{}: {:?}\n", x.0, x.1, x.2).as_str());
+			}
+		
+			buf.push_str(format!("\tError: {:?}", err).as_str());
+			return Ok(Value::from_string(buf));
+		}
+
+		proc_id += 1;
 	}
 
-	Ok(Value::from_string(buf))
+	Ok(Value::from(true))
 
 	/*
 	let frames = CallStacks::new(ctx).active;

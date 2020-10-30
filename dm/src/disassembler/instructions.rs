@@ -19,37 +19,39 @@ pub enum Variable {
     // TODO: Proc ones
 }
 
+
+
 #[derive(Debug)]
 pub struct Call {
-	pub args: u32,
+	pub args: ParamCount,
 	pub proc: Proc,
 }
 
 #[derive(Debug)]
-pub enum ProcAccessor {
-	StaticProc(Proc),
-	RuntimeProc(StringRef),
-}
+pub struct ParamCount(pub u32);
+
+#[derive(Debug)]
+pub struct Loc(pub u32);
 
 #[derive(Debug)]
 pub enum Instruction {
 	End(),
-	New(),
+	New(ParamCount),
 	Format(),
-	Output(),
+	Output,
 	OutputFormat(),
-	Stat(),
+	Stat,
 	Link(),
 	OutputFTP(),
 	OutputRun(),
 	Missile(),
 	Del(),
-	Test(),
+	Test,
 	Not(),
 	Jmp(),
 	Jnz(),
 	Jz(u32),
-	Ret(),
+	Ret,
 	IsLoc(),
 	IsMob(),
 	IsObj(),
@@ -57,15 +59,15 @@ pub enum Instruction {
 	IsTurf(),
 	Alert(),
 	EmptyList(),
-	NewList(),
+	NewList(u32),
 	View(),
 	OView(),
 	ViewTarget(),
 	OViewTarget(),
 	Block(),
 	Prob(),
-	Rand(),
-	RangRange(),
+	Rand,
+	RandRange,
 	Sleep(),
 	Spawn(),
 	BrowseRSC(),
@@ -88,7 +90,7 @@ pub enum Instruction {
 	Tle(),
 	Tge(),
 	ANeg(),
-	Add(),
+	Add,
 	Sub(),
 	Mul(),
 	Div(),
@@ -106,7 +108,7 @@ pub enum Instruction {
 	AugLShift(),
 	AugRShift(),
 	PushInt(i32),
-	Pop(),
+	Pop,
 	IterLoad(),
 	IterNext(),
 	Roll(),
@@ -176,7 +178,7 @@ pub enum Instruction {
 	Text2File(),
 	File2Text(),
 	FCopy(),
-	IsNull(),
+	IsNull,
 	IsNum(),
 	IsText(),
 	StatPanel(),
@@ -193,7 +195,7 @@ pub enum Instruction {
 	JmpOr(),
 	JmpAnd(),
 	FDel(),
-	CallName(),
+	CallName(ParamCount),
 	List2Params(),
 	Params2List(),
 	CKeyEx(),
@@ -278,7 +280,9 @@ pub enum Instruction {
 	Animate(),
 	MatrixNew(),
 	Database(),
+	Try(Loc),
 	Throw(),
+	Catch(Loc),
 	ReplaceText(),
 	ReplaceTextEx(),
 	FindLastText(),
