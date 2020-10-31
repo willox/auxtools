@@ -78,8 +78,8 @@ pub enum OpCode {
 	AugMul = 0x47,
 	AugDiv = 0x48,
 	AugMod = 0x49,
-	AugAnd = 0x4A,
-	AugOr = 0x4B,
+	AugBand = 0x4A,
+	AugBor = 0x4B,
 	AugXor = 0x4C,
 	AugLShift = 0x4D,
 	AugRShift = 0x4E,
@@ -87,8 +87,8 @@ pub enum OpCode {
 	Pop = 0x51,
 	IterLoad = 0x52,
 	IterNext = 0x53,
-	Unk_54 = 0x54,
-	Unk_55 = 0x55,
+	IterPush = 0x54,
+	IterPop = 0x55,
 	Unk_56 = 0x56,
 	Roll = 0x57,
 	LocatePos = 0x5A,
@@ -247,6 +247,7 @@ pub enum OpCode {
 	UrlDecode = 0x108,
 	Md5 = 0x109,
 	Text2Path = 0x10A,
+	WinOutput = 0x10B,
 	WinSet = 0x10C,
 	WinGet = 0x10D,
 	WinClone = 0x10E,
@@ -347,7 +348,7 @@ pub enum AccessModifier {
 	Cache3 = 0xFFE4,
 	World = 0xFFE5,
 	Null = 0xFFE6,
-	Initial = 0xFFE7,
+	Initial = 0xFFE7,		// 65511
 }
 
 impl AccessModifier {

@@ -8,7 +8,7 @@ fn hello_proc_hook() {
 	let mut proc_id: u32 = 0;
 	loop {
 		let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));
-		//let proc = Proc::find("/world/proc/SDQL_var");
+		let proc = Proc::find("/atom/proc/ShowProcessingGui");
 		if proc.is_none() {
 			break;
 		}
@@ -27,6 +27,8 @@ fn hello_proc_hook() {
 
 		proc_id += 1;
 	}
+
+	Ok(Value::from(true))
 
 	/*
 	let mut success = 0;
