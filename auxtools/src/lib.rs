@@ -8,6 +8,7 @@ fn hello_proc_hook() {
 	let mut proc_id: u32 = 0;
 	loop {
 		let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));
+		//let proc = Proc::find("/world/proc/_jatum_serialize_value");
 		if proc.is_none() {
 			break;
 		}
