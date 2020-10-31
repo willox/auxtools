@@ -331,13 +331,13 @@ pub enum AccessModifier {
 	Dot = 0xFFD0,
 	Cache = 0xFFD8,
 	Arg = 0xFFD9,
-	Local = 0xFFDA,
+	Local = 0xFFDA,			// 65489
 	Global = 0xFFDB,
 	Field = 0xFFDC,			// 65500
-	SrcProcNoRet = 0xFFDD,
+	SrcProc2 = 0xFFDD,
 	SrcProc = 0xFFDE,
 	Proc = 0xFFDF,			// 65503
-	ProcNoRet = 0xFFE0,
+	Proc2 = 0xFFE0,
 	// TODO: What are these?
 	// 0xFFE1
 	// 0xFFE2

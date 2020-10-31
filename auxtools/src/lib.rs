@@ -14,7 +14,7 @@ fn hello_proc_hook() {
 		let proc = proc.unwrap();
 
 		let (dism, err) = proc.disassemble();
-		//if let Some(err) = err {
+		if let Some(err) = err {
 			let mut buf = format!("Dism for {:?}\n", proc);
 			for x in &dism {
 				buf.push_str(format!("\t{}-{}: {:?}\n", x.0, x.1, x.2).as_str());
@@ -22,7 +22,7 @@ fn hello_proc_hook() {
 		
 			buf.push_str(format!("\tError: {:?}", err).as_str());
 			return Ok(Value::from_string(buf));
-		//}
+		}
 
 		proc_id += 1;
 	}

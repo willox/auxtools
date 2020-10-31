@@ -60,8 +60,16 @@ where
 			OpCode::IsText => Instruction::IsText,
 			OpCode::IsPath => Instruction::IsPath,
 			OpCode::IsType => Instruction::IsType,
+			OpCode::IsList => Instruction::IsList,
 			OpCode::ListGet => Instruction::ListGet,
 			OpCode::ListSet => Instruction::ListSet,
+			OpCode::Teq => Instruction::Teq,
+			OpCode::Not => Instruction::Not,
+			OpCode::Jmp => Instruction::Jmp(self.disassemble_loc_operand()?),
+			OpCode::Jmp2 => Instruction::Jmp2(self.disassemble_loc_operand()?),
+			OpCode::AugAdd => Instruction::AugAdd(self.disassemble_variable_operand()?),
+			OpCode::IterLoad => Instruction::IterLoad(self.disassemble_u32_operand()?, self.disassemble_u32_operand()?),
+			OpCode::IterNext => Instruction::IterNext,
 			OpCode::Format => Instruction::Format(self.disassemble_string_operand()?, self.disassemble_param_count_operand()?),
 			OpCode::JsonEncode => Instruction::JsonEncode,
 			OpCode::JsonDecode => Instruction::JsonDecode,
@@ -156,6 +164,7 @@ where
 		}
 	}
 	
+	// TODO: big mess
 	fn disassemble_variable_field_chain(&mut self) -> Result<Variable, DisassembleError>
 	{
 		// This is either a string-ref or an AccessModifier
@@ -163,9 +172,10 @@ where
 
 		let mut fields = vec![];
 
-		let obj = if AccessModifier::in_range(param) {
+		let obj =
+		if AccessModifier::in_range(param) {
 			let modifier = self.disassemble_access_modifier_type()?;
-			self.disassemble_access_modifier_operands(modifier)?
+			self.disassemble_access_modifier_operands(modifier)?	
 		} else {
 			fields.push(self.disassemble_string_operand()?);
 			Variable::Cache
@@ -187,11 +197,11 @@ where
 						return Ok(Variable::InitialField(Box::new(obj), fields));
 					}
 					// Similar to initial
-					AccessModifier::Proc | AccessModifier::ProcNoRet => {
+					AccessModifier::Proc | AccessModifier::Proc2 => {
 						let proc = self.disassemble_proc_operand()?;
 						return Ok(Variable::StaticProcField(Box::new(obj), fields, proc));
 					}
-					AccessModifier::SrcProc | AccessModifier::SrcProcNoRet => {
+					AccessModifier::SrcProc | AccessModifier::SrcProc2 => {
 						let proc = self.disassemble_string_operand()?;
 						return Ok(Variable::RuntimeProcField(Box::new(obj), fields, proc));
 					}
@@ -218,6 +228,14 @@ where
 		let modifier = self.disassemble_access_modifier_type()?;
 	
 		match modifier {
+			AccessModifier::Proc => {
+				let proc = self.disassemble_proc_operand()?;
+				return Ok(Variable::StaticProcField(Box::new(Variable::Cache), vec![], proc));
+			},
+			AccessModifier::SrcProc2 => {
+				let proc = self.disassemble_string_operand()?;
+				return Ok(Variable::RuntimeProcField(Box::new(Variable::Cache), vec![], proc));
+			},
 			AccessModifier::Field => {
 				Ok(self.disassemble_variable_field_chain()?)
 			},
