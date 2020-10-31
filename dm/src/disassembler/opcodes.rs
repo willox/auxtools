@@ -318,6 +318,8 @@ pub enum OpCode {
 	Unk_15A = 0x15A,
 	Unk_15B = 0x15B,
 	Unk_15C = 0x15C,
+	Unk_15D = 0x15D,
+	Unk_15F = 0x15F,
 }
 
 #[repr(u32)]
@@ -330,9 +332,9 @@ pub enum AccessModifier {
 	Args = 0xFFCF,
 	Dot = 0xFFD0,
 	Cache = 0xFFD8,
-	Arg = 0xFFD9,
-	Local = 0xFFDA,			// 65489
-	Global = 0xFFDB,
+	Arg = 0xFFD9,			// 65497
+	Local = 0xFFDA,			// 65498
+	Global = 0xFFDB,		// 65499
 	Field = 0xFFDC,			// 65500
 	SrcProc2 = 0xFFDD,
 	SrcProc = 0xFFDE,

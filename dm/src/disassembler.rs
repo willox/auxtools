@@ -59,6 +59,7 @@ where
 			OpCode::IsNum => Instruction::IsNum,
 			OpCode::IsText => Instruction::IsText,
 			OpCode::IsPath => Instruction::IsPath,
+			OpCode::IsSubPath => Instruction::IsSubPath,
 			OpCode::IsType => Instruction::IsType,
 			OpCode::IsList => Instruction::IsList,
 			OpCode::ListGet => Instruction::ListGet,
@@ -71,7 +72,17 @@ where
 			OpCode::Tge => Instruction::Tge,
 			OpCode::GetFlag => Instruction::GetFlag,
 			OpCode::Not => Instruction::Not,
-			OpCode::Switch => Instruction::Switch(self.disassemble_switch()?),
+			OpCode::Text2Path => Instruction::Text2Path,
+			OpCode::NewArgList => Instruction::NewArgList,
+			OpCode::ReplaceText => Instruction::ReplaceText,
+			OpCode::Shell => Instruction::Shell,
+			OpCode::FExists => Instruction::FExists,
+			OpCode::File2Text => Instruction::File2Text,
+			OpCode::FDel => Instruction::FDel,
+			OpCode::SplitText => Instruction::SplitText,
+			OpCode::Length => Instruction::Length,
+			OpCode::TypesOf => Instruction::TypesOf(self.disassemble_param_count_operand()?),
+			OpCode::Switch => Instruction::Switch(self.disassemble_switch_operand()?),
 			OpCode::Jmp => Instruction::Jmp(self.disassemble_loc_operand()?),
 			OpCode::Jmp2 => Instruction::Jmp2(self.disassemble_loc_operand()?),
 			OpCode::AugAdd => Instruction::AugAdd(self.disassemble_variable_operand()?),
@@ -97,6 +108,9 @@ where
 			OpCode::CallNoReturn => Instruction::CallNoReturn(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),
 			OpCode::Call => Instruction::Call(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),
 			OpCode::Add => Instruction::Add,
+			OpCode::Sub => Instruction::Sub,
+			OpCode::Mul => Instruction::Mul,
+			OpCode::Div => Instruction::Div,
 			OpCode::PushInt => Instruction::PushInt(self.disassemble_i32_operand()?),
 			OpCode::Ret => Instruction::Ret,
 			OpCode::CallGlob => Instruction::CallGlob(self.disassemble_callglob_operands()?),
@@ -113,7 +127,7 @@ where
 		Ok((starting_offset, self.current_offset - 1, res))
 	}
 
-	fn disassemble_switch(&mut self) -> Result<Switch, DisassembleError> {
+	fn disassemble_switch_operand(&mut self) -> Result<Switch, DisassembleError> {
 		let mut cases = vec![];
 		
 		for _ in 0..self.disassemble_u32_operand()? {
@@ -160,6 +174,9 @@ where
 			},
 			AccessModifier::Src => {
 				Ok(Variable::Src)
+			}
+			AccessModifier::Args => {
+				Ok(Variable::Args)
 			}
 			AccessModifier::Dot => {
 				Ok(Variable::Dot)
@@ -211,6 +228,14 @@ where
 			if AccessModifier::in_range(data) {
 				match self.disassemble_access_modifier_type()? {
 					AccessModifier::Field => {
+
+						// HACK: We need to rethink this whole fn
+						if self.peek_u32_operand()? == AccessModifier::Global as u32 {
+							self.disassemble_u32_operand()?;
+							fields.push(self.disassemble_variable_name_operand()?);
+							continue;
+						}
+
 						fields.push(self.disassemble_string_operand()?);
 						continue;
 					}
@@ -253,11 +278,11 @@ where
 		match modifier {
 			AccessModifier::Proc => {
 				let proc = self.disassemble_proc_operand()?;
-				return Ok(Variable::StaticProcField(Box::new(Variable::Cache), vec![], proc));
+				Ok(Variable::StaticProcField(Box::new(Variable::Cache), vec![], proc))
 			},
 			AccessModifier::SrcProc2 => {
 				let proc = self.disassemble_string_operand()?;
-				return Ok(Variable::RuntimeProcField(Box::new(Variable::Cache), vec![], proc));
+				Ok(Variable::RuntimeProcField(Box::new(Variable::Cache), vec![], proc))
 			},
 			AccessModifier::Field => {
 				Ok(self.disassemble_variable_field_chain()?)
