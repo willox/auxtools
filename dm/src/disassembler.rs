@@ -3,7 +3,7 @@ pub mod opcodes;
 
 use std::iter::Peekable;
 
-pub use instructions::{Instruction, Variable, Call, ParamCount, Loc};
+pub use instructions::*;
 
 use crate::raw_types;
 use crate::Proc;
@@ -71,6 +71,7 @@ where
 			OpCode::Tge => Instruction::Tge,
 			OpCode::GetFlag => Instruction::GetFlag,
 			OpCode::Not => Instruction::Not,
+			OpCode::Switch => Instruction::Switch(self.disassemble_switch()?),
 			OpCode::Jmp => Instruction::Jmp(self.disassemble_loc_operand()?),
 			OpCode::Jmp2 => Instruction::Jmp2(self.disassemble_loc_operand()?),
 			OpCode::AugAdd => Instruction::AugAdd(self.disassemble_variable_operand()?),
@@ -103,13 +104,29 @@ where
 			OpCode::Test => Instruction::Test,
 			OpCode::GetVar => Instruction::GetVar(self.disassemble_variable_operand()?),
 			OpCode::SetVar => Instruction::SetVar(self.disassemble_variable_operand()?),
-			OpCode::PushVal => Instruction::PushVal(self.disassemble_pushval_operand()?),
+			OpCode::PushVal => Instruction::PushVal(self.disassemble_value_operand()?),
 			OpCode::DbgFile => Instruction::DbgFile(self.disassemble_string_operand()?),
 			OpCode::DbgLine => Instruction::DbgLine(self.disassemble_u32_operand()?),
 			_ => return Err(UnknownOp(opcode)),
 		};
 
 		Ok((starting_offset, self.current_offset - 1, res))
+	}
+
+	fn disassemble_switch(&mut self) -> Result<Switch, DisassembleError> {
+		let mut cases = vec![];
+		
+		for _ in 0..self.disassemble_u32_operand()? {
+			cases.push((
+				self.disassemble_value_operand()?,
+				self.disassemble_loc_operand()?,
+			))
+		}
+
+		Ok(Switch{
+			default: self.disassemble_loc_operand()?,
+			cases
+		})
 	}
 
 	fn disassemble_proc_operand(&mut self) -> Result<Proc, DisassembleError> {
@@ -249,7 +266,7 @@ where
 		}
 	}
 	
-	fn disassemble_pushval_operand(&mut self) -> Result<Value, DisassembleError>
+	fn disassemble_value_operand(&mut self) -> Result<Value, DisassembleError>
 	{
 		let tag = self.disassemble_u32_operand()? as u8;
 		let tag = unsafe { std::mem::transmute(tag) };

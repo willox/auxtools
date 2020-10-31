@@ -20,12 +20,16 @@ pub enum Variable {
     // TODO: Proc ones
 }
 
-
-
 #[derive(Debug)]
 pub struct Call {
 	pub args: ParamCount,
 	pub proc: Proc,
+}
+
+#[derive(Debug)]
+pub struct Switch {
+	pub default: Loc,
+	pub cases: Vec<(Value, Loc)>,
 }
 
 #[derive(Debug)]
@@ -144,7 +148,7 @@ pub enum Instruction {
 	LowerText(),
 	Text2Num(),
 	Num2Text(),
-	Switch(),
+	Switch(Switch),
 	PickSwitch(),
 	SwitchRagne(),
 	ListGet,
