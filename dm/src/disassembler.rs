@@ -18,6 +18,7 @@ pub enum DisassembleError {
 	UnknownAccessModifier,
 	InvalidProcId,
 	UnknownIsInList,
+	UnknownRange,
 	Finished, // bad
 }
 
@@ -70,6 +71,7 @@ where
 			OpCode::IsTurf => Instruction::IsTurf,
 			OpCode::IsIcon => Instruction::IsIcon,
 			OpCode::IsMovable => Instruction::IsMovable,
+			OpCode::CheckNum => Instruction::CheckNum,
 			OpCode::ListGet => Instruction::ListGet,
 			OpCode::ListSet => Instruction::ListSet,
 			OpCode::Teq => Instruction::Teq,
@@ -81,6 +83,8 @@ where
 			OpCode::GetFlag => Instruction::GetFlag,
 			OpCode::Not => Instruction::Not,
 			OpCode::Abs => Instruction::Abs,
+			OpCode::Sqrt => Instruction::Sqrt,
+			OpCode::Pow => Instruction::Pow,
 			OpCode::Text2Path => Instruction::Text2Path,
 			OpCode::NewArgList => Instruction::NewArgList,
 			OpCode::ReplaceText => Instruction::ReplaceText,
@@ -115,6 +119,7 @@ where
 			OpCode::CallParent => Instruction::CallParent,
 			OpCode::CallPathArgList => Instruction::CallPathArgList,
 			OpCode::CallNameArgList => Instruction::CallNameArgList,
+			OpCode::View => Instruction::View,
 
 
 			OpCode::Turn => Instruction::Turn,
@@ -142,6 +147,28 @@ where
 				}
 				Instruction::IsInList
 			}
+
+			OpCode::Range => {
+				if self.disassemble_u32_operand()? != 0xAE {
+					return Err(UnknownRange);
+				}
+				Instruction::Range
+			}
+
+			OpCode::Orange => {
+				if self.disassemble_u32_operand()? != 0xAE {
+					return Err(UnknownRange);
+				}
+				Instruction::Orange
+			}
+
+			OpCode::ForRange => {
+				Instruction::ForRange(
+					self.disassemble_loc_operand()?,
+					self.disassemble_variable_operand()?,
+				)
+			}
+
 			OpCode::Min => Instruction::Min(self.disassemble_param_count_operand()?),
 			OpCode::Max => Instruction::Max(self.disassemble_param_count_operand()?),
 			OpCode::Inc => Instruction::Inc(self.disassemble_variable_operand()?),
@@ -156,7 +183,9 @@ where
 			OpCode::Jmp2 => Instruction::Jmp2(self.disassemble_loc_operand()?),
 			OpCode::Jnz2 => Instruction::Jnz2(self.disassemble_loc_operand()?),
 			OpCode::Jz2 => Instruction::Jz2(self.disassemble_loc_operand()?),
+			OpCode::Ref => Instruction::Ref,
 			OpCode::Animate => Instruction::Animate,
+			OpCode::NullAnimate => Instruction::NullAnimate,
 			OpCode::AugAdd => Instruction::AugAdd(self.disassemble_variable_operand()?),
 			OpCode::AugSub => Instruction::AugSub(self.disassemble_variable_operand()?),
 			OpCode::AugMul => Instruction::AugMul(self.disassemble_variable_operand()?),
@@ -167,6 +196,8 @@ where
 			OpCode::AugXor => Instruction::AugXor(self.disassemble_variable_operand()?),
 			OpCode::AugLShift => Instruction::AugLShift(self.disassemble_variable_operand()?),
 			OpCode::AugRShift => Instruction::AugRShift(self.disassemble_variable_operand()?),
+			OpCode::Input => Instruction::Input(self.disassemble_u32_operand()?, self.disassemble_u32_operand()?, self.disassemble_u32_operand()?),
+			OpCode::PromptCheck => Instruction::PromptCheck,
 			OpCode::IterLoad => Instruction::IterLoad(self.disassemble_u32_operand()?, self.disassemble_u32_operand()?),
 			OpCode::IterNext => Instruction::IterNext,
 			OpCode::IterPush => Instruction::IterPush,
@@ -174,6 +205,7 @@ where
 			OpCode::Format => Instruction::Format(self.disassemble_string_operand()?, self.disassemble_param_count_operand()?),
 			OpCode::JsonEncode => Instruction::JsonEncode,
 			OpCode::JsonDecode => Instruction::JsonDecode,
+			OpCode::FilterNewArgList => Instruction::FilterNewArgList,
 			OpCode::UrlEncode => Instruction::UrlEncode,
 			OpCode::UrlDecode => Instruction::UrlDecode,
 			OpCode::JmpOr => Instruction::JmpOr(self.disassemble_loc_operand()?),
@@ -187,11 +219,21 @@ where
 			OpCode::CallName => Instruction::CallName(self.disassemble_param_count_operand()?),
 			OpCode::End => Instruction::End(),
 			OpCode::Rand => Instruction::Rand,
+			OpCode::Prob => Instruction::Prob,
 			OpCode::RandRange => Instruction::RandRange,
+			OpCode::NewImageArgList => Instruction::NewImageArgList,
+			OpCode::NewImageArgs => Instruction::NewImageArgs(self.disassemble_param_count_operand()?),
 			OpCode::New => Instruction::New(self.disassemble_param_count_operand()?),
 			OpCode::IconNew => Instruction::IconNew(self.disassemble_param_count_operand()?),
 			OpCode::IconStatesMode => Instruction::IconStatesMode,
+			OpCode::TurnOrFlipIcon => {
+				Instruction::TurnOrFlipIcon {
+					filter_mode: self.disassemble_u32_operand()?,
+					var: self.disassemble_variable_operand()?,
+				}
+			}
 			OpCode::Pop => Instruction::Pop,
+			OpCode::PopN => Instruction::PopN(self.disassemble_u32_operand()?),
 			OpCode::Stat => Instruction::Stat,
 			OpCode::Output => Instruction::Output,
 			OpCode::WinOutput => Instruction::WinOutput,
