@@ -4,18 +4,18 @@ use dm::*;
 
 #[hook("/proc/auxtools_stack_trace")]
 fn hello_proc_hook() {
-
+/*
 	let mut proc_id: u32 = 0;
 	loop {
-		let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));
-		//let proc = Proc::find("/world/proc/test");
+		//let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));
+		let proc = Proc::find("/world/proc/test");
 		if proc.is_none() {
 			break;
 		}
 		let proc = proc.unwrap();
 
 		let (dism, err) = proc.disassemble();
-		if let Some(err) = err {
+		//if let Some(err) = err {
 			let mut buf = format!("Dism for {:?}\n", proc);
 			for x in &dism {
 				buf.push_str(format!("\t{}-{}: {:?}\n", x.0, x.1, x.2).as_str());
@@ -23,14 +23,14 @@ fn hello_proc_hook() {
 		
 			buf.push_str(format!("\tError: {:?}", err).as_str());
 			return Ok(Value::from_string(buf));
-		}
+		//}
 
 		proc_id += 1;
 	}
 
 	Ok(Value::from(true))
+*/
 
-	/*
 	let mut success = 0;
 	let mut total = 0;
 	let mut proc_id: u32 = 0;
@@ -51,8 +51,7 @@ fn hello_proc_hook() {
 		proc_id += 1;
 	}
 
-	Ok(Value::from(true))
-	*/
+	Ok(Value::from_string(format!("{}/{}", success, total)))
 
 	/*
 	let frames = CallStacks::new(ctx).active;

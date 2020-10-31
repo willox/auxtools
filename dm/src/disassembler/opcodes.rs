@@ -125,7 +125,7 @@ pub enum OpCode {
 	Num2Text = 0x77,
 	Switch = 0x78,
 	PickSwitch = 0x79,
-	SwitchRagne = 0x7A,
+	SwitchRange = 0x7A,
 	ListGet = 0x7B,
 	ListSet = 0x7C,
 	IsType = 0x7D,

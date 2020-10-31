@@ -38,6 +38,19 @@ pub struct Switch {
 }
 
 #[derive(Debug)]
+pub struct PickSwitch {
+	pub default: Loc,
+	pub cases: Vec<(u32, Loc)>,
+}
+
+#[derive(Debug)]
+pub struct SwitchRange {
+	pub default: Loc,
+	pub cases: Vec<(Value, Loc)>,
+	pub range_cases: Vec<(Value, Value, Loc)>,
+}
+
+#[derive(Debug)]
 pub struct ParamCount(pub u32);
 
 #[derive(Debug)]
@@ -68,7 +81,7 @@ pub enum Instruction {
 	IsObj,
 	IsArea,
 	IsTurf,
-	Alert(),
+	Alert,
 	EmptyList(),
 	NewList(u32),
 	View,
@@ -156,8 +169,8 @@ pub enum Instruction {
 	Text2Num,
 	Num2Text,
 	Switch(Switch),
-	PickSwitch(),
-	SwitchRagne(),
+	PickSwitch(PickSwitch),
+	SwitchRange(SwitchRange),
 	ListGet,
 	ListSet,
 	IsType,
@@ -231,7 +244,7 @@ pub enum Instruction {
 	NewArgList,
 	MinList(),
 	MaxList(),
-	Pick(),
+	Pick,
 	NewImageArgList,
 	NewImageArgs(ParamCount),
 	FCopyRsc,
@@ -322,7 +335,7 @@ pub enum Instruction {
 	IsList,
 	Ref,
 	IsMovable,
-	Clamp(),
+	Clamp,
 	Sha1(),
 	LengthChar(),
 	CopyTextChar,

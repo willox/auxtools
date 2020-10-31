@@ -71,6 +71,7 @@ where
 			OpCode::IsTurf => Instruction::IsTurf,
 			OpCode::IsIcon => Instruction::IsIcon,
 			OpCode::IsMovable => Instruction::IsMovable,
+			OpCode::Alert => Instruction::Alert,
 			OpCode::CheckNum => Instruction::CheckNum,
 			OpCode::ListGet => Instruction::ListGet,
 			OpCode::ListSet => Instruction::ListSet,
@@ -83,6 +84,7 @@ where
 			OpCode::GetFlag => Instruction::GetFlag,
 			OpCode::Not => Instruction::Not,
 			OpCode::Abs => Instruction::Abs,
+			OpCode::Clamp => Instruction::Clamp,
 			OpCode::Sqrt => Instruction::Sqrt,
 			OpCode::Pow => Instruction::Pow,
 			OpCode::Text2Path => Instruction::Text2Path,
@@ -179,6 +181,8 @@ where
 			OpCode::PostDec => Instruction::PostDec(self.disassemble_variable_operand()?),
 			OpCode::TypesOf => Instruction::TypesOf(self.disassemble_param_count_operand()?),
 			OpCode::Switch => Instruction::Switch(self.disassemble_switch_operand()?),
+			OpCode::PickSwitch => Instruction::PickSwitch(self.disassemble_pick_switch_operand()?),
+			OpCode::SwitchRange => Instruction::SwitchRange(self.disassemble_switch_range_operand()?),
 			OpCode::Jmp => Instruction::Jmp(self.disassemble_loc_operand()?),
 			OpCode::Jmp2 => Instruction::Jmp2(self.disassemble_loc_operand()?),
 			OpCode::Jnz2 => Instruction::Jnz2(self.disassemble_loc_operand()?),
@@ -218,6 +222,7 @@ where
 			OpCode::Catch => Instruction::Catch(self.disassemble_loc_operand()?),
 			OpCode::CallName => Instruction::CallName(self.disassemble_param_count_operand()?),
 			OpCode::End => Instruction::End(),
+			OpCode::Pick => Instruction::Pick,
 			OpCode::Rand => Instruction::Rand,
 			OpCode::Prob => Instruction::Prob,
 			OpCode::RandRange => Instruction::RandRange,
@@ -268,6 +273,48 @@ where
 		};
 
 		Ok((starting_offset, self.current_offset - 1, res))
+	}
+
+	fn disassemble_switch_range_operand(&mut self) -> Result<SwitchRange, DisassembleError> {
+		let mut cases = vec![];
+		let mut range_cases = vec![];
+
+		for _ in 0..self.disassemble_u32_operand()? {
+			let min = self.disassemble_value_operand()?;
+			let max = self.disassemble_value_operand()?;
+			let loc = self.disassemble_loc_operand()?;
+
+			range_cases.push((min, max, loc));
+		}
+
+		for _ in 0..self.disassemble_u32_operand()? {
+			let val = self.disassemble_value_operand()?;
+			let loc = self.disassemble_loc_operand()?;
+
+			cases.push((val, loc));
+		}
+
+		Ok(SwitchRange {
+			default: self.disassemble_loc_operand()?,
+			cases,
+			range_cases
+		})
+	}
+
+	fn disassemble_pick_switch_operand(&mut self) -> Result<PickSwitch, DisassembleError> {
+		let mut cases = vec![];
+		
+		for _ in 0..self.disassemble_u32_operand()? {
+			cases.push((
+				self.disassemble_u32_operand()?,
+				self.disassemble_loc_operand()?,
+			))
+		}
+
+		Ok(PickSwitch{
+			default: self.disassemble_loc_operand()?,
+			cases
+		})
 	}
 
 	fn disassemble_switch_operand(&mut self) -> Result<Switch, DisassembleError> {
