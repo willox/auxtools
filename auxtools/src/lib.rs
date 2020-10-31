@@ -28,7 +28,29 @@ fn hello_proc_hook() {
 		proc_id += 1;
 	}
 
+	/*
+	let mut success = 0;
+	let mut total = 0;
+	let mut proc_id: u32 = 0;
+	loop {
+		let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));
+		//let proc = Proc::find("/world/proc/SDQL_var");
+		if proc.is_none() {
+			break;
+		}
+		let proc = proc.unwrap();
+
+		let (dism, err) = proc.disassemble();
+		if err.is_none() {
+			success += 1;
+		}
+
+		total += 1;
+		proc_id += 1;
+	}
+
 	Ok(Value::from(true))
+	*/
 
 	/*
 	let frames = CallStacks::new(ctx).active;
