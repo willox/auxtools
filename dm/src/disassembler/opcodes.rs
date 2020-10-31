@@ -65,7 +65,7 @@ pub enum OpCode {
 	Tg = 0x3A,
 	Tle = 0x3B,
 	Tge = 0x3C,
-	ANeg = 0x3D,
+	UnaryNeg = 0x3D,
 	Add = 0x3E,
 	Sub = 0x3F,
 	Mul = 0x40,
@@ -294,7 +294,7 @@ pub enum OpCode {
 	JsonDecode = 0x139,
 	RegexNew = 0x13A,
 	JmpIfNull = 0x13D,
-	LPushCache = 0x142,
+	PushCache = 0x142,
 	SetCache = 0x143,
 	Tan = 0x144,
 	ArcTan = 0x145,
@@ -327,8 +327,8 @@ pub enum OpCode {
 #[non_exhaustive]
 #[allow(dead_code)]
 pub enum AccessModifier {
+	Usr = 0xFFCD,			// 65485
 	Src = 0xFFCE,			// 65486
-	Usr = 0xFFCD,
 	Args = 0xFFCF,
 	Dot = 0xFFD0,
 	Cache = 0xFFD8,
@@ -352,6 +352,6 @@ pub enum AccessModifier {
 
 impl AccessModifier {
 	pub fn in_range(value: u32) -> bool {
-		value >= (Self::Src as u32) && value <= (Self::Initial as u32)
+		value >= (Self::Usr as u32) && value <= (Self::Initial as u32)
 	}
 }

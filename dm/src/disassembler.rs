@@ -17,6 +17,7 @@ pub enum DisassembleError {
 	UnknownOp(OpCode),
 	UnknownAccessModifier,
 	InvalidProcId,
+	UnknownIsInList,
 	Finished, // bad
 }
 
@@ -79,13 +80,31 @@ where
 			OpCode::FExists => Instruction::FExists,
 			OpCode::File2Text => Instruction::File2Text,
 			OpCode::Text2File => Instruction::Text2File,
+			OpCode::Round => Instruction::Round,
 			OpCode::FCopy => Instruction::FCopy,
 			OpCode::FDel => Instruction::FDel,
 			OpCode::SplitText => Instruction::SplitText,
+			OpCode::JoinText => Instruction::JoinText,
+			OpCode::UpperText => Instruction::UpperText,
+			OpCode::LowerText => Instruction::LowerText,
 			OpCode::Length => Instruction::Length,
+			OpCode::CopyText => Instruction::CopyText,
+			OpCode::CopyTextChar => Instruction::CopyTextChar,
 			OpCode::Time2Text => Instruction::Time2Text,
 			OpCode::Md5 => Instruction::Md5,
 			OpCode::Sleep => Instruction::Sleep,
+			OpCode::PushCache => Instruction::PushCache,
+			OpCode::SetCache => Instruction::SetCache,
+			OpCode::LocateRef => Instruction::LocateRef,
+			OpCode::HasCall => Instruction::HasCall,
+			OpCode::CallPathArgList => Instruction::CallPathArgList,
+			OpCode::CallNameArgList => Instruction::CallNameArgList,
+			OpCode::IsInList => {
+				if self.disassemble_u32_operand()? != 0x05 {
+					return Err(UnknownIsInList);
+				}
+				Instruction::IsInList
+			}
 			OpCode::Min => Instruction::Min(self.disassemble_param_count_operand()?),
 			OpCode::Max => Instruction::Max(self.disassemble_param_count_operand()?),
 			OpCode::Inc => Instruction::Inc(self.disassemble_variable_operand()?),
@@ -100,6 +119,8 @@ where
 			OpCode::JsonEncode => Instruction::JsonEncode,
 			OpCode::JsonDecode => Instruction::JsonDecode,
 			OpCode::JmpOr => Instruction::JmpOr(self.disassemble_loc_operand()?),
+			OpCode::JmpAnd => Instruction::JmpAnd(self.disassemble_loc_operand()?),
+			OpCode::JmpIfNull => Instruction::JmpAnd(self.disassemble_loc_operand()?),
 			OpCode::NewAssocList => Instruction::NewAssocList(self.disassemble_param_count_operand()?),
 			OpCode::Crash => Instruction::Crash,
 			OpCode::NewList => Instruction::NewList(self.disassemble_u32_operand()?),
@@ -115,10 +136,16 @@ where
 			OpCode::Output => Instruction::Output,
 			OpCode::CallNoReturn => Instruction::CallNoReturn(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),
 			OpCode::Call => Instruction::Call(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),
+			OpCode::CallGlobalArgList => Instruction::CallGlobalArgList(self.disassemble_proc_operand()?),
+			OpCode::UnaryNeg => Instruction::UnaryNeg,
 			OpCode::Add => Instruction::Add,
 			OpCode::Sub => Instruction::Sub,
 			OpCode::Mul => Instruction::Mul,
 			OpCode::Div => Instruction::Div,
+			OpCode::Band => Instruction::Band,
+			OpCode::Bor => Instruction::Bor,
+			OpCode::Bxor => Instruction::Bxor,
+			OpCode::Bnot => Instruction::Bnot,
 			OpCode::PushInt => Instruction::PushInt(self.disassemble_i32_operand()?),
 			OpCode::Ret => Instruction::Ret,
 			OpCode::CallGlob => Instruction::CallGlob(self.disassemble_callglob_operands()?),
@@ -180,6 +207,9 @@ where
 			AccessModifier::World => {
 				Ok(Variable::World)
 			},
+			AccessModifier::Usr => {
+				Ok(Variable::Usr)
+			}
 			AccessModifier::Src => {
 				Ok(Variable::Src)
 			}
