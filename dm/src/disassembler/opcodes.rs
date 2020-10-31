@@ -315,6 +315,9 @@ pub enum OpCode {
 	SplitTextChar = 0x157,
 	Text2NumRadix = 0x158,
 	Num2TextRadix = 0x159,
+	Unk_15A = 0x15A,
+	Unk_15B = 0x15B,
+	Unk_15C = 0x15C,
 }
 
 #[repr(u32)]

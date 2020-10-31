@@ -56,6 +56,18 @@ where
 	
 		let res = match opcode {
 			OpCode::IsNull => Instruction::IsNull,
+			OpCode::IsNum => Instruction::IsNum,
+			OpCode::IsText => Instruction::IsText,
+			OpCode::IsPath => Instruction::IsPath,
+			OpCode::IsType => Instruction::IsType,
+			OpCode::ListGet => Instruction::ListGet,
+			OpCode::ListSet => Instruction::ListSet,
+			OpCode::Format => Instruction::Format(self.disassemble_string_operand()?, self.disassemble_param_count_operand()?),
+			OpCode::JsonEncode => Instruction::JsonEncode,
+			OpCode::JsonDecode => Instruction::JsonDecode,
+			OpCode::JmpOr => Instruction::JmpOr(self.disassemble_loc_operand()?),
+			OpCode::NewAssocList => Instruction::NewAssocList(self.disassemble_param_count_operand()?),
+			OpCode::Crash => Instruction::Crash,
 			OpCode::NewList => Instruction::NewList(self.disassemble_u32_operand()?),
 			OpCode::Try => Instruction::Try(self.disassemble_loc_operand()?),
 			OpCode::Catch => Instruction::Catch(self.disassemble_loc_operand()?),
@@ -195,6 +207,14 @@ where
 	
 	fn disassemble_variable_operand(&mut self) -> Result<Variable, DisassembleError>
 	{
+		// This is either a string-ref or an AccessModifier
+		let param = self.peek_u32_operand()?;
+
+		if !AccessModifier::in_range(param) {
+			let fields = vec![self.disassemble_string_operand()?];
+			return Ok(Variable::Field(Box::new(Variable::Cache), fields));
+		}
+
 		let modifier = self.disassemble_access_modifier_type()?;
 	
 		match modifier {
