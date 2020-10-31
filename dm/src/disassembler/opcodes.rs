@@ -343,8 +343,8 @@ pub enum AccessModifier {
 	// TODO: What are these?
 	// 0xFFE1
 	// 0xFFE2
-	// 0xFFE3
-	// 0xFFE4
+	Cache2 = 0xFFE3,
+	Cache3 = 0xFFE4,
 	World = 0xFFE5,
 	Null = 0xFFE6,
 	Initial = 0xFFE7,
