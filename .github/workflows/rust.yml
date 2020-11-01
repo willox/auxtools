@@ -11,7 +11,18 @@ env:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+        - os: ubuntu-latest
+          TOOLCHAIN: stable-i686-unknown-linux-gnu
+          TARGET: i686-unknown-linux-gnu
+
+        - os: windows-latest
+          TOOLCHAIN: stable-i686-pc-windows-msvc
+          TARGET: i686-pc-windows-msvc
 
     steps:
     - uses: actions/checkout@v2
@@ -19,8 +30,8 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: stable-i686-pc-windows-msvc
-        target: i686-pc-windows-msvc
+        toolchain: ${{matrix.TOOLCHAIN}}
+        target: ${{matrix.TARGET}}
         override: true
 
     - name: Build
