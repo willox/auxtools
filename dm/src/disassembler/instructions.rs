@@ -51,6 +51,11 @@ pub struct SwitchRange {
 }
 
 #[derive(Debug)]
+pub struct PickProb {
+	pub locs: Vec<Loc>,
+}
+
+#[derive(Debug)]
 pub enum IsInOperand {
 	Range,
 	Value,
@@ -74,7 +79,7 @@ pub enum Instruction {
 	Stat,
 	Link,
 	OutputFtp,
-	OutputRun(),
+	OutputRun,
 	Missile(),
 	Del,
 	Test,
@@ -174,7 +179,7 @@ pub enum Instruction {
 	CopyText,
 	FindText,
 	FindTextEx,
-	CmpText(),
+	CmpText,
 	SortText(ParamCount),
 	SortTextEx(ParamCount),
 	UpperText,
@@ -266,6 +271,7 @@ pub enum Instruction {
 	MinList,
 	MaxList,
 	Pick,
+	PickProb(PickProb),
 	NewImageArgList,
 	NewImageArgs(ParamCount),
 	FCopyRsc,

@@ -8,7 +8,6 @@ use dm::*;
 fn hello_proc_hook() {
 	let mut file = File::create("E:/bytecode.txt").unwrap();
 	
-
 	let mut proc_id: u32 = 0;
 	loop {
 		let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));

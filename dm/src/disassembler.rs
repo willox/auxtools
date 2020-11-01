@@ -11,7 +11,7 @@ use crate::StringRef;
 use crate::Value;
 use opcodes::{AccessModifier, OpCode};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum DisassembleError {
 	UnexpectedEnd,
 	UnknownOp(OpCode),
@@ -135,6 +135,7 @@ where
 			OpCode::SpanTextChar => Instruction::SpanTextChar,
 			OpCode::NonSpanTextChar => Instruction::NonSpanTextChar,
 			OpCode::CopyText => Instruction::CopyText,
+			OpCode::CmpText => Instruction::CmpText,
 			OpCode::FindText => Instruction::FindText,
 			OpCode::FindTextEx => Instruction::FindTextEx,
 			OpCode::SortText => Instruction::SortText(self.disassemble_param_count_operand()?),
@@ -291,6 +292,15 @@ where
 			OpCode::CallName => Instruction::CallName(self.disassemble_param_count_operand()?),
 			OpCode::End => Instruction::End(),
 			OpCode::Pick => Instruction::Pick,
+			OpCode::PickProb => {
+				let mut locs = vec![];
+				for x in 0..self.disassemble_u32_operand()? {
+					locs.push(self.disassemble_loc_operand()?);
+				}
+				Instruction::PickProb(PickProb {
+					locs
+				})
+			}
 			OpCode::Rand => Instruction::Rand,
 			OpCode::RandSeed => Instruction::RandSeed,
 			OpCode::Prob => Instruction::Prob,
@@ -327,6 +337,7 @@ where
 			OpCode::Stat => Instruction::Stat,
 			OpCode::Output => Instruction::Output,
 			OpCode::OutputFtp => Instruction::OutputFtp,
+			OpCode::OutputRun => Instruction::OutputRun,
 			OpCode::Read => Instruction::Read,
 			OpCode::WinOutput => Instruction::WinOutput,
 			OpCode::WinSet => Instruction::WinSet,
@@ -666,15 +677,14 @@ pub fn disassemble(proc: &Proc) -> (Vec<(u32, u32, Instruction)>, Option<Disasse
 	loop {
 		match dism.disassemble_instruction() {
 			Ok(ins_data) => {
-				if let Instruction::End() = ins_data.2 {
-					ret.push(ins_data);
-					break;
-				}
 				ret.push(ins_data);
 				continue;
 			}
 			Err(e) => {
-				return (ret, Some(e))
+				if e != Finished {
+					return (ret, Some(e));
+				}
+				break;				
 			}
 		}
 	}
