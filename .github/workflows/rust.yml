@@ -28,6 +28,10 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: Install Ubuntu Deps
+      if: matrix.os == 'ubuntu-latest'
+      run: sudo apt install build-essential g++-multilib
+
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
