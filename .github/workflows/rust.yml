@@ -32,7 +32,7 @@ jobs:
 
     - name: Install Ubuntu Deps
       if: matrix.os == 'ubuntu-latest'
-      run: sudo apt install build-essential g++-multilib
+      run: sudo apt install build-essential gcc-multilib
 
     - uses: actions-rs/toolchain@v1
       with:
