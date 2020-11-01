@@ -326,6 +326,7 @@ pub enum OpCode {
 	Sha1 = 0x14B,
 	LengthChar = 0x14D,
 	CopyTextChar = 0x14E,
+	FindTextChar = 0x14F,
 	ReplaceTextChar = 0x151,
 	ReplaceTextExChar = 0x152,
 	FindLastTextChar = 0x153,
