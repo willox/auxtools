@@ -194,7 +194,7 @@ pub enum OpCode {
 	Cos = 0xC3,
 	ArcSin = 0xC4,
 	ArcCos = 0xC5,
-	Unk_C6 = 0xC6,
+	InputColor = 0xC6,
 	Crash = 0xC7,
 	NewAssocList = 0xC8,
 	CallParentArgList = 0xC9,

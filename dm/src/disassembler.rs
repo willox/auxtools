@@ -72,7 +72,12 @@ where
 			OpCode::IsIcon => Instruction::IsIcon,
 			OpCode::IsMovable => Instruction::IsMovable,
 			OpCode::IsFile => Instruction::IsFile,
+			OpCode::View => Instruction::View,
+			OpCode::OView => Instruction::OView,
 			OpCode::Viewers => Instruction::Viewers,
+			OpCode::OViewers => Instruction::OViewers,
+			OpCode::Hearers => Instruction::Hearers,
+			OpCode::OHearers => Instruction::OHearers,
 			OpCode::Alert => Instruction::Alert,
 			OpCode::CheckNum => Instruction::CheckNum,
 			OpCode::ListGet => Instruction::ListGet,
@@ -101,6 +106,7 @@ where
 			OpCode::Text2Path => Instruction::Text2Path,
 			OpCode::NewArgList => Instruction::NewArgList,
 			OpCode::ReplaceText => Instruction::ReplaceText,
+			OpCode::ReplaceTextEx => Instruction::ReplaceTextEx,
 			OpCode::FindLastText => Instruction::FindLastText,
 			OpCode::Shell => Instruction::Shell,
 			OpCode::FExists => Instruction::FExists,
@@ -135,7 +141,9 @@ where
 			OpCode::Time2Text => Instruction::Time2Text,
 			OpCode::Md5 => Instruction::Md5,
 			OpCode::CKey => Instruction::CKey,
+			OpCode::CKeyEx => Instruction::CKeyEx,
 			OpCode::Sleep => Instruction::Sleep,
+			OpCode::Spawn => Instruction::Spawn(self.disassemble_loc_operand()?),
 			OpCode::NullCacheMaybe => Instruction::NullCacheMaybe,
 			OpCode::PushToCache => Instruction::PushToCache,
 			OpCode::PopFromCache => Instruction::PopFromCache,
@@ -157,7 +165,6 @@ where
 			OpCode::CallSelfArgs => Instruction::CallSelfArgs(self.disassemble_param_count_operand()?),
 			OpCode::CallPathArgList => Instruction::CallPathArgList,
 			OpCode::CallNameArgList => Instruction::CallNameArgList,
-			OpCode::View => Instruction::View,
 			OpCode::Block => Instruction::Block,
 			OpCode::BrowseOpt => Instruction::BrowseOpt,
 			OpCode::BrowseRsc => Instruction::BrowseRsc,
@@ -250,12 +257,14 @@ where
 			OpCode::AugLShift => Instruction::AugLShift(self.disassemble_variable_operand()?),
 			OpCode::AugRShift => Instruction::AugRShift(self.disassemble_variable_operand()?),
 			OpCode::Input => Instruction::Input(self.disassemble_u32_operand()?, self.disassemble_u32_operand()?, self.disassemble_u32_operand()?),
+			OpCode::InputColor => Instruction::InputColor(self.disassemble_u32_operand()?, self.disassemble_u32_operand()?, self.disassemble_u32_operand()?),
 			OpCode::PromptCheck => Instruction::PromptCheck,
 			OpCode::IterLoad => Instruction::IterLoad(self.disassemble_u32_operand()?, self.disassemble_u32_operand()?),
 			OpCode::IterNext => Instruction::IterNext,
 			OpCode::IterPush => Instruction::IterPush,
 			OpCode::IterPop => Instruction::IterPop,
 			OpCode::Format => Instruction::Format(self.disassemble_string_operand()?, self.disassemble_param_count_operand()?),
+			OpCode::OutputFormat => Instruction::OutputFormat(self.disassemble_string_operand()?, self.disassemble_param_count_operand()?),
 			OpCode::JsonEncode => Instruction::JsonEncode,
 			OpCode::JsonDecode => Instruction::JsonDecode,
 			OpCode::HtmlEncode => Instruction::HtmlEncode,
@@ -305,10 +314,12 @@ where
 			OpCode::WinSet => Instruction::WinSet,
 			OpCode::WinGet => Instruction::WinGet,
 			OpCode::WinShow => Instruction::WinShow,
+			OpCode::WinClone => Instruction::WinClone,
 			OpCode::WinExists => Instruction::WinExists,
 			OpCode::CallNoReturn => Instruction::CallNoReturn(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),
 			OpCode::Call => Instruction::Call(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),
 			OpCode::CallGlobalArgList => Instruction::CallGlobalArgList(self.disassemble_proc_operand()?),
+			OpCode::RollStr => Instruction::RollStr,
 			OpCode::UnaryNeg => Instruction::UnaryNeg,
 			OpCode::Add => Instruction::Add,
 			OpCode::Sub => Instruction::Sub,
@@ -549,11 +560,11 @@ where
 				let var = self.disassemble_string_operand()?;
 				Ok(Variable::InitialField(Box::new(Variable::Cache), vec![var]))
 			},
-			AccessModifier::Proc => {
+			AccessModifier::Proc | AccessModifier::Proc2 => {
 				let proc = self.disassemble_proc_operand()?;
 				Ok(Variable::StaticProcField(Box::new(Variable::Cache), vec![], proc))
 			},
-			AccessModifier::SrcProc2 => {
+			AccessModifier::SrcProc | AccessModifier::SrcProc2 => {
 				let proc = self.disassemble_string_operand()?;
 				Ok(Variable::RuntimeProcField(Box::new(Variable::Cache), vec![], proc))
 			},
