@@ -7,12 +7,11 @@ fn hello_proc_hook() {
 	let obj = &args[0];
 	let vars = obj.get_list("vars")?;
 
-	let mut var_names = Vec::new();
-
-	for i in 1..=vars.len() {
-		let name = vars.get(i)?;
-		var_names.push(name.as_string()?);
-	}
+	let var_names: Vec<String> = vars
+		.to_vec()
+		.iter()
+		.map(|v| v.as_string().unwrap_or("".to_owned()))
+		.collect();
 
 	Ok(Value::null())
 }

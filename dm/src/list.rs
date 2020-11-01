@@ -3,6 +3,7 @@ use crate::raw_types::values::{IntoRawValue, ValueTag};
 use crate::runtime;
 use crate::runtime::ConversionResult;
 use crate::value::Value;
+use std::iter::FromIterator;
 
 fn is_list(tag: ValueTag) -> bool {
 	match tag {
@@ -141,6 +142,31 @@ impl List {
 			);
 		}
 		length
+	}
+
+	/// Copies the List's vector part (values accessible by numeric indices) into a Vec<Value>.
+	pub fn to_vec(self) -> Vec<Value> {
+		unsafe {
+			let mut ptr: *mut raw_types::lists::List = std::ptr::null_mut();
+			assert_eq!(
+				raw_types::funcs::get_list_by_id(&mut ptr, self.value.value.data.list),
+				1
+			);
+			std::slice::from_raw_parts((*ptr).vector_part as *const _, self.len() as usize).to_vec()
+		}
+	}
+}
+
+impl FromIterator<Value> for List {
+	fn from_iter<I: IntoIterator<Item = Value>>(it: I) -> Self {
+		let res = Self::new();
+
+		// TODO: This is probably a performane bottleneck.
+		for val in it {
+			res.append(&val);
+		}
+
+		res
 	}
 }
 
