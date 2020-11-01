@@ -112,11 +112,14 @@ where
 			OpCode::LowerText => Instruction::LowerText,
 			OpCode::Text2Num => Instruction::Text2Num,
 			OpCode::Num2Text => Instruction::Num2Text,
+			OpCode::Text2NumRadix => Instruction::Text2NumRadix,
+			OpCode::Num2TextRadix => Instruction::Num2TextRadix,
 			OpCode::Num2TextSigFigs => Instruction::Num2TextSigFigs,
 			OpCode::Length => Instruction::Length,
 			OpCode::LengthChar => Instruction::LengthChar,
 			OpCode::CopyText => Instruction::CopyText,
 			OpCode::FindText => Instruction::FindText,
+			OpCode::FindTextEx => Instruction::FindTextEx,
 			OpCode::CopyTextChar => Instruction::CopyTextChar,
 			OpCode::Time2Text => Instruction::Time2Text,
 			OpCode::Md5 => Instruction::Md5,
@@ -163,28 +166,36 @@ where
 					return Err(UnknownIsInList);
 				}
 				Instruction::IsInList
-			}
+			},
 
 			OpCode::Range => {
 				if self.disassemble_u32_operand()? != 0xAE {
 					return Err(UnknownRange);
 				}
 				Instruction::Range
-			}
+			},
 
 			OpCode::Orange => {
 				if self.disassemble_u32_operand()? != 0xAE {
 					return Err(UnknownRange);
 				}
 				Instruction::Orange
-			}
+			},
 
 			OpCode::ForRange => {
 				Instruction::ForRange(
 					self.disassemble_loc_operand()?,
 					self.disassemble_variable_operand()?,
 				)
-			}
+			},
+
+			OpCode::ForRangeStepSetup => Instruction::ForRangeStepSetup,
+			OpCode::ForRangeStep => {
+				Instruction::ForRangeStep(
+					self.disassemble_loc_operand()?,
+					self.disassemble_variable_operand()?,
+				)
+			},
 
 			OpCode::Min => Instruction::Min(self.disassemble_param_count_operand()?),
 			OpCode::Max => Instruction::Max(self.disassemble_param_count_operand()?),
