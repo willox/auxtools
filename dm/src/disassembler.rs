@@ -17,7 +17,7 @@ pub enum DisassembleError {
 	UnknownOp(OpCode),
 	UnknownAccessModifier,
 	InvalidProcId,
-	UnknownIsInList,
+	UnknownIsInOperand(u32),
 	UnknownRange,
 	Finished, // bad
 }
@@ -84,6 +84,7 @@ where
 			OpCode::Tg => Instruction::Tg,
 			OpCode::Tle => Instruction::Tle,
 			OpCode::Tge => Instruction::Tge,
+			OpCode::TestNotEquiv => Instruction::TestNotEquiv,
 			OpCode::GetFlag => Instruction::GetFlag,
 			OpCode::Not => Instruction::Not,
 			OpCode::Abs => Instruction::Abs,
@@ -128,6 +129,8 @@ where
 			OpCode::CopyText => Instruction::CopyText,
 			OpCode::FindText => Instruction::FindText,
 			OpCode::FindTextEx => Instruction::FindTextEx,
+			OpCode::SortText => Instruction::SortText(self.disassemble_param_count_operand()?),
+			OpCode::SortTextEx => Instruction::SortTextEx(self.disassemble_param_count_operand()?),
 			OpCode::CopyTextChar => Instruction::CopyTextChar,
 			OpCode::Time2Text => Instruction::Time2Text,
 			OpCode::Md5 => Instruction::Md5,
@@ -141,6 +144,8 @@ where
 			OpCode::LocateRef => Instruction::LocateRef,
 			OpCode::LocateType => Instruction::LocateType,
 			OpCode::Rgb => Instruction::Rgb,
+			OpCode::Rgba => Instruction::Rgba,
+			OpCode::BoundsDist => Instruction::BoundsDist,
 			OpCode::HasCall => Instruction::HasCall,
 			OpCode::CallLib => Instruction::CallLib(self.disassemble_param_count_operand()?),
 			OpCode::CallPath => Instruction::CallPath(self.disassemble_param_count_operand()?),
@@ -176,11 +181,12 @@ where
 			OpCode::GetDist => Instruction::GetDist,
 			OpCode::GetDir => Instruction::GetDir,
 
-			OpCode::IsInList => {
-				if self.disassemble_u32_operand()? != 0x05 {
-					return Err(UnknownIsInList);
-				}
-				Instruction::IsInList
+			OpCode::IsIn => {
+				Instruction::IsIn(match self.disassemble_u32_operand()? {
+					0x0B => IsInOperand::Range,
+					0x05 => IsInOperand::Value,
+					x => return Err(UnknownIsInOperand(x)),
+				})
 			},
 
 			OpCode::Range => {
@@ -214,6 +220,8 @@ where
 
 			OpCode::Min => Instruction::Min(self.disassemble_param_count_operand()?),
 			OpCode::Max => Instruction::Max(self.disassemble_param_count_operand()?),
+			OpCode::MinList => Instruction::MinList,
+			OpCode::MaxList => Instruction::MaxList,
 			OpCode::Inc => Instruction::Inc(self.disassemble_variable_operand()?),
 			OpCode::Dec => Instruction::Dec(self.disassemble_variable_operand()?),
 			OpCode::PreInc => Instruction::PreInc(self.disassemble_variable_operand()?),
@@ -296,6 +304,7 @@ where
 			OpCode::WinOutput => Instruction::WinOutput,
 			OpCode::WinSet => Instruction::WinSet,
 			OpCode::WinGet => Instruction::WinGet,
+			OpCode::WinShow => Instruction::WinShow,
 			OpCode::WinExists => Instruction::WinExists,
 			OpCode::CallNoReturn => Instruction::CallNoReturn(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),
 			OpCode::Call => Instruction::Call(self.disassemble_variable_operand()?, self.disassemble_u32_operand()?),

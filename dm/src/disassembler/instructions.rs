@@ -51,6 +51,12 @@ pub struct SwitchRange {
 }
 
 #[derive(Debug)]
+pub enum IsInOperand {
+	Range,
+	Value,
+}
+
+#[derive(Debug)]
 pub struct ParamCount(pub u32);
 
 #[derive(Debug)]
@@ -119,6 +125,7 @@ pub enum Instruction {
 	Tg,
 	Tle,
 	Tge,
+	TestNotEquiv,
 	UnaryNeg,
 	Add,
 	Sub,
@@ -168,8 +175,8 @@ pub enum Instruction {
 	FindText,
 	FindTextEx,
 	CmpText(),
-	SortText(),
-	SortTextEx(),
+	SortText(ParamCount),
+	SortTextEx(ParamCount),
 	UpperText,
 	LowerText,
 	Ascii2Text,
@@ -223,7 +230,7 @@ pub enum Instruction {
 	Max(ParamCount),
 	TypesOf(ParamCount),
 	CKey,
-	IsInList,
+	IsIn(IsInOperand),
 	Browse(),
 	BrowseOpt,
 	FList,
@@ -237,6 +244,7 @@ pub enum Instruction {
 	CKeyEx(),
 	PromptCheck,
 	Rgb,
+	Rgba,
 	HasCall,
 	HtmlEncode,
 	HtmlDecode,
@@ -252,8 +260,8 @@ pub enum Instruction {
 	CallNameArgList, // TODO: same as above but without a src?
 	CallGlobalArgList(Proc),
 	NewArgList,
-	MinList(),
-	MaxList(),
+	MinList,
+	MaxList,
 	Pick,
 	NewImageArgList,
 	NewImageArgs(ParamCount),
@@ -293,11 +301,10 @@ pub enum Instruction {
 	WinSet,
 	WinGet,
 	WinClone(),
-	WinShow(),
+	WinShow,
 	IconMapColors(),
 	IconScale(),
 	IconCrop(),
-	Rgba(),
 	IconStatesMode,
 	IconGetPixel(),
 	CallLib(ParamCount),
@@ -307,7 +314,7 @@ pub enum Instruction {
 	IconSize(),
 	Bounds(),
 	OBounds(),
-	BoundsDist(),
+	BoundsDist,
 	StepSpeed(),
 	StepToSpeed(),
 	StepAwaySpeed(),
