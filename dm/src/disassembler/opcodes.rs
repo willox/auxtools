@@ -220,7 +220,7 @@ pub enum OpCode {
 	UnkD5 = 0xD5,
 	UnkD6 = 0xD6,
 	FCopyRsc = 0xD7,
-	UnkD8 = 0xD8,
+	BadInstruction = 0xD8,
 	UnkD9 = 0xD9,
 	RandSeed = 0xDA,
 	Text2Ascii = 0xDB,
