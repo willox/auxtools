@@ -28,6 +28,9 @@ extern "C" {
 
 	static mut call_proc_by_id_original: *const c_void;
 
+	// Rust does not know the calling convention of this method (it has none), so don't call it!
+	fn invalid_instruction_hook();
+
 	fn call_proc_by_id_original_trampoline(
 		usr: raw_types::values::Value,
 		proc_type: u32,
@@ -73,6 +76,14 @@ impl std::fmt::Debug for HookFailure {
 
 pub fn init() -> Result<(), String> {
 	unsafe {
+		let test = RawDetour::new(
+			raw_types::funcs::INVALID_INSTRUCTION as *const (),
+			invalid_instruction_hook as *const (),
+		)
+		.unwrap();
+		test.enable().unwrap();
+		std::mem::forget(test);
+
 		let hook = RawDetour::new(
 			raw_types::funcs::call_proc_by_id_byond as *const (),
 			call_proc_by_id_hook_trampoline as *const (),
@@ -120,6 +131,17 @@ impl Proc {
 	#[allow(unused)]
 	pub fn hook(&self, func: ProcHook) -> Result<(), HookFailure> {
 		hook_by_id(self.id, func)
+	}
+}
+
+// Handles any invalid instructions BYOND runs into.
+// This function has to leave `*CURRENT_EXECUTION_CONTEXT` in EAX, so make sure to return it.
+#[no_mangle]
+extern "C" fn handle_custom_instruction(opcode: u32) -> *const raw_types::procs::ExecutionContext {
+	unsafe {
+		let execution_context = *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
+		(*execution_context).bytecode_offset += 1;
+		execution_context
 	}
 }
 

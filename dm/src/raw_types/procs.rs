@@ -42,7 +42,7 @@ pub struct ExecutionContext {
 	pub filename: strings::StringId,
 	pub line: u32,
 	pub bytecode: *mut u32,
-	pub current_opcode: u16,
+	pub bytecode_offset: u16,
 	test_flag: u8,
 	unk_0: u8,
 	cached_datum: values::Value,

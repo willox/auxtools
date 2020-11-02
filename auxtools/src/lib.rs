@@ -4,8 +4,26 @@ use std::fs::File;
 use std::io::Write;
 use dm::*;
 
-#[hook("/proc/auxtools_stack_trace")]
+#[hook("/proc/install_instruction")]
 fn hello_proc_hook() {
+
+	let proc = Proc::find("/proc/test").unwrap();
+	let bytecode = unsafe {
+		let (ptr, count) = proc.bytecode();
+		std::slice::from_raw_parts_mut(ptr, count)
+	};
+
+	bytecode[0] = 1337;
+	bytecode[1] = 1337;
+	bytecode[2] = 1337;
+	bytecode[3] = 1337;
+	bytecode[4] = 1337;
+	bytecode[5] = 1337;
+	bytecode[6] = 1337;
+	bytecode[7] = 1337;
+	Ok(Value::from(true))
+
+	/*
 	let mut file = File::create("E:/bytecode.txt").unwrap();
 	
 	let mut proc_id: u32 = 0;
@@ -34,6 +52,7 @@ fn hello_proc_hook() {
 	}
 
 	Ok(Value::from(true))
+	*/
 
 /*
 	let mut success = 0;
