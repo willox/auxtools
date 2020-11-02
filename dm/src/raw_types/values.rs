@@ -1,4 +1,5 @@
 use super::funcs;
+use super::lists;
 use super::strings;
 use std::ffi::CStr;
 use std::fmt;
@@ -101,6 +102,7 @@ pub union ValueData {
 	pub string: strings::StringId,
 	pub number: f32,
 	pub id: u32,
+	pub list: lists::ListId,
 }
 
 /// Internal thing used when interfacing with BYOND. You shouldn't need to use this.
