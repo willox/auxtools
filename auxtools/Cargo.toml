@@ -10,4 +10,3 @@ crate-type = ["cdylib"]
 [dependencies]
 dm = { path = "../dm" }
 sigscan = { path = "../sigscan" }
-debug_server = { path = "../debug_server" }

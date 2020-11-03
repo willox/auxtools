@@ -17,7 +17,6 @@ dependencies = [
 name = "auxtools"
 version = "0.1.0"
 dependencies = [
- "debug_server",
  "dm",
  "sigscan",
 ]
