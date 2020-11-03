@@ -7,9 +7,9 @@ use super::runtime;
 use super::string::StringRef;
 use super::value::Value;
 
+use dashmap::mapref::entry::Entry;
+use dashmap::DashMap;
 use std::cell::RefCell;
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
 use std::fmt;
 
 //
@@ -173,7 +173,7 @@ impl fmt::Debug for Proc {
 	}
 }
 
-thread_local!(static PROCS_BY_NAME: RefCell<HashMap<String, Vec<Proc>>> = RefCell::new(HashMap::new()));
+thread_local!(static PROCS_BY_NAME: RefCell<DashMap<String, Vec<Proc>>> = RefCell::new(DashMap::new()));
 
 fn strip_path(p: String) -> String {
 	p.replace("/proc/", "/").replace("/verb/", "/")
@@ -190,8 +190,8 @@ pub fn populate_procs() {
 
 		PROCS_BY_NAME.with(|h| {
 			match h.borrow_mut().entry(proc.path.clone()) {
-				Entry::Occupied(o) => {
-					o.into_mut().push(proc);
+				Entry::Occupied(mut o) => {
+					o.get_mut().push(proc);
 				}
 				Entry::Vacant(v) => {
 					v.insert(vec![proc]);

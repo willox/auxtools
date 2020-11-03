@@ -156,6 +156,10 @@ fn pin_dll() -> Result<(), ()> {
 }
 
 byond_ffi_fn! { auxtools_init(_input) {
+	unsafe {
+		core::arch::x86::_mm_undefined_si128();
+	}
+
 	if get_init_level() == InitLevel::None {
 		return Some("SUCCESS (Already initialized)".to_owned())
 	}
@@ -259,7 +263,9 @@ byond_ffi_fn! { auxtools_init(_input) {
 			}
 
 			if cfg!(unix) {
-
+				if let Some(ptr) = byondcore.find(signature!("8B 35 ?? ?? ?? ?? 89 5D ?? 0F B7 08 89 75 ?? 66 C7 45 ?? 00 00 89 7D ??")) {
+					variable_names = unsafe { **((ptr.add(2)) as *mut *mut *mut raw_types::strings::StringId) };
+				}
 			}
 
 			if variable_names.is_null() {

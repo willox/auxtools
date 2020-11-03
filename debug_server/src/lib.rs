@@ -1,12 +1,17 @@
-use std::{cell::RefCell, collections::HashMap, ffi::c_void};
+use std::{cell::RefCell, ffi::c_void};
 
 use detour::RawDetour;
 use dm::*;
+use lazy_static::lazy_static;
 use sigscan;
+use std::sync::Mutex;
+use vector_map::VecMap;
 
 #[hook("/proc/install_instruction")]
 fn hello_proc_hook() {
 	let proc = Proc::find("/proc/test").unwrap();
+
+	println!("{}", "Hello");
 
 	hook_instruction(&proc, 11, |ctx| {
 		let frames = CallStacks::new(ctx).active;
@@ -46,7 +51,15 @@ fn debug_server_init(_: &DMContext) -> Result<(), String> {
 	}
 
 	if cfg!(unix) {
-		// TODO
+		let ptr = byondcore
+			.find(sigscan::signature!(
+				"0F B7 47 ?? 8B 57 ?? 0F B7 D8 8B 0C ?? 81 F9 59 01 00 00 77 ?? FF 24 8D ?? ?? ?? ??"
+			))
+			.ok_or_else(|| "Couldn't find EXECUTE_INSTRUCTION")?;
+
+		unsafe {
+			EXECUTE_INSTRUCTION = ptr as *const c_void;
+		}
 	}
 
 	unsafe {
@@ -85,9 +98,19 @@ pub type InstructionHook = fn(&DMContext);
 // TODO: Clear on shutdown
 static mut DEFERRED_INSTRUCTION_REPLACE: RefCell<Option<(u32, *mut u32)>> = RefCell::new(None);
 
-thread_local! {
-	static ORIGINAL_BYTECODE: RefCell<HashMap<*mut u32, u32>> = RefCell::new(HashMap::new());
-	static INSTRUCTION_HOOKS: RefCell<HashMap<*mut u32, Box<dyn Fn(&DMContext)>>> = RefCell::new(HashMap::new());
+#[derive(PartialEq, Eq)]
+struct PtrKey(usize);
+
+impl PtrKey {
+	fn new(ptr: *mut u32) -> Self {
+		unsafe { Self(std::mem::transmute(ptr)) }
+	}
+}
+
+lazy_static! {
+	static ref ORIGINAL_BYTECODE: Mutex<VecMap<PtrKey, u32>> = Mutex::new(VecMap::new());
+	static ref INSTRUCTION_HOOKS: Mutex<VecMap<PtrKey, Box<dyn Fn(&DMContext) + Send + Sync>>> =
+		Mutex::new(VecMap::new());
 }
 
 // Handles any instruction BYOND tries to execute.
@@ -111,25 +134,24 @@ extern "C" fn handle_instruction(
 
 	if opcode == CUSTOM_OPCODE {
 		// Run the hook
-		INSTRUCTION_HOOKS.with(|x| {
-			let map = x.borrow();
-			let dm_ctx = DMContext {};
-			map.get(&opcode_ptr).unwrap()(&dm_ctx);
-		});
+		let dm_ctx = DMContext {};
+		let map = INSTRUCTION_HOOKS
+			.lock()
+			.unwrap()
+			.get(&PtrKey::new(opcode_ptr))
+			.unwrap()(&dm_ctx);
 
 		// Now run the original code
-		ORIGINAL_BYTECODE.with(|x| {
-			let map = x.borrow();
-			let original = map.get(&opcode_ptr).unwrap();
-			unsafe {
-				let current = *opcode_ptr;
-				assert_eq!(
-					DEFERRED_INSTRUCTION_REPLACE.replace(Some((current, opcode_ptr))),
-					None
-				);
-				*opcode_ptr = *original;
-			}
-		});
+		let map = ORIGINAL_BYTECODE.lock().unwrap();
+		let original = map.get(&PtrKey::new(opcode_ptr)).unwrap();
+		unsafe {
+			let current = *opcode_ptr;
+			assert_eq!(
+				DEFERRED_INSTRUCTION_REPLACE.replace(Some((current, opcode_ptr))),
+				None
+			);
+			*opcode_ptr = *original;
+		}
 	}
 
 	ctx
@@ -144,7 +166,7 @@ pub enum InstructionHookError {
 pub fn hook_instruction<F>(proc: &Proc, offset: u32, hook: F) -> Result<(), InstructionHookError>
 where
 	F: 'static,
-	F: Fn(&DMContext),
+	F: Fn(&DMContext) + Send + Sync,
 {
 	let dism = proc.disassemble().0;
 	if !dism.iter().any(|x| x.0 == offset) {
@@ -169,15 +191,14 @@ where
 		return Err(InstructionHookError::AlreadyHooked);
 	}
 
-	ORIGINAL_BYTECODE.with(|x| {
-		let mut map = x.borrow_mut();
-		map.insert(opcode_ptr, opcode);
-	});
-
-	INSTRUCTION_HOOKS.with(|x| {
-		let mut map = x.borrow_mut();
-		map.insert(opcode_ptr, Box::new(hook));
-	});
+	ORIGINAL_BYTECODE
+		.lock()
+		.unwrap()
+		.insert(PtrKey::new(opcode_ptr), opcode);
+	INSTRUCTION_HOOKS
+		.lock()
+		.unwrap()
+		.insert(PtrKey::new(opcode_ptr), Box::new(hook));
 
 	bytecode[offset as usize] = CUSTOM_OPCODE;
 	Ok(())

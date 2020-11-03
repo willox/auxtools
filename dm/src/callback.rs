@@ -1,8 +1,8 @@
 use crate::hook;
 use crate::runtime;
 use crate::value::Value;
+use dashmap::DashMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate as dm;
@@ -16,7 +16,7 @@ lazy_static! {
 
 static mut NEXT_CALLBACK_ID: CallbackId = CallbackId { 0: 0 };
 thread_local! {
-	static CALLBACKS: RefCell<HashMap<CallbackId, Callback>> = RefCell::new(HashMap::new());
+	static CALLBACKS: RefCell<DashMap<CallbackId, Callback>> = RefCell::new(DashMap::new());
 }
 
 /// # Callbacks

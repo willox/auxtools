@@ -38,12 +38,6 @@ impl StringRef {
 	pub unsafe fn from_variable_id(id: raw_types::strings::VariableId) -> Self {
 		let string_id = *(raw_types::funcs::VARIABLE_NAMES.add(id.0 as usize));
 
-		for x in 0..=69 {
-			let string_id = *(raw_types::funcs::VARIABLE_NAMES.add(x));
-			let str = String::from(StringRef::from_id(string_id));
-			println!("{}", str);
-		}
-
 		StringRef {
 			value: Value::from_raw(raw_types::values::Value {
 				tag: raw_types::values::ValueTag::String,

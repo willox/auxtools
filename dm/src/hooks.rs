@@ -4,10 +4,10 @@ use super::value::Value;
 use super::DMContext;
 use crate::raw_types::values::IntoRawValue;
 use crate::runtime::DMResult;
+use dashmap::mapref::entry::Entry;
+use dashmap::DashMap;
 use detour::RawDetour;
 use std::cell::RefCell;
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
 use std::ffi::c_void;
 
 #[doc(hidden)]
@@ -26,6 +26,8 @@ inventory::collect!(CompileTimeHook);
 
 extern "C" {
 	static mut call_proc_by_id_original: *const c_void;
+
+	static mut return_value: raw_types::values::Value;
 
 	fn call_proc_by_id_original_trampoline(
 		usr: raw_types::values::Value,
@@ -88,13 +90,14 @@ pub fn init() -> Result<(), String> {
 pub type ProcHook = fn(&DMContext, &Value, &Value, &mut Vec<Value>) -> DMResult;
 
 thread_local! {
-	static PROC_HOOKS: RefCell<HashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(HashMap::new());
+	static PROC_HOOKS: RefCell<DashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(DashMap::new());
 }
 
 fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFailure> {
 	PROC_HOOKS.with(|h| {
 		let mut map = h.borrow_mut();
-		match map.entry(id) {
+		let entry = map.entry(id);
+		match entry {
 			Entry::Vacant(v) => {
 				v.insert(hook);
 				Ok(())
@@ -133,7 +136,7 @@ extern "C" fn call_proc_by_id_hook(
 	num_args: usize,
 	unknown2: u32,
 	unknown3: u32,
-) -> raw_types::values::Value {
+) -> u8 {
 	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
 		Some(hook) => {
 			let ctx = unsafe { DMContext::new() };
@@ -171,12 +174,12 @@ extern "C" fn call_proc_by_id_hook(
 		}
 		None => None,
 	}) {
-		Some(result) => result,
-		None => unsafe {
-			call_proc_by_id_original_trampoline(
-				usr_raw, proc_type, proc_id, unknown1, src_raw, args_ptr, num_args, unknown2,
-				unknown3,
-			)
-		},
+		Some(result) => {
+			unsafe {
+				return_value = result;
+			}
+			1
+		}
+		None => unsafe { 0 },
 	}
 }

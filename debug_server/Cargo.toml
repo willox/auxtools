@@ -13,6 +13,8 @@ cc = "1.0"
 [dependencies]
 dm = { path = "../dm" }
 sigscan = { path = "../sigscan" }
+lazy_static = "1.4.0"
+vector-map = "1.0.1"
 
 [dependencies.detour]
 version = "0.7"

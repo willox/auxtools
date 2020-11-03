@@ -13,6 +13,7 @@ sigscan = { path = "../sigscan" }
 once_cell = "1.4"
 inventory = "0.1"
 lazy_static = "1.4.0"
+dashmap = "3.11.10"
 
 [dependencies.detour]
 version = "0.7"
