@@ -5,7 +5,7 @@ use dm::*;
 use lazy_static::lazy_static;
 use sigscan;
 use std::sync::Mutex;
-use vector_map::VecMap;
+use std::collections::HashMap;
 
 #[hook("/proc/install_instruction")]
 fn hello_proc_hook() {
@@ -98,7 +98,7 @@ pub type InstructionHook = fn(&DMContext);
 // TODO: Clear on shutdown
 static mut DEFERRED_INSTRUCTION_REPLACE: RefCell<Option<(u32, *mut u32)>> = RefCell::new(None);
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Hash)]
 struct PtrKey(usize);
 
 impl PtrKey {
@@ -108,9 +108,9 @@ impl PtrKey {
 }
 
 lazy_static! {
-	static ref ORIGINAL_BYTECODE: Mutex<VecMap<PtrKey, u32>> = Mutex::new(VecMap::new());
-	static ref INSTRUCTION_HOOKS: Mutex<VecMap<PtrKey, Box<dyn Fn(&DMContext) + Send + Sync>>> =
-		Mutex::new(VecMap::new());
+	static ref ORIGINAL_BYTECODE: Mutex<HashMap<PtrKey, u32>> = Mutex::new(HashMap::new());
+	static ref INSTRUCTION_HOOKS: Mutex<HashMap<PtrKey, Box<dyn Fn(&DMContext) + Send + Sync>>> =
+		Mutex::new(HashMap::new());
 }
 
 // Handles any instruction BYOND tries to execute.

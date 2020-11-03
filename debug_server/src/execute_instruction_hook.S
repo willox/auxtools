@@ -6,6 +6,7 @@
 // EDI = [CURRENT_EXECUTION_CONTEXT]
 execute_instruction_hook:
   // Give rust a chance to handle the instruction. Leaves [CURRENT_EXECUTION_CONTEXT] in EAX.
+  SUB ESP, 0x04
   PUSH ECX
   PUSH EDX
   PUSH EDI
@@ -14,6 +15,7 @@ execute_instruction_hook:
   ADD ESP, 0x04
   POP EDX
   POP ECX
+  ADD ESP, 0x04
 
   // Jump to BYOND's default do_instruction.
   MOV EAX, execute_instruction_original
