@@ -18,14 +18,16 @@ pub mod raw_types;
 mod runtime;
 mod string;
 mod value;
+use sigscan::{signature, signatures};
 
-use init::{get_init_level, set_init_level, RequiredInitLevel};
+use init::{get_init_level, set_init_level, InitLevel};
 
 pub use callback::Callback;
 pub use context::DMContext;
 pub use debug::CallStacks;
-pub use dm_impl::hook;
+pub use dm_impl::{hook, init, shutdown};
 pub use hooks::{CompileTimeHook};
+pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
 pub use list::List;
 pub use proc::Proc;
 pub use runtime::{ConversionResult, DMResult, Runtime};
@@ -40,26 +42,8 @@ pub use inventory;
 #[cfg(windows)]
 extern crate winapi;
 
-macro_rules! signature {
-	($sig:tt) => {
-		dm_impl::convert_signature!($sig)
-	};
-}
-
-macro_rules! signatures {
-	( $( $name:ident => $sig:tt ),* ) => {
-		struct Signatures {
-			$( $name: &'static [Option<u8>], )*
-		}
-
-		static SIGNATURES: Signatures = Signatures {
-			$( $name: signature!($sig), )*
-		};
-	}
-}
-
 #[cfg(windows)]
-const BYONDCORE: &str = "byondcore.dll";
+pub const BYONDCORE: &str = "byondcore.dll";
 #[cfg(windows)]
 signatures! {
 	get_proc_array_entry => "E8 ?? ?? ?? ?? 8B C8 8D 45 ?? 6A 01 50 FF 76 ?? 8A 46 ?? FF 76 ?? FE C0",
@@ -83,7 +67,7 @@ signatures! {
 }
 
 #[cfg(unix)]
-const BYONDCORE: &str = "libbyond.so";
+pub const BYONDCORE: &str = "libbyond.so";
 #[cfg(unix)]
 signatures! {
 	get_proc_array_entry => "E8 ?? ?? ?? ?? 8B 00 89 04 24 E8 ?? ?? ?? ?? 8B 00 89 44 24 ?? 8D 45 ??",
@@ -172,7 +156,7 @@ fn pin_dll() -> Result<(), ()> {
 }
 
 byond_ffi_fn! { auxtools_init(_input) {
-	if get_init_level() == RequiredInitLevel::None {
+	if get_init_level() == InitLevel::None {
 		return Some("SUCCESS (Already initialized)".to_owned())
 	}
 
@@ -181,7 +165,12 @@ byond_ffi_fn! { auxtools_init(_input) {
 		None => return Some("FAILED (Couldn't create scanner for byondcore.dll)".to_owned())
 	};
 
-	if get_init_level() == RequiredInitLevel::Full {
+	let mut did_full = false;
+	let mut did_partial = false;
+
+	if get_init_level() == InitLevel::Full {
+		did_full = true;
+
 		with_scanner! { byondcore,
 			get_string_id,
 			call_proc_by_id,
@@ -253,11 +242,13 @@ byond_ffi_fn! { auxtools_init(_input) {
 			return Some("Failed (Couldn't initialize proc hooking)".to_owned());
 		}
 
-		set_init_level(RequiredInitLevel::Partial);
+		set_init_level(InitLevel::Partial);
 	}
 
 
-	if get_init_level() == RequiredInitLevel::Partial {
+	if get_init_level() == InitLevel::Partial {
+		did_partial = true;
+
 		// This is a heap ptr so fetch it on partial loads
 		let mut variable_names = std::ptr::null();
 		{
@@ -287,14 +278,29 @@ byond_ffi_fn! { auxtools_init(_input) {
 				return Some(format!("FAILED (Could not hook proc {}: {:?})", cthook.proc_path, e));
 			}
 		}
-		set_init_level(RequiredInitLevel::None);
+		set_init_level(InitLevel::None);
 	}
 
+	// Run user-defined initializers
+	let ctx = DMContext {};
+	if did_full {
+		if let Err(err) = init::run_full_init(&ctx) {
+			return Some(format!("FAILED ({})", err));
+		}
+	}
+
+	if did_partial {
+		if let Err(err) = init::run_partial_init(&ctx) {
+			return Some(format!("FAILED ({})", err));
+		}
+	}
 
 	Some("SUCCESS".to_owned())
 } }
 
 byond_ffi_fn! { auxtools_shutdown(_input) {
+	init::run_partial_shutdown();
+
 	hooks::clear_hooks();
 	proc::clear_procs();
 
@@ -302,7 +308,7 @@ byond_ffi_fn! { auxtools_shutdown(_input) {
 		raw_types::funcs::VARIABLE_NAMES = std::ptr::null();
 	}
 
-	set_init_level(RequiredInitLevel::Partial);
+	set_init_level(InitLevel::Partial);
 	Some("SUCCESS".to_owned())
 } }
 

@@ -1,23 +1,10 @@
 #![deny(clippy::complexity, clippy::correctness, clippy::perf, clippy::style)]
 
-use std::fs::File;
-use std::io::Write;
 use dm::*;
 
-#[hook("/proc/install_instruction")]
+
+//#[hook("/proc/install_instruction")]
 fn hello_proc_hook() {
-
-	let proc = Proc::find("/proc/test").unwrap();
-
-	proc.hook_instruction(11, |ctx| {
-
-		let frames = CallStacks::new(ctx).active;
-		let proc_name = format!("Proc: {:?}",  frames[0].proc);
-
-		println!("{}", proc_name);
-	}).unwrap();
-
-	Ok(Value::from(true))
 
 	/*
 	let mut file = File::create("E:/bytecode.txt").unwrap();

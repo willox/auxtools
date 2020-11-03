@@ -58,6 +58,53 @@ fn extract_args(a: &syn::FnArg) -> &syn::PatType {
 	}
 }
 
+#[proc_macro_attribute]
+pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
+	let init_type = syn::parse_macro_input!(attr as syn::Ident);
+	let func = syn::parse_macro_input!(item as syn::ItemFn);
+	let func_name = &func.sig.ident;
+
+	let func_type = match init_type.to_string().as_str() {
+		"full" => quote! { dm::FullInitFunc },
+		"partial" => quote! { dm::PartialInitFunc },
+		_ => return syn::Error::new(init_type.span(), "invalid init type").to_compile_error().into()
+	};
+
+	let inventory_define = quote! {
+		dm::inventory::submit!(
+			#![crate = dm]
+			#func_type(#func_name)
+		);
+	};
+
+	let code = quote! {
+		#func
+		#inventory_define
+	};
+
+	code.into()
+}
+
+#[proc_macro_attribute]
+pub fn shutdown(_: TokenStream, item: TokenStream) -> TokenStream {
+	let func = syn::parse_macro_input!(item as syn::ItemFn);
+	let func_name = &func.sig.ident;
+
+	let inventory_define = quote! {
+		dm::inventory::submit!(
+			#![crate = dm]
+			dm::PartialShutdownFunc(#func_name)
+		);
+	};
+
+	let code = quote! {
+		#func
+		#inventory_define
+	};
+
+	code.into()
+}
+
 /// The `hook` attribute is used to define functions that may be used as proc hooks,
 /// and to optionally hook those procs upon library initialization.
 ///

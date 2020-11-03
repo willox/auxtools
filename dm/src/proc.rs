@@ -6,7 +6,6 @@ use super::raw_types::procs::{ProcEntry, ProcId};
 use super::runtime;
 use super::string::StringRef;
 use super::value::Value;
-use super::hooks::{InstructionHookError};
 
 use std::fmt;
 use std::cell::RefCell;
@@ -113,16 +112,6 @@ impl<'a> Proc {
 
 	pub fn disassemble(&self) -> (Vec<(u32, u32, disassembler::Instruction)>, Option<disassembler::DisassembleError>) {
 		disassembler::disassemble(self)
-	}
-
-	pub fn hook_instruction<F>(&self, offset: u32, hook: F) -> Result<u32, InstructionHookError>
-	where
-		F: 'static,
-		F: Fn(&super::DMContext)
-	{
-		unsafe {
-			super::hooks::hook_instruction(&self, offset, Box::new(hook))
-		}
 	}
 
 	/// Calls a global proc with the given arguments.

@@ -17,6 +17,7 @@ dependencies = [
 name = "auxtools"
 version = "0.1.0"
 dependencies = [
+ "debug_server",
  "dm",
  "sigscan",
 ]
@@ -126,6 +127,16 @@ checksum = "7fbaabec2c953050352311293be5c6aba8e141ba19d6811862b232d6fd020484"
 dependencies = [
  "quote",
  "syn",
+]
+
+[[package]]
+name = "debug_server"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "detour",
+ "dm",
+ "sigscan",
 ]
 
 [[package]]
@@ -560,6 +571,7 @@ dependencies = [
 name = "sigscan"
 version = "0.1.0"
 dependencies = [
+ "dm-impl",
  "libc",
  "winapi 0.3.9",
 ]
