@@ -12,13 +12,11 @@ pub static mut CURRENT_EXECUTION_CONTEXT: *mut *mut procs::ExecutionContext = st
 // pub static mut SUSPENDED_PROCS: *mut procs::SuspendedProcs = std::ptr::null_mut();
 pub static mut VARIABLE_NAMES: *const strings::StringId = std::ptr::null();
 // ptr to code for handling invalid instructions in BYOND vm
-pub static mut INVALID_INSTRUCTION: *const c_void = std::ptr::null();
+pub static mut EXECUTE_INSTRUCTION: *const c_void = std::ptr::null();
 
 // Function pointers exported by C++ but set by Rust
 // Rust shouldn't call these so we're going to treat them as void ptrs for simplicity
 extern "C" {
-	pub static mut execute_instruction_byond: *const c_void;
-
 	pub static mut call_proc_by_id_byond: *const c_void;
 	pub static mut call_datum_proc_by_name_byond: *const c_void;
 	pub static mut get_proc_array_entry_byond: *const c_void;

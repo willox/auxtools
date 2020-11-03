@@ -11,7 +11,7 @@ struct Value {
 	uint32_t value;
 };
 
-extern "C" void* execute_instruction_byond = nullptr;
+extern "C" void* execute_instruction_original = nullptr;
 
 // The type of the func defined in Byond
 using CallProcById_Ptr = Value(LINUX_REGPARM3 *)(Value, uint32_t, uint32_t, uint32_t, Value, Value*, uint32_t, uint32_t, uint32_t);

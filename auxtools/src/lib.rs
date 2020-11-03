@@ -8,19 +8,15 @@ use dm::*;
 fn hello_proc_hook() {
 
 	let proc = Proc::find("/proc/test").unwrap();
-	let bytecode = unsafe {
-		let (ptr, count) = proc.bytecode();
-		std::slice::from_raw_parts_mut(ptr, count)
-	};
 
-	bytecode[0] = 1337;
-	bytecode[1] = 1337;
-	bytecode[2] = 1337;
-	bytecode[3] = 1337;
-	bytecode[4] = 1337;
-	bytecode[5] = 1337;
-	bytecode[6] = 1337;
-	bytecode[7] = 1337;
+	proc.hook_instruction(11, |ctx| {
+
+		let frames = CallStacks::new(ctx).active;
+		let proc_name = format!("Proc: {:?}",  frames[0].proc);
+
+		println!("{}", proc_name);
+	}).unwrap();
+
 	Ok(Value::from(true))
 
 	/*
