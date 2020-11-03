@@ -8,7 +8,7 @@ mod linux;
 #[cfg(windows)]
 mod windows;
 
-pub use dm_impl::{convert_signature};
+pub use dm_impl::convert_signature;
 
 #[macro_export]
 macro_rules! signature {

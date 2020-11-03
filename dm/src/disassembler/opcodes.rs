@@ -307,7 +307,7 @@ pub enum OpCode {
 	Try = 0x12C,
 	Throw = 0x12D,
 	Catch = 0x12E,
-	Unk12F = 0x12F,	
+	Unk12F = 0x12F,
 	ReplaceText = 0x130,
 	ReplaceTextEx = 0x131,
 	FindLastText = 0x132,
@@ -357,18 +357,18 @@ pub enum OpCode {
 #[non_exhaustive]
 #[allow(dead_code)]
 pub enum AccessModifier {
-	Usr = 0xFFCD,			// 65485
-	Src = 0xFFCE,			// 65486
+	Usr = 0xFFCD, // 65485
+	Src = 0xFFCE, // 65486
 	Args = 0xFFCF,
 	Dot = 0xFFD0,
 	Cache = 0xFFD8,
-	Arg = 0xFFD9,			// 65497
-	Local = 0xFFDA,			// 65498
-	Global = 0xFFDB,		// 65499
-	Field = 0xFFDC,			// 65500
+	Arg = 0xFFD9,    // 65497
+	Local = 0xFFDA,  // 65498
+	Global = 0xFFDB, // 65499
+	Field = 0xFFDC,  // 65500
 	SrcProc2 = 0xFFDD,
 	SrcProc = 0xFFDE,
-	Proc = 0xFFDF,			// 65503
+	Proc = 0xFFDF, // 65503
 	Proc2 = 0xFFE0,
 	// TODO: What are these?
 	// 0xFFE1
@@ -377,7 +377,7 @@ pub enum AccessModifier {
 	Cache3 = 0xFFE4,
 	World = 0xFFE5,
 	Null = 0xFFE6,
-	Initial = 0xFFE7,		// 65511
+	Initial = 0xFFE7, // 65511
 }
 
 impl AccessModifier {

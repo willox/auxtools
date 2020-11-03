@@ -11,8 +11,6 @@ use std::os::raw::c_char;
 pub static mut CURRENT_EXECUTION_CONTEXT: *mut *mut procs::ExecutionContext = std::ptr::null_mut();
 // pub static mut SUSPENDED_PROCS: *mut procs::SuspendedProcs = std::ptr::null_mut();
 pub static mut VARIABLE_NAMES: *const strings::StringId = std::ptr::null();
-// ptr to code for handling invalid instructions in BYOND vm
-pub static mut EXECUTE_INSTRUCTION: *const c_void = std::ptr::null();
 
 // Function pointers exported by C++ but set by Rust
 // Rust shouldn't call these so we're going to treat them as void ptrs for simplicity

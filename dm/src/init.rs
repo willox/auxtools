@@ -1,5 +1,5 @@
-use crate::DMContext;
 use crate::inventory;
+use crate::DMContext;
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum InitLevel {
@@ -19,7 +19,7 @@ pub fn set_init_level(level: InitLevel) {
 }
 
 //
-// Hooks that run on intiailization 
+// Hooks that run on intiailization
 //
 pub type InitFunc = fn(&DMContext) -> Result<(), String>;
 

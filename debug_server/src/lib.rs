@@ -1,8 +1,8 @@
 use std::{cell::RefCell, collections::HashMap, ffi::c_void};
 
+use detour::RawDetour;
 use dm::*;
 use sigscan;
-use detour::RawDetour;
 
 #[hook("/proc/install_instruction")]
 fn hello_proc_hook() {
@@ -10,14 +10,14 @@ fn hello_proc_hook() {
 
 	hook_instruction(&proc, 11, |ctx| {
 		let frames = CallStacks::new(ctx).active;
-		let proc_name = format!("Proc: {:?}",  frames[0].proc);
+		let proc_name = format!("Proc: {:?}", frames[0].proc);
 
 		println!("{}", proc_name);
-	}).unwrap();
+	})
+	.unwrap();
 
 	Ok(Value::from(true))
 }
-
 
 static mut EXECUTE_INSTRUCTION: *const c_void = std::ptr::null();
 
@@ -34,9 +34,11 @@ fn debug_server_init(_: &DMContext) -> Result<(), String> {
 	let byondcore = sigscan::Scanner::for_module(BYONDCORE).unwrap();
 
 	if cfg!(windows) {
-		let ptr = byondcore.find(
-			sigscan::signature!("0F B7 48 ?? 8B 78 ?? 8B F1 8B 14 ?? 81 FA 59 01 00 00 0F 87 ?? ?? ?? ??")
-		).ok_or_else(|| "Couldn't find EXECUTE_INSTRUCTION")?;
+		let ptr = byondcore
+			.find(sigscan::signature!(
+				"0F B7 48 ?? 8B 78 ?? 8B F1 8B 14 ?? 81 FA 59 01 00 00 0F 87 ?? ?? ?? ??"
+			))
+			.ok_or_else(|| "Couldn't find EXECUTE_INSTRUCTION")?;
 
 		unsafe {
 			EXECUTE_INSTRUCTION = ptr as *const c_void;
@@ -49,11 +51,13 @@ fn debug_server_init(_: &DMContext) -> Result<(), String> {
 
 	unsafe {
 		let hook = RawDetour::new(
-			raw_types::funcs::EXECUTE_INSTRUCTION as *const (),
+			EXECUTE_INSTRUCTION as *const (),
 			execute_instruction_hook as *const (),
-		).map_err(|_| "Couldn't detour EXECUTE_INSTRUCTION")?;
+		)
+		.map_err(|_| "Couldn't detour EXECUTE_INSTRUCTION")?;
 
-		hook.enable().map_err(|_| "Couldn't enable EXECUTE_INSTRUCTION detour")?;
+		hook.enable()
+			.map_err(|_| "Couldn't enable EXECUTE_INSTRUCTION detour")?;
 
 		execute_instruction_original = std::mem::transmute(hook.trampoline());
 
@@ -64,6 +68,7 @@ fn debug_server_init(_: &DMContext) -> Result<(), String> {
 	Ok(())
 }
 
+// TODO: dm's disassembler can't handle this (o dear)
 static CUSTOM_OPCODE: u32 = 0x1337;
 
 pub enum InstructionHandlerReturn {
@@ -88,7 +93,9 @@ thread_local! {
 // Handles any instruction BYOND tries to execute.
 // This function has to leave `*CURRENT_EXECUTION_CONTEXT` in EAX, so make sure to return it.
 #[no_mangle]
-extern "C" fn handle_instruction(ctx: *mut raw_types::procs::ExecutionContext) -> *const raw_types::procs::ExecutionContext {
+extern "C" fn handle_instruction(
+	ctx: *mut raw_types::procs::ExecutionContext,
+) -> *const raw_types::procs::ExecutionContext {
 	// Always handle the deferred instruction replacement first - everything else will depend on it
 	unsafe {
 		let mut deferred = DEFERRED_INSTRUCTION_REPLACE.borrow_mut();
@@ -98,13 +105,9 @@ extern "C" fn handle_instruction(ctx: *mut raw_types::procs::ExecutionContext) -
 		}
 	}
 
-	let opcode_ptr = unsafe {
-		(*ctx).bytecode.add((*ctx).bytecode_offset as usize)
-	};
-	
-	let opcode = unsafe {
-		*opcode_ptr
-	};
+	let opcode_ptr = unsafe { (*ctx).bytecode.add((*ctx).bytecode_offset as usize) };
+
+	let opcode = unsafe { *opcode_ptr };
 
 	if opcode == CUSTOM_OPCODE {
 		// Run the hook
@@ -120,8 +123,11 @@ extern "C" fn handle_instruction(ctx: *mut raw_types::procs::ExecutionContext) -
 			let original = map.get(&opcode_ptr).unwrap();
 			unsafe {
 				let current = *opcode_ptr;
-				assert_eq!(DEFERRED_INSTRUCTION_REPLACE.replace(Some((current, opcode_ptr))), None);
-				*opcode_ptr = *original;		
+				assert_eq!(
+					DEFERRED_INSTRUCTION_REPLACE.replace(Some((current, opcode_ptr))),
+					None
+				);
+				*opcode_ptr = *original;
 			}
 		});
 	}
@@ -132,7 +138,7 @@ extern "C" fn handle_instruction(ctx: *mut raw_types::procs::ExecutionContext) -
 #[derive(Debug)]
 pub enum InstructionHookError {
 	InvalidOffset,
-	AlreadyHooked
+	AlreadyHooked,
 }
 
 pub fn hook_instruction<F>(proc: &Proc, offset: u32, hook: F) -> Result<(), InstructionHookError>
@@ -141,12 +147,10 @@ where
 	F: Fn(&DMContext),
 {
 	let dism = proc.disassemble().0;
-	if !dism.iter().any(|x| {
-		x.0 == offset
-	}) {
-		return Err(InstructionHookError::InvalidOffset)
+	if !dism.iter().any(|x| x.0 == offset) {
+		return Err(InstructionHookError::InvalidOffset);
 	}
-	
+
 	let bytecode;
 	let opcode;
 	let opcode_ptr;

@@ -1,28 +1,27 @@
-use crate::StringRef;
 use crate::Proc;
+use crate::StringRef;
 use crate::Value;
 
 #[derive(Debug)]
 pub enum Variable {
-    Null,
+	Null,
 	World,
 	Usr,
 	Src,
 	Args,
-    Dot,
+	Dot,
 	Cache,
 	Cache2,
 	Cache3,
 	CurrentProc,
 	IndexFromStack,
-    Arg(u32),
-    Local(u32),
-    Global(StringRef),
-    Field(Box<Variable>, Vec<StringRef>),
+	Arg(u32),
+	Local(u32),
+	Global(StringRef),
+	Field(Box<Variable>, Vec<StringRef>),
 	InitialField(Box<Variable>, Vec<StringRef>),
 	StaticProcField(Box<Variable>, Vec<StringRef>, Proc),
-	RuntimeProcField(Box<Variable>, Vec<StringRef>, StringRef)
-    // TODO: Proc ones
+	RuntimeProcField(Box<Variable>, Vec<StringRef>, StringRef), // TODO: Proc ones
 }
 
 #[derive(Debug)]
@@ -278,7 +277,7 @@ pub enum Instruction {
 	RandSeed,
 	IconStates,
 	IconNew(ParamCount),
-	TurnOrFlipIcon {filter_mode: u32, var: Variable},
+	TurnOrFlipIcon { filter_mode: u32, var: Variable },
 	IconIntensity(Variable),
 	IconBlend(Variable),
 	IconSwapColor(Variable),

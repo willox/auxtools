@@ -7,10 +7,10 @@ use super::runtime;
 use super::string::StringRef;
 use super::value::Value;
 
-use std::fmt;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fmt;
 
 //
 // ### A note on Override IDs
@@ -110,7 +110,12 @@ impl<'a> Proc {
 		((*misc).bytecode.bytecode, (*misc).bytecode.count as usize)
 	}
 
-	pub fn disassemble(&self) -> (Vec<(u32, u32, disassembler::Instruction)>, Option<disassembler::DisassembleError>) {
+	pub fn disassemble(
+		&self,
+	) -> (
+		Vec<(u32, u32, disassembler::Instruction)>,
+		Option<disassembler::DisassembleError>,
+	) {
 		disassembler::disassemble(self)
 	}
 

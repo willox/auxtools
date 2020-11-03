@@ -67,7 +67,11 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let func_type = match init_type.to_string().as_str() {
 		"full" => quote! { dm::FullInitFunc },
 		"partial" => quote! { dm::PartialInitFunc },
-		_ => return syn::Error::new(init_type.span(), "invalid init type").to_compile_error().into()
+		_ => {
+			return syn::Error::new(init_type.span(), "invalid init type")
+				.to_compile_error()
+				.into()
+		}
 	};
 
 	let inventory_define = quote! {

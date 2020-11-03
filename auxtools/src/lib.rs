@@ -2,13 +2,12 @@
 
 use dm::*;
 
-
 //#[hook("/proc/install_instruction")]
 fn hello_proc_hook() {
 
 	/*
 	let mut file = File::create("E:/bytecode.txt").unwrap();
-	
+
 	let mut proc_id: u32 = 0;
 	loop {
 		let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));
@@ -24,7 +23,7 @@ fn hello_proc_hook() {
 		for x in &dism {
 			writeln!(&mut file, "\t{}-{}: {:?}", x.0, x.1, x.2).unwrap();
 		}
-	
+
 		if let Some(err) = err {
 			writeln!(&mut file, "\n\tError: {:?}", err).unwrap();
 		}
@@ -37,29 +36,29 @@ fn hello_proc_hook() {
 	Ok(Value::from(true))
 	*/
 
-/*
-	let mut success = 0;
-	let mut total = 0;
-	let mut proc_id: u32 = 0;
-	loop {
-		let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));
-		//let proc = Proc::find("/world/proc/SDQL_var");
-		if proc.is_none() {
-			break;
+	/*
+		let mut success = 0;
+		let mut total = 0;
+		let mut proc_id: u32 = 0;
+		loop {
+			let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));
+			//let proc = Proc::find("/world/proc/SDQL_var");
+			if proc.is_none() {
+				break;
+			}
+			let proc = proc.unwrap();
+
+			let (dism, err) = proc.disassemble();
+			if err.is_none() {
+				success += 1;
+			}
+
+			total += 1;
+			proc_id += 1;
 		}
-		let proc = proc.unwrap();
 
-		let (dism, err) = proc.disassemble();
-		if err.is_none() {
-			success += 1;
-		}
-
-		total += 1;
-		proc_id += 1;
-	}
-
-	Ok(Value::from_string(format!("{}/{}", success, total)))
-*/
+		Ok(Value::from_string(format!("{}/{}", success, total)))
+	*/
 
 	/*
 	let frames = CallStacks::new(ctx).active;
