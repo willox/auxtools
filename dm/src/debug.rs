@@ -19,7 +19,7 @@ pub struct StackFrame {
 
 pub struct CallStacks {
 	pub active: Vec<StackFrame>,
-	// pub suspended: Vec<Vec<StackFrame>>,
+	pub suspended: Vec<Vec<StackFrame>>,
 }
 
 impl StackFrame {
@@ -79,15 +79,40 @@ impl StackFrame {
 	}
 }
 
+enum CallStackKind {
+	Active,
+	Suspended,
+}
+
 impl CallStacks {
 	pub fn new(_: &DMContext) -> CallStacks {
+		let mut suspended = vec![];
+
+		unsafe {
+			let procs = funcs::SUSPENDED_PROCS;
+			let buffer = (*procs).buffer;
+			let front = (*procs).front;
+			let back = (*procs).back;
+
+			for x in front..back {
+				let instance = *buffer.add(x);
+				let context = (*instance).context;
+				suspended.push(CallStacks::from_context(context, CallStackKind::Suspended));
+			}
+		}
+
 		CallStacks {
-			active: unsafe { CallStacks::from_context(*funcs::CURRENT_EXECUTION_CONTEXT) },
-			// suspended: vec![],
+			active: unsafe {
+				CallStacks::from_context(*funcs::CURRENT_EXECUTION_CONTEXT, CallStackKind::Active)
+			},
+			suspended,
 		}
 	}
 
-	fn from_context(mut context: *const procs::ExecutionContext) -> Vec<StackFrame> {
+	fn from_context(
+		mut context: *const procs::ExecutionContext,
+		kind: CallStackKind,
+	) -> Vec<StackFrame> {
 		let mut frames = vec![];
 
 		loop {
@@ -101,6 +126,10 @@ impl CallStacks {
 			}
 		}
 
-		frames
+		// BYOND stores sleeping stacks' frames in reverse-order
+		match kind {
+			CallStackKind::Active => frames,
+			CallStackKind::Suspended => frames.into_iter().rev().collect(),
+		}
 	}
 }

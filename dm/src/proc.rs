@@ -49,6 +49,11 @@ impl<'a> Proc {
 		get_proc(path)
 	}
 
+	/// Finds the n'th re-defined proc with the given path
+	pub fn find_override<S: Into<String>>(path: S, override_id: u32) -> Option<Self> {
+		get_proc_override(path, override_id)
+	}
+
 	pub fn from_id(id: ProcId) -> Option<Self> {
 		let mut proc_entry: *mut ProcEntry = std::ptr::null_mut();
 		unsafe {
@@ -207,9 +212,9 @@ pub fn clear_procs() {
 	PROCS_BY_NAME.with(|h| h.borrow_mut().clear())
 }
 
-pub fn get_proc_override<S: Into<String>>(path: S, override_id: usize) -> Option<Proc> {
+pub fn get_proc_override<S: Into<String>>(path: S, override_id: u32) -> Option<Proc> {
 	let s = strip_path(path.into());
-	PROCS_BY_NAME.with(|h| match h.borrow().get(&s)?.get(override_id) {
+	PROCS_BY_NAME.with(|h| match h.borrow().get(&s)?.get(override_id as usize) {
 		Some(p) => Some(p.clone()),
 		None => None,
 	})

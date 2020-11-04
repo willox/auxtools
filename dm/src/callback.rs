@@ -113,7 +113,7 @@ fn process_callbacks() {
 	let mut ready_cbs = READY_CALLBACKS.lock().unwrap();
 	let mut dropped_cbs = DROPPED_CALLBACKS.lock().unwrap();
 	CALLBACKS.with(|h| {
-		let mut cbs = h.borrow_mut();
+		let cbs = h.borrow();
 
 		// We don't care if a callback runtimes.
 		#[allow(unused_must_use)]

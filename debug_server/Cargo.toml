@@ -14,7 +14,8 @@ cc = "1.0"
 dm = { path = "../dm" }
 sigscan = { path = "../sigscan" }
 lazy_static = "1.4.0"
-vector-map = "1.0.1"
+serde = { version = "1.0.117", features = ["derive"] }
+serde_json = "1.0.59"
 
 [dependencies.detour]
 version = "0.7"

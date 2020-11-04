@@ -29,18 +29,6 @@ extern "C" {
 
 	static mut return_value: raw_types::values::Value;
 
-	fn call_proc_by_id_original_trampoline(
-		usr: raw_types::values::Value,
-		proc_type: u32,
-		proc_id: raw_types::procs::ProcId,
-		unk_0: u32,
-		src: raw_types::values::Value,
-		args: *mut raw_types::values::Value,
-		args_count_l: usize,
-		unk_1: u32,
-		unk_2: u32,
-	) -> raw_types::values::Value;
-
 	fn call_proc_by_id_hook_trampoline(
 		usr: raw_types::values::Value,
 		proc_type: u32,
@@ -95,7 +83,7 @@ thread_local! {
 
 fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFailure> {
 	PROC_HOOKS.with(|h| {
-		let mut map = h.borrow_mut();
+		let map = h.borrow();
 		let entry = map.entry(id);
 		match entry {
 			Entry::Vacant(v) => {
@@ -108,7 +96,7 @@ fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFa
 }
 
 pub fn clear_hooks() {
-	PROC_HOOKS.with(|h| h.borrow_mut().clear());
+	PROC_HOOKS.with(|h| h.borrow().clear());
 }
 
 pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure> {
@@ -128,14 +116,14 @@ impl Proc {
 #[no_mangle]
 extern "C" fn call_proc_by_id_hook(
 	usr_raw: raw_types::values::Value,
-	proc_type: u32,
+	_proc_type: u32,
 	proc_id: raw_types::procs::ProcId,
-	unknown1: u32,
+	_unknown1: u32,
 	src_raw: raw_types::values::Value,
 	args_ptr: *mut raw_types::values::Value,
 	num_args: usize,
-	unknown2: u32,
-	unknown3: u32,
+	_unknown2: u32,
+	_unknown3: u32,
 ) -> u8 {
 	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
 		Some(hook) => {
@@ -166,7 +154,9 @@ extern "C" fn call_proc_by_id_hook(
 				}
 				Err(e) => {
 					// TODO: Some info about the hook would be useful (as the hook is never part of byond's stack, the runtime won't show it.)
-					src.call("stack_trace", &[&Value::from_string(e.message.as_str())])
+					Proc::find("/proc/stack_trace")
+						.unwrap()
+						.call(&[&Value::from_string(e.message.as_str())])
 						.unwrap();
 					unsafe { Some(Value::null().into_raw_value()) }
 				}
@@ -180,6 +170,6 @@ extern "C" fn call_proc_by_id_hook(
 			}
 			1
 		}
-		None => unsafe { 0 },
+		None => 0,
 	}
 }

@@ -312,7 +312,7 @@ where
 			OpCode::Pick => Instruction::Pick,
 			OpCode::PickProb => {
 				let mut locs = vec![];
-				for x in 0..self.disassemble_u32_operand()? {
+				for _ in 0..self.disassemble_u32_operand()? {
 					locs.push(self.disassemble_loc_operand()?);
 				}
 				Instruction::PickProb(PickProb { locs })
