@@ -1,7 +1,7 @@
 use std::{cell::RefCell, ffi::c_void};
 
+use crate::server_types::{BreakpointReason, ContinueKind};
 use crate::DEBUG_SERVER;
-use crate::server::{BreakpointReason, ContinueKind};
 use detour::RawDetour;
 use dm::*;
 use lazy_static::lazy_static;
@@ -84,6 +84,7 @@ impl ExecutionContextRef {
 #[derive(Copy, Clone)]
 enum DebuggerAction {
 	None,
+	Pause,
 	//StepInto{parent: ExecutionContextRef},
 	StepOver { target: ExecutionContextRef },
 	//StepOut{target: ExecutionContext},
@@ -112,7 +113,10 @@ lazy_static! {
 	static ref ORIGINAL_BYTECODE: Mutex<HashMap<PtrKey, u32>> = Mutex::new(HashMap::new());
 }
 
-fn handle_breakpoint(ctx: *mut raw_types::procs::ExecutionContext, reason: BreakpointReason) -> DebuggerAction {
+fn handle_breakpoint(
+	ctx: *mut raw_types::procs::ExecutionContext,
+	reason: BreakpointReason,
+) -> DebuggerAction {
 	let action = DEBUG_SERVER.with(|x| {
 		let mut server = x.borrow_mut();
 		server.as_mut().unwrap().handle_breakpoint(ctx, reason)
@@ -144,15 +148,25 @@ extern "C" fn handle_instruction(
 	DEBUG_SERVER.with(|x| {
 		let mut server = x.borrow_mut();
 		if let Some(server) = server.as_mut() {
-			server.process();
+			if server.process() {
+				unsafe {
+					CURRENT_ACTION = DebuggerAction::Pause;
+				}
+			}
 		}
 	});
 
+	// This lets us ignore any actual breakpoints we hit if we've already paused for another reason
 	let mut did_breakpoint = false;
 
 	unsafe {
 		match CURRENT_ACTION {
 			DebuggerAction::None => {}
+
+			DebuggerAction::Pause => {
+				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Pause);
+				did_breakpoint = true;
+			}
 
 			DebuggerAction::StepOver { target } => {
 				// If we're in the context, break!

@@ -1,6 +1,6 @@
 mod instruction_hooking;
-mod server_types;
 mod server;
+mod server_types;
 
 use std::{
 	cell::RefCell,

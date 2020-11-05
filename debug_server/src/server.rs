@@ -1,5 +1,3 @@
-// This whole thing is terrible but i've gotta see some output
-
 use super::instruction_hooking::{hook_instruction, unhook_instruction};
 use std::error::Error;
 use std::io::{Read, Write};
@@ -10,8 +8,8 @@ use std::{
 	thread::JoinHandle,
 };
 
-use dm::*;
 use super::server_types::*;
+use dm::*;
 
 //
 // Server = main-thread code
@@ -29,6 +27,7 @@ pub struct Server {
 	requests: mpsc::Receiver<Request>,
 	responses: mpsc::Sender<Response>,
 	notifications: mpsc::Sender<Response>,
+	stacks: Option<CallStacks>,
 	_thread: JoinHandle<()>,
 }
 
@@ -44,12 +43,12 @@ impl Server {
 	pub fn new(addr: &SocketAddr) -> std::io::Result<Server> {
 		let (requests_sender, requests_receiver) = mpsc::channel();
 		let (responses_sender, responses_receiver) = mpsc::channel();
-		let (notification_sender, notification_receiver) = mpsc::channel();
+		let (notifications_sender, notifications_receiver) = mpsc::channel();
 
 		let thread = ServerThread {
 			requests: requests_sender,
 			responses: responses_receiver,
-			notifications: notification_receiver,
+			notifications: notifications_receiver,
 			listener: TcpListener::bind(addr)?,
 			stream: None,
 		};
@@ -57,85 +56,101 @@ impl Server {
 		Ok(Server {
 			requests: requests_receiver,
 			responses: responses_sender,
-			notifications: notification_sender,
+			notifications: notifications_sender,
+			stacks: None,
 			_thread: thread.start_thread(),
 		})
 	}
 
-	fn handle_request(&mut self, request: Request) {
+	fn get_line_number(&self, proc: ProcRef, offset: u32) -> Option<u32> {
+		match dm::Proc::find_override(proc.path, proc.override_id) {
+			Some(proc) => {
+				// We're ignoring disassemble errors because any bytecode in the result is still valid
+				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
+				let (dism, _) = proc.disassemble();
+				let mut current_line_number = None;
+				let mut reached_offset = false;
+
+				for (instruction_offset, _, instruction) in dism {
+					if let Instruction::DbgLine(line) = instruction {
+						current_line_number = Some(line);
+					}
+
+					if instruction_offset == offset {
+						reached_offset = true;
+						break;
+					}
+				}
+
+				if reached_offset {
+					return current_line_number;
+				} else {
+					return None;
+				}
+			}
+
+			None => None,
+		}
+	}
+
+	// returns true if we need to break
+	fn handle_request(&mut self, request: Request) -> bool {
 		match request {
-			Request::BreakpointSet { proc, offset } => {
+			Request::BreakpointSet { instruction } => {
 				// TODO: better error handling
-				match dm::Proc::find_override(proc.path, proc.override_id) {
-					Some(proc) => {
-						match hook_instruction(&proc, offset) {
-							Ok(()) => {
-								self.responses.send(Response::BreakpointSet { success: true }).unwrap();
-							},
-
-							Err(_) => {
-								self.responses.send(Response::BreakpointSet { success: false }).unwrap();
-							}
+				match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
+					Some(proc) => match hook_instruction(&proc, instruction.offset) {
+						Ok(()) => {
+							self.responses
+								.send(Response::BreakpointSet { success: true })
+								.unwrap();
 						}
-					}
+
+						Err(_) => {
+							self.responses
+								.send(Response::BreakpointSet { success: false })
+								.unwrap();
+						}
+					},
 
 					None => {
-						self.responses.send(Response::BreakpointSet { success: false }).unwrap();
+						self.responses
+							.send(Response::BreakpointSet { success: false })
+							.unwrap();
 					}
 				}
-			},
+			}
 
-			Request::BreakpointUnset { proc, offset } => {
-				match dm::Proc::find_override(proc.path, proc.override_id) {
-					Some(proc) => {
-						match unhook_instruction(&proc, offset) {
-							Ok(()) => {
-								self.responses.send(Response::BreakpointUnset { success: true }).unwrap();
-							},
-
-							Err(_) => {
-								self.responses.send(Response::BreakpointUnset { success: false }).unwrap();
-							}
+			Request::BreakpointUnset { instruction } => {
+				match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
+					Some(proc) => match unhook_instruction(&proc, instruction.offset) {
+						Ok(()) => {
+							self.responses
+								.send(Response::BreakpointUnset { success: true })
+								.unwrap();
 						}
-					}
+
+						Err(_) => {
+							self.responses
+								.send(Response::BreakpointUnset { success: false })
+								.unwrap();
+						}
+					},
 
 					None => {
-						self.responses.send(Response::BreakpointUnset { success: false }).unwrap();
+						self.responses
+							.send(Response::BreakpointUnset { success: false })
+							.unwrap();
 					}
 				}
-			},
+			}
 
 			Request::LineNumber { proc, offset } => {
-				match dm::Proc::find_override(proc.path, proc.override_id) {
-					Some(proc) => {
-						// We're ignoring disassemble errors because any bytecode in the result is still valid
-						// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
-						let (dism, _) = proc.disassemble();
-						let mut current_line_number = None;
-						let mut reached_offset = false;
+				let response = Response::LineNumber {
+					line: self.get_line_number(proc, offset),
+				};
 
-						for (instruction_offset, _, instruction) in dism {
-							if let Instruction::DbgLine(line) = instruction {
-								current_line_number = Some(line);
-							}
-
-							if instruction_offset == offset {
-								reached_offset = true;
-								break;
-							}
-						}
-
-						if reached_offset {
-							self.responses.send(Response::LineNumber { line: current_line_number }).unwrap();
-						} else {
-							self.responses.send(Response::LineNumber { line: None }).unwrap();
-						}
-					}
-
-					None => {
-						self.responses.send(Response::LineNumber { line: None }).unwrap();
-					}
-				}
+				self.responses.send(response);
 			}
 
 			Request::Offset { proc, line } => {
@@ -148,18 +163,78 @@ impl Server {
 
 						for (instruction_offset, _, instruction) in dism {
 							if let Instruction::DbgLine(current_line) = instruction {
-								if current_line == line  {
+								if current_line == line {
 									offset = Some(instruction_offset);
 									break;
 								}
 							}
 						}
 
-						self.responses.send(Response::LineNumber { line: offset }).unwrap();
+						self.responses
+							.send(Response::LineNumber { line: offset })
+							.unwrap();
 					}
 
 					None => {
-						self.responses.send(Response::LineNumber { line: None }).unwrap();
+						self.responses
+							.send(Response::LineNumber { line: None })
+							.unwrap();
+					}
+				}
+			}
+
+			Request::StackFrames {
+				thread_id,
+				start_frame,
+				count,
+			} => {
+				assert_eq!(thread_id, 0);
+
+				match &self.stacks {
+					Some(stacks) => {
+						let stack = &stacks.active;
+						let start_frame = start_frame.unwrap_or(0);
+						let end_frame = start_frame + count.unwrap_or(stack.len() as u32);
+
+						let start_frame = start_frame as usize;
+						let end_frame = end_frame as usize;
+
+						let mut frames = vec![];
+
+						for i in start_frame..end_frame {
+							if i >= stack.len() {
+								break;
+							}
+
+							let proc_ref = ProcRef {
+								path: stack[i].proc.path.to_owned(),
+								override_id: 0,
+							};
+
+							frames.push(StackFrame {
+								instruction: InstructionRef {
+									proc: proc_ref.clone(),
+									offset: stack[i].offset as u32,
+								},
+								line: self.get_line_number(proc_ref, stack[i].offset as u32),
+							});
+						}
+
+						self.responses
+							.send(Response::StackFrames {
+								frames,
+								total_count: stack.len() as u32,
+							})
+							.unwrap();
+					}
+
+					None => {
+						self.responses
+							.send(Response::StackFrames {
+								frames: vec![],
+								total_count: 0,
+							})
+							.unwrap();
 					}
 				}
 			}
@@ -168,42 +243,51 @@ impl Server {
 				// TODO: Handle better
 				panic!("Client sent a continue request when we weren't broken?");
 			}
+
+			Request::Pause => {
+				return true;
+			}
 		}
+
+		false
 	}
 
-	pub fn handle_breakpoint(&mut self, ctx: *mut raw_types::procs::ExecutionContext, reason: BreakpointReason) -> ContinueKind {
-		let (proc_id, offset) = unsafe {
-			let instance = (*ctx).proc_instance;
-			((*instance).proc ,(*ctx).bytecode_offset as u32)
-		};
+	pub fn handle_breakpoint(
+		&mut self,
+		_ctx: *mut raw_types::procs::ExecutionContext,
+		reason: BreakpointReason,
+	) -> ContinueKind {
+		self.notifications
+			.send(Response::BreakpointHit { reason })
+			.unwrap();
 
-		let proc = Proc::from_id(proc_id).unwrap();
-
-		self.notifications.send(Response::BreakpointHit {
-			proc: ProcRef {
-				path: proc.path,
-				override_id: 0, // TODO: We have no way to fetch this yet
-			},
-			offset,
-			reason,
-		}).unwrap();
+		// Cache these now so nothing else has to fetch them
+		self.stacks = Some(CallStacks::new(&DMContext {}));
 
 		while let Ok(request) = self.requests.recv() {
 			if let Request::Continue { kind } = request {
+				self.stacks = None;
 				return kind;
 			}
 
+			// if we get a pause request here we can ignore it
 			self.handle_request(request);
 		}
 
 		// Client disappeared?
+		self.stacks = None;
 		ContinueKind::Continue
 	}
 
-	pub fn process(&mut self) {
+	// returns true if we need to pause
+	pub fn process(&mut self) -> bool {
+		let mut should_pause = false;
+
 		while let Ok(request) = self.requests.try_recv() {
-			self.handle_request(request);
+			should_pause = should_pause || self.handle_request(request);
 		}
+
+		should_pause
 	}
 }
 
@@ -213,6 +297,7 @@ impl ServerThread {
 			for incoming in self.listener.incoming() {
 				match incoming {
 					Ok(stream) => {
+						stream.set_nonblocking(true).unwrap();
 						self.stream = Some(stream);
 						self.run();
 						return;
@@ -229,7 +314,11 @@ impl ServerThread {
 	fn send(&mut self, response: Response) {
 		let mut message = serde_json::to_vec(&response).unwrap();
 		message.push(0); // null-terminator
-		self.stream.as_mut().unwrap().write_all(&message[..]).unwrap();
+		self.stream
+			.as_mut()
+			.unwrap()
+			.write_all(&message[..])
+			.unwrap();
 	}
 
 	fn handle_message(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
@@ -244,11 +333,16 @@ impl ServerThread {
 
 		// The incoming stream is JSON objects separated by null terminators.
 		loop {
+			let mut got_data = false;
 			match self.stream.as_mut().unwrap().read(&mut buf) {
 				Ok(0) => (),
 				Ok(n) => {
 					queued_data.extend_from_slice(&buf[..n]);
+					got_data = true;
 				}
+
+				// This is a crutch
+				Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
 				Err(_) => panic!("Handle me!"),
 			}
 
