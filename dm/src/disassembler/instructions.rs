@@ -375,4 +375,5 @@ pub enum Instruction {
 	SplitTextChar(),
 	Text2NumRadix,
 	Num2TextRadix,
+	DebugBreak,
 }

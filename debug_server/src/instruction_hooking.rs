@@ -92,13 +92,8 @@ enum DebuggerAction {
 
 static mut CURRENT_ACTION: DebuggerAction = DebuggerAction::None;
 
-// TODO: dm's disassembler can't handle this (o dear)
-static CUSTOM_OPCODE: u32 = 0x1337;
-// static CUSTOM_OPCODE_WITH_OPERANDS: u32 = 0x1338;
-// static CUSTOM_OPCODE_WITH_OPERAND_MARKER: u32 = 0x1339;
-
 // TODO: Clear on shutdown
-static mut DEFERRED_INSTRUCTION_REPLACE: RefCell<Option<(u32, *mut u32)>> = RefCell::new(None);
+static mut DEFERRED_INSTRUCTION_REPLACE: RefCell<Option<(Vec<u32>, *mut u32)>> = RefCell::new(None);
 
 #[derive(PartialEq, Eq, Hash)]
 struct PtrKey(usize);
@@ -110,7 +105,7 @@ impl PtrKey {
 }
 
 lazy_static! {
-	static ref ORIGINAL_BYTECODE: Mutex<HashMap<PtrKey, u32>> = Mutex::new(HashMap::new());
+	static ref ORIGINAL_BYTECODE: Mutex<HashMap<PtrKey, Vec<u32>>> = Mutex::new(HashMap::new());
 }
 
 fn handle_breakpoint(
@@ -140,7 +135,7 @@ extern "C" fn handle_instruction(
 	unsafe {
 		let mut deferred = DEFERRED_INSTRUCTION_REPLACE.borrow_mut();
 		if let Some((src, dst)) = &*deferred {
-			**dst = *src;
+			std::ptr::copy_nonoverlapping(src.as_ptr(), *dst, src.len());
 			*deferred = None;
 		}
 	}
@@ -227,7 +222,7 @@ extern "C" fn handle_instruction(
 
 	let opcode = unsafe { *opcode_ptr };
 
-	if opcode == CUSTOM_OPCODE {
+	if opcode == DebugBreakOpCode {
 		// We don't want to break twice when stepping on to a breakpoint
 		if !did_breakpoint {
 			unsafe {
@@ -239,12 +234,11 @@ extern "C" fn handle_instruction(
 		let map = ORIGINAL_BYTECODE.lock().unwrap();
 		let original = map.get(&PtrKey::new(opcode_ptr)).unwrap();
 		unsafe {
-			let current = *opcode_ptr;
 			assert_eq!(
-				DEFERRED_INSTRUCTION_REPLACE.replace(Some((current, opcode_ptr))),
+				DEFERRED_INSTRUCTION_REPLACE.replace(Some((std::slice::from_raw_parts(opcode_ptr, original.len()).to_vec(), opcode_ptr))),
 				None
 			);
-			*opcode_ptr = *original;
+			std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
 		}
 	}
 
@@ -254,14 +248,20 @@ extern "C" fn handle_instruction(
 #[derive(Debug)]
 pub enum InstructionHookError {
 	InvalidOffset,
-	AlreadyHooked,
 }
 
 pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookError> {
 	let dism = proc.disassemble().0;
-	if !dism.iter().any(|x| x.0 == offset) {
+
+	let instruction = dism.iter().find(|x| {
+		x.0 == offset
+	});
+
+	if instruction.is_none() {
 		return Err(InstructionHookError::InvalidOffset);
 	}
+
+	let instruction_length = instruction.unwrap().1 - instruction.unwrap().0 + 1;
 
 	let bytecode;
 	let opcode;
@@ -277,16 +277,21 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 		opcode = *opcode_ptr;
 	}
 
-	if opcode == CUSTOM_OPCODE {
-		return Err(InstructionHookError::AlreadyHooked);
+	if opcode == DebugBreakOpCode {
+		return Ok(());
 	}
 
-	ORIGINAL_BYTECODE
-		.lock()
-		.unwrap()
-		.insert(PtrKey::new(opcode_ptr), opcode);
+	unsafe {
+		ORIGINAL_BYTECODE
+			.lock()
+			.unwrap()
+			.insert(PtrKey::new(opcode_ptr), std::slice::from_raw_parts(opcode_ptr, instruction_length as usize).to_vec());
+	}
 
-	bytecode[offset as usize] = CUSTOM_OPCODE;
+	bytecode[offset as usize] = DebugBreakOpCode;
+	for i in (offset + 1)..(offset + instruction_length) {
+		bytecode[i as usize] = DebugBreakOperand;
+	}
 	Ok(())
 }
 

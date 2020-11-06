@@ -25,7 +25,7 @@ use init::{get_init_level, set_init_level, InitLevel};
 pub use callback::Callback;
 pub use context::DMContext;
 pub use debug::CallStacks;
-pub use disassembler::Instruction;
+pub use disassembler::{Instruction, opcodes::{DebugBreakOpCode, DebugBreakOperand}};
 pub use dm_impl::{hook, init, shutdown};
 pub use hooks::CompileTimeHook;
 pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};

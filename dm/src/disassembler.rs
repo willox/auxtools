@@ -411,6 +411,27 @@ where
 			OpCode::PushVal => Instruction::PushVal(self.disassemble_value_operand()?),
 			OpCode::DbgFile => Instruction::DbgFile(self.disassemble_string_operand()?),
 			OpCode::DbgLine => Instruction::DbgLine(self.disassemble_u32_operand()?),
+
+			OpCode::DebugBreak => {
+				// Allow peek to fail (in case we have a DebugBreak at the end of a proc)
+				loop {
+					match self.peek_u32_operand() {
+						Ok(operand) => {
+							if operand == opcodes::DebugBreakOperand {
+								self.disassemble_u32_operand()?;
+							} else {
+								break;
+							}
+						},
+
+						Err(_) => break
+					}
+				}
+
+				// TODO: get the original from the debug server? Probably not.
+				Instruction::DebugBreak
+			}
+
 			_ => return Err(UnknownOp(opcode)),
 		};
 

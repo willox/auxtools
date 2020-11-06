@@ -1,5 +1,5 @@
 use super::instruction_hooking::{hook_instruction, unhook_instruction};
-use std::error::Error;
+use std::{collections::HashSet, error::Error, collections::HashMap};
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::thread;
@@ -97,25 +97,29 @@ impl Server {
 	fn handle_request(&mut self, request: Request) -> bool {
 		match request {
 			Request::BreakpointSet { instruction } => {
+				let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
+
 				// TODO: better error handling
 				match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
 					Some(proc) => match hook_instruction(&proc, instruction.offset) {
 						Ok(()) => {
 							self.responses
-								.send(Response::BreakpointSet { success: true })
+								.send(Response::BreakpointSet { result: BreakpointSetResult::Success {
+									line
+								} })
 								.unwrap();
 						}
 
 						Err(_) => {
 							self.responses
-								.send(Response::BreakpointSet { success: false })
+								.send(Response::BreakpointSet { result: BreakpointSetResult::Failed })
 								.unwrap();
 						}
 					},
 
 					None => {
 						self.responses
-							.send(Response::BreakpointSet { success: false })
+							.send(Response::BreakpointSet { result: BreakpointSetResult::Failed })
 							.unwrap();
 					}
 				}
@@ -160,24 +164,28 @@ impl Server {
 						// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
 						let (dism, _) = proc.disassemble();
 						let mut offset = None;
+						let mut at_offset = false;
 
 						for (instruction_offset, _, instruction) in dism {
+							if at_offset {
+								offset = Some(instruction_offset);
+								break;
+							}
 							if let Instruction::DbgLine(current_line) = instruction {
 								if current_line == line {
-									offset = Some(instruction_offset);
-									break;
+									at_offset = true;
 								}
 							}
 						}
 
 						self.responses
-							.send(Response::LineNumber { line: offset })
+							.send(Response::Offset { offset })
 							.unwrap();
 					}
 
 					None => {
 						self.responses
-							.send(Response::LineNumber { line: None })
+							.send(Response::Offset { offset: None })
 							.unwrap();
 					}
 				}

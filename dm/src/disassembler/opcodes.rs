@@ -350,7 +350,13 @@ pub enum OpCode {
 	SplitTextChar = 0x157,
 	Text2NumRadix = 0x158,
 	Num2TextRadix = 0x159,
+
+	// This is a faux opcode
+	DebugBreak = 0x1337,
 }
+
+pub static DebugBreakOpCode: u32 = 0x1337;
+pub static DebugBreakOperand: u32 = 0x1338;
 
 #[repr(u32)]
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
