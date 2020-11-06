@@ -1,8 +1,8 @@
 use super::instruction_hooking::{hook_instruction, unhook_instruction};
-use std::{collections::HashSet, error::Error, collections::HashMap};
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::thread;
+use std::{collections::HashMap, collections::HashSet, error::Error};
 use std::{
 	net::{SocketAddr, TcpListener, TcpStream},
 	thread::JoinHandle,
@@ -104,22 +104,26 @@ impl Server {
 					Some(proc) => match hook_instruction(&proc, instruction.offset) {
 						Ok(()) => {
 							self.responses
-								.send(Response::BreakpointSet { result: BreakpointSetResult::Success {
-									line
-								} })
+								.send(Response::BreakpointSet {
+									result: BreakpointSetResult::Success { line },
+								})
 								.unwrap();
 						}
 
 						Err(_) => {
 							self.responses
-								.send(Response::BreakpointSet { result: BreakpointSetResult::Failed })
+								.send(Response::BreakpointSet {
+									result: BreakpointSetResult::Failed,
+								})
 								.unwrap();
 						}
 					},
 
 					None => {
 						self.responses
-							.send(Response::BreakpointSet { result: BreakpointSetResult::Failed })
+							.send(Response::BreakpointSet {
+								result: BreakpointSetResult::Failed,
+							})
 							.unwrap();
 					}
 				}
@@ -178,9 +182,7 @@ impl Server {
 							}
 						}
 
-						self.responses
-							.send(Response::Offset { offset })
-							.unwrap();
+						self.responses.send(Response::Offset { offset }).unwrap();
 					}
 
 					None => {

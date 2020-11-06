@@ -422,9 +422,9 @@ where
 							} else {
 								break;
 							}
-						},
+						}
 
-						Err(_) => break
+						Err(_) => break,
 					}
 				}
 

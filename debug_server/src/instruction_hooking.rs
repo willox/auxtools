@@ -230,15 +230,19 @@ extern "C" fn handle_instruction(
 			}
 		}
 
-		// Now run the original code
+		// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been removed
 		let map = ORIGINAL_BYTECODE.lock().unwrap();
-		let original = map.get(&PtrKey::new(opcode_ptr)).unwrap();
-		unsafe {
-			assert_eq!(
-				DEFERRED_INSTRUCTION_REPLACE.replace(Some((std::slice::from_raw_parts(opcode_ptr, original.len()).to_vec(), opcode_ptr))),
-				None
-			);
-			std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
+		if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
+			unsafe {
+				assert_eq!(
+					DEFERRED_INSTRUCTION_REPLACE.replace(Some((
+						std::slice::from_raw_parts(opcode_ptr, original.len()).to_vec(),
+						opcode_ptr
+					))),
+					None
+				);
+				std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
+			}
 		}
 	}
 
@@ -253,9 +257,7 @@ pub enum InstructionHookError {
 pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookError> {
 	let dism = proc.disassemble().0;
 
-	let instruction = dism.iter().find(|x| {
-		x.0 == offset
-	});
+	let instruction = dism.iter().find(|x| x.0 == offset);
 
 	if instruction.is_none() {
 		return Err(InstructionHookError::InvalidOffset);
@@ -282,10 +284,10 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 	}
 
 	unsafe {
-		ORIGINAL_BYTECODE
-			.lock()
-			.unwrap()
-			.insert(PtrKey::new(opcode_ptr), std::slice::from_raw_parts(opcode_ptr, instruction_length as usize).to_vec());
+		ORIGINAL_BYTECODE.lock().unwrap().insert(
+			PtrKey::new(opcode_ptr),
+			std::slice::from_raw_parts(opcode_ptr, instruction_length as usize).to_vec(),
+		);
 	}
 
 	bytecode[offset as usize] = DebugBreakOpCode;
@@ -300,11 +302,33 @@ pub enum InstructionUnhookError {
 	InvalidOffset,
 }
 
-// TODO: this won't work until the disassembler can handle our custom bytecode
 pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnhookError> {
 	let dism = proc.disassemble().0;
-	if !dism.iter().any(|x| x.0 == offset) {
+
+	let instruction = dism.iter().find(|x| x.0 == offset);
+
+	if instruction.is_none() {
 		return Err(InstructionUnhookError::InvalidOffset);
+	}
+
+	let opcode_ptr = unsafe {
+		let bytecode = {
+			let (ptr, count) = proc.bytecode();
+			std::slice::from_raw_parts_mut(ptr, count)
+		};
+
+		bytecode.as_mut_ptr().add(offset as usize)
+	};
+
+	// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been removed
+	let mut map = ORIGINAL_BYTECODE.lock().unwrap();
+	if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
+		unsafe {
+			assert_eq!(DEFERRED_INSTRUCTION_REPLACE.borrow().as_ref(), None);
+			std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
+		}
+
+		map.remove(&PtrKey::new(opcode_ptr));
 	}
 
 	Ok(())
