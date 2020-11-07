@@ -280,7 +280,7 @@ extern "C" fn handle_instruction(
 		}
 	}
 
-	if opcode == DebugBreakOpCode {
+	if opcode == DEBUG_BREAK_OPCODE {
 		// We don't want to break twice when stepping on to a breakpoint
 		if !did_breakpoint {
 			unsafe {
@@ -337,7 +337,7 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 		opcode = *opcode_ptr;
 	}
 
-	if opcode == DebugBreakOpCode {
+	if opcode == DEBUG_BREAK_OPCODE {
 		return Ok(());
 	}
 
@@ -348,9 +348,9 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 		);
 	}
 
-	bytecode[offset as usize] = DebugBreakOpCode;
+	bytecode[offset as usize] = DEBUG_BREAK_OPCODE;
 	for i in (offset + 1)..(offset + instruction_length) {
-		bytecode[i as usize] = DebugBreakOperand;
+		bytecode[i as usize] = DEBUG_BREAK_OPERAND;
 	}
 	Ok(())
 }

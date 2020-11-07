@@ -355,8 +355,8 @@ pub enum OpCode {
 	DebugBreak = 0x1337,
 }
 
-pub static DebugBreakOpCode: u32 = 0x1337;
-pub static DebugBreakOperand: u32 = 0x1338;
+pub static DEBUG_BREAK_OPCODE: u32 = 0x1337;
+pub static DEBUG_BREAK_OPERAND: u32 = 0x1338;
 
 #[repr(u32)]
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]

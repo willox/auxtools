@@ -417,7 +417,7 @@ where
 				loop {
 					match self.peek_u32_operand() {
 						Ok(operand) => {
-							if operand == opcodes::DebugBreakOperand {
+							if operand == opcodes::DEBUG_BREAK_OPERAND {
 								self.disassemble_u32_operand()?;
 							} else {
 								break;

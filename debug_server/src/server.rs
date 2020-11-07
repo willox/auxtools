@@ -2,7 +2,7 @@ use super::instruction_hooking::{hook_instruction, unhook_instruction};
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::thread;
-use std::{collections::HashMap, collections::HashSet, error::Error};
+use std::{error::Error};
 use std::{
 	net::{SocketAddr, TcpListener, TcpStream},
 	thread::JoinHandle,
@@ -30,7 +30,7 @@ pub struct Server {
 	_thread: JoinHandle<()>,
 }
 
-pub struct ServerThread {
+struct ServerThread {
 	connection: mpsc::Sender<TcpStream>,
 	requests: mpsc::Sender<Request>,
 	listener: TcpListener,
@@ -180,7 +180,7 @@ impl Server {
 			} => {
 				assert_eq!(thread_id, 0);
 
-				match &self.stacks {
+				self.send(match &self.stacks {
 					Some(stacks) => {
 						let stack = &stacks.active;
 						let start_frame = start_frame.unwrap_or(0);
@@ -210,22 +210,22 @@ impl Server {
 							});
 						}
 
-						self.send(Response::StackFrames {
+						Response::StackFrames {
 							frames,
 							total_count: stack.len() as u32,
-						});
+						}
 					}
 
 					None => {
-						self.send(Response::StackFrames {
+						Response::StackFrames {
 							frames: vec![],
 							total_count: 0,
-						});
+						}
 					}
-				}
+				});
 			}
 
-			Request::Continue { kind } => {
+			Request::Continue { kind: _ } => {
 				// TODO: Handle better
 				panic!("Client sent a continue request when we weren't broken?");
 			}
@@ -289,7 +289,7 @@ impl Server {
 }
 
 impl ServerThread {
-	pub fn start_thread(mut self) -> JoinHandle<()> {
+	fn start_thread(mut self) -> JoinHandle<()> {
 		thread::spawn(move || {
 			for incoming in self.listener.incoming() {
 				match incoming {

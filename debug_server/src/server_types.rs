@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+#[allow(dead_code)]
 pub const DEFAULT_PORT: u16 = 2448;
 
 // Message from client -> server
