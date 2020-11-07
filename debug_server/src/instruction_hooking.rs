@@ -93,8 +93,8 @@ impl ProcInstanceRef {
 enum DebuggerAction {
 	None,
 	Pause,
-	StepInto { parent: ProcInstanceRef },
 	StepOver { target: ProcInstanceRef },
+	StepInto { parent: ProcInstanceRef },
 	BreakOnNext,
 	//StepOut{target: ExecutionContext},
 }
@@ -128,14 +128,28 @@ fn handle_breakpoint(
 
 	match action {
 		ContinueKind::Continue => DebuggerAction::None,
+		ContinueKind::StepOver => {
+			DebuggerAction::StepOver {
+				target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
+			}
+		}
 		ContinueKind::StepInto => {
 			DebuggerAction::StepInto {
 				parent: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
 			}
 		}
-		ContinueKind::StepOver => {
-			DebuggerAction::StepOver {
-				target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
+		ContinueKind::StepOut => {
+			unsafe {
+				// Just continue the code if we've got no parent
+				// Otherwise, treat this as a StepOver on the parent proc
+				let parent = (*ctx).parent_context;
+				if parent.is_null() {
+					DebuggerAction::None
+				} else {
+					DebuggerAction::StepOver {
+						target: ProcInstanceRef::new((*parent).proc_instance),
+					}
+				}
 			}
 		}
 	}
@@ -224,6 +238,22 @@ extern "C" fn handle_instruction(
 				did_breakpoint = true;
 			}
 
+			// StepOver breaks on either of the following conditions:
+			// 1) The target context has disappeared - this means it has returned or runtimed
+			// 2) We're inside the target context and on a DbgLine instruction
+			DebuggerAction::StepOver { target } => {
+				if opcode == (OpCode::DbgLine as u32) && target.is((*ctx).proc_instance) {
+					CURRENT_ACTION = DebuggerAction::BreakOnNext;
+				} else {
+					// If the context isn't in any stacks, it has just returned. Break!
+					// TODO: Don't break if the context's stack is gone (returned to C)
+					if !proc_instance_is_in_stack(ctx, target) && !proc_instance_is_suspended(target) {
+						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
+						did_breakpoint = true;
+					}
+				}
+			}
+
 			// StepInto breaks on any of the following conditions:
 			// 1) The parent context has disappeared - this means it has returned or runtimed
 			// 2) We're inside a context that is inside the parent context and on a DbgLine instruction
@@ -244,22 +274,6 @@ extern "C" fn handle_instruction(
 						did_breakpoint = true;
 					} else if in_stack && is_dbgline {
 						CURRENT_ACTION = DebuggerAction::BreakOnNext;
-					}
-				}
-			}
-
-			// StepOver breaks on either of the following conditions:
-			// 1) The target context has disappeared - this means it has returned or runtimed
-			// 2) We're inside the target context and on a DbgLine instruction
-			DebuggerAction::StepOver { target } => {
-				if opcode == (OpCode::DbgLine as u32) && target.is((*ctx).proc_instance) {
-					CURRENT_ACTION = DebuggerAction::BreakOnNext;
-				} else {
-					// If the context isn't in any stacks, it has just returned. Break!
-					// TODO: Don't break if the context's stack is gone (returned to C)
-					if !proc_instance_is_in_stack(ctx, target) && !proc_instance_is_suspended(target) {
-						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
-						did_breakpoint = true;
 					}
 				}
 			}
