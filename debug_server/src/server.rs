@@ -38,8 +38,8 @@ struct ServerThread {
 }
 
 impl Server {
-	pub fn new(addr: &SocketAddr) -> std::io::Result<Server> {
-		let (connection_sender, cnonection_receiver) = mpsc::channel();
+	pub fn listen(addr: &SocketAddr) -> std::io::Result<Server> {
+		let (connection_sender, connection_receiver) = mpsc::channel();
 		let (requests_sender, requests_receiver) = mpsc::channel();
 
 		let thread = ServerThread {
@@ -50,7 +50,7 @@ impl Server {
 		};
 
 		Ok(Server {
-			connection: cnonection_receiver,
+			connection: connection_receiver,
 			requests: requests_receiver,
 			stacks: None,
 			stream: None,
@@ -99,20 +99,20 @@ impl Server {
 				match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
 					Some(proc) => match hook_instruction(&proc, instruction.offset) {
 						Ok(()) => {
-							self.send(Response::BreakpointSet {
+							self.send_or_disconnect(Response::BreakpointSet {
 								result: BreakpointSetResult::Success { line },
 							});
 						}
 
 						Err(_) => {
-							self.send(Response::BreakpointSet {
+							self.send_or_disconnect(Response::BreakpointSet {
 								result: BreakpointSetResult::Failed,
 							});
 						}
 					},
 
 					None => {
-						self.send(Response::BreakpointSet {
+						self.send_or_disconnect(Response::BreakpointSet {
 							result: BreakpointSetResult::Failed,
 						});
 					}
@@ -123,22 +123,22 @@ impl Server {
 				match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
 					Some(proc) => match unhook_instruction(&proc, instruction.offset) {
 						Ok(()) => {
-							self.send(Response::BreakpointUnset { success: true });
+							self.send_or_disconnect(Response::BreakpointUnset { success: true });
 						}
 
 						Err(_) => {
-							self.send(Response::BreakpointUnset { success: false });
+							self.send_or_disconnect(Response::BreakpointUnset { success: false });
 						}
 					},
 
 					None => {
-						self.send(Response::BreakpointUnset { success: false });
+						self.send_or_disconnect(Response::BreakpointUnset { success: false });
 					}
 				}
 			}
 
 			Request::LineNumber { proc, offset } => {
-				self.send(Response::LineNumber {
+				self.send_or_disconnect(Response::LineNumber {
 					line: self.get_line_number(proc, offset),
 				});
 			}
@@ -164,11 +164,11 @@ impl Server {
 							}
 						}
 
-						self.send(Response::Offset { offset });
+						self.send_or_disconnect(Response::Offset { offset });
 					}
 
 					None => {
-						self.send(Response::Offset { offset: None });
+						self.send_or_disconnect(Response::Offset { offset: None });
 					}
 				}
 			}
@@ -180,7 +180,7 @@ impl Server {
 			} => {
 				assert_eq!(thread_id, 0);
 
-				self.send(match &self.stacks {
+				self.send_or_disconnect(match &self.stacks {
 					Some(stacks) => {
 						let stack = &stacks.active;
 						let start_frame = start_frame.unwrap_or(0);
@@ -225,9 +225,8 @@ impl Server {
 				});
 			}
 
-			Request::Continue { kind: _ } => {
-				// TODO: Handle better
-				panic!("Client sent a continue request when we weren't broken?");
+			Request::Continue { .. } => {
+				eprintln!("Debug server received a continue request when not paused. Ignoring.");
 			}
 
 			Request::Pause => {
@@ -243,12 +242,14 @@ impl Server {
 		_ctx: *mut raw_types::procs::ExecutionContext,
 		reason: BreakpointReason,
 	) -> ContinueKind {
-		self.send(Response::BreakpointHit { reason });
-
 		// Cache these now so nothing else has to fetch them
+		// TODO: it'd be cool if all this data was fetched lazily
 		self.stacks = Some(CallStacks::new(&DMContext {}));
 
+		self.send_or_disconnect(Response::BreakpointHit { reason });
+
 		while let Ok(request) = self.requests.recv() {
+			// Hijack and handle any Continue requests
 			if let Request::Continue { kind } = request {
 				self.stacks = None;
 				return kind;
@@ -265,8 +266,13 @@ impl Server {
 
 	// returns true if we need to pause
 	pub fn process(&mut self) -> bool {
-		while let Ok(stream) = self.connection.try_recv() {
-			self.stream = Some(stream);
+		// Don't do anything until we've got a stream
+		if self.stream.is_none() {
+			if let Ok(stream) = self.connection.try_recv() {
+				self.stream = Some(stream);
+			} else {
+				return false;
+			}
 		}
 
 		let mut should_pause = false;
@@ -278,12 +284,27 @@ impl Server {
 		should_pause
 	}
 
-	fn send(&mut self, response: Response) {
-		let mut message = serde_json::to_vec(&response).unwrap();
-		message.push(0); // null-terminator
+	fn send_or_disconnect(&mut self, response: Response) {
+		if self.stream.is_none() {
+			return;
+		}
+
+		match self.send(response) {
+			Ok(_) => {},
+			Err(e) => {
+				eprintln!("Debug server failed to send message: {}", e);
+				self.stream = None;
+			}
+		}
+	}
+
+	fn send(&mut self, response: Response) -> Result<(), Box<dyn std::error::Error>> {
+		let mut message = serde_json::to_vec(&response)?;
 		let stream = self.stream.as_mut().unwrap();
-		stream.write_all(&message[..]).unwrap();
-		stream.flush().unwrap();
+		message.push(0); // null-terminator
+		stream.write_all(&message[..])?;
+		stream.flush()?;
+		Ok(())
 	}
 
 }
@@ -291,30 +312,33 @@ impl Server {
 impl ServerThread {
 	fn start_thread(mut self) -> JoinHandle<()> {
 		thread::spawn(move || {
-			for incoming in self.listener.incoming() {
-				match incoming {
-					Ok(stream) => {
-						self.stream = Some(stream);
-						self.run();
-						return;
-					}
+			match self.listener.accept() {
+				Ok((stream, _)) => {
+					self.stream = Some(stream);
+					self.run();
+				}
 
-					Err(e) => {
-						println!("Connection failure {:?}", e);
-					}
+				Err(e) => {
+					println!("Debug server failed to accept connection {}", e);
 				}
 			}
 		})
 	}
 
-	fn handle_message(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
+	fn handle_request(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
 		let request = serde_json::from_slice::<Request>(data)?;
 		self.requests.send(request)?;
 		Ok(())
 	}
 
 	fn run(mut self) {
-		self.connection.send(self.stream.as_mut().unwrap().try_clone().unwrap()).unwrap();
+		match self.connection.send(self.stream.as_mut().unwrap().try_clone().unwrap()) {
+			Ok(_) => {}
+			Err(e) => {
+				eprintln!("Debug server thread failed to pass cloned TcpStream: {}", e);
+				return;
+			}
+		}
 
 		let mut buf = [0u8; 4096];
 		let mut queued_data = vec![];
@@ -322,12 +346,16 @@ impl ServerThread {
 		// The incoming stream is JSON objects separated by null terminators.
 		loop {
 			match self.stream.as_mut().unwrap().read(&mut buf) {
-				Ok(0) => (),
+				Ok(0) => return,
+
 				Ok(n) => {
 					queued_data.extend_from_slice(&buf[..n]);
 				}
 
-				Err(_) => panic!("Handle me!"),
+				Err(e) => {
+					eprintln!("Debug server thread read error: {}", e);
+					return;
+				}
 			}
 
 			for message in queued_data.split(|x| *x == 0) {
@@ -336,7 +364,14 @@ impl ServerThread {
 					continue;
 				}
 
-				self.handle_message(message).unwrap();
+				match self.handle_request(message) {
+					Ok(_) => {}
+
+					Err(e) => {
+						eprintln!("Debug server thread failed to handle request: {}", e);
+						return;
+					}
+				}
 			}
 
 			// Clear any finished messages from the buffer

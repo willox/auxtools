@@ -20,7 +20,7 @@ fn enable_debugging(port: Value) {
 		port.as_number()? as u16,
 	);
 	let server =
-		server::Server::new(&addr).map_err(|e| runtime!("Couldn't create debug server {:?}", e))?;
+		server::Server::listen(&addr).map_err(|e| runtime!("Couldn't create debug server {:?}", e))?;
 
 	DEBUG_SERVER.with(|x| {
 		x.replace(Some(server));
