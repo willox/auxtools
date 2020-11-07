@@ -66,10 +66,10 @@ fn debug_server_init(_: &DMContext) -> Result<(), String> {
 	Ok(())
 }
 
-static mut PTR_REF_ID: u32 = 0x80000000;
+static mut PTR_REF_ID: u16 = 0x8000;
 
 #[derive(PartialEq, Eq, Copy, Clone)]
-struct ProcInstanceRef(u32);
+struct ProcInstanceRef(u16);
 
 impl ProcInstanceRef {
 	fn new(ptr: *mut raw_types::procs::ProcInstance) -> Self {
@@ -93,7 +93,7 @@ impl ProcInstanceRef {
 enum DebuggerAction {
 	None,
 	Pause,
-	//StepInto{parent: ExecutionContextRef},
+	StepInto { parent: ProcInstanceRef },
 	StepOver { target: ProcInstanceRef },
 	BreakOnNext,
 	//StepOut{target: ExecutionContext},
@@ -128,11 +128,53 @@ fn handle_breakpoint(
 
 	match action {
 		ContinueKind::Continue => DebuggerAction::None,
+		ContinueKind::StepInto => {
+			DebuggerAction::StepInto {
+				parent: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
+			}
+		}
 		ContinueKind::StepOver => {
 			DebuggerAction::StepOver {
 				target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
 			}
 		}
+	}
+}
+
+fn proc_instance_is_in_stack(mut ctx: *mut raw_types::procs::ExecutionContext, proc_ref: ProcInstanceRef) -> bool {
+	unsafe {
+		let mut found = false;
+
+		while !ctx.is_null() {
+			if proc_ref.is((*ctx).proc_instance) {
+				found = true;
+				break;
+			}
+			ctx = (*ctx).parent_context;
+		}
+
+		found
+	}
+}
+
+fn proc_instance_is_suspended(proc_ref: ProcInstanceRef) -> bool {
+	unsafe {
+		let procs = raw_types::funcs::SUSPENDED_PROCS;
+		let buffer = (*procs).buffer;
+		let front = (*procs).front;
+		let back = (*procs).back;
+		let mut found = false;
+
+		for x in front..back {
+			let instance = *buffer.add(x);
+
+			if proc_instance_is_in_stack((*instance).context, proc_ref) {
+				found = true;
+				break;
+			}
+		}
+
+		found
 	}
 }
 
@@ -182,55 +224,40 @@ extern "C" fn handle_instruction(
 				did_breakpoint = true;
 			}
 
+			// StepInto breaks on any of the following conditions:
+			// 1) The parent context has disappeared - this means it has returned or runtimed
+			// 2) We're inside a context that is inside the parent context and on a DbgLine instruction
+			// 3) We're inside the parent context and on a DbgLine instruction
+			DebuggerAction::StepInto { parent } => {
+				let is_dbgline = opcode == (OpCode::DbgLine as u32);
+
+				if is_dbgline && parent.is((*ctx).proc_instance) {
+					CURRENT_ACTION = DebuggerAction::BreakOnNext;
+				} else {
+					let in_stack = proc_instance_is_in_stack(ctx, parent);
+					let is_suspended = proc_instance_is_suspended(parent);
+
+					// If the context isn't in any stacks, it has just returned. Break!
+					// TODO: Don't break if the context's stack is gone (returned to C)
+					if !in_stack && !is_suspended {
+						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
+						did_breakpoint = true;
+					} else if in_stack && is_dbgline {
+						CURRENT_ACTION = DebuggerAction::BreakOnNext;
+					}
+				}
+			}
+
 			// StepOver breaks on either of the following conditions:
-			// 1) The target context has disappeared - this means it has returned or runtimed (TODO: not do this for runtimes)
+			// 1) The target context has disappeared - this means it has returned or runtimed
 			// 2) We're inside the target context and on a DbgLine instruction
 			DebuggerAction::StepOver { target } => {
-				// If we're in the context, break!
 				if opcode == (OpCode::DbgLine as u32) && target.is((*ctx).proc_instance) {
 					CURRENT_ACTION = DebuggerAction::BreakOnNext;
 				} else {
 					// If the context isn't in any stacks, it has just returned. Break!
-					let context_in_stack = {
-						let mut current = ctx;
-						let mut found = false;
-
-						while !current.is_null() {
-							if target.is((*ctx).proc_instance) {
-								found = true;
-								break;
-							}
-							current = (*current).parent_context;
-						}
-
-						found
-					};
-
-					let context_suspended = {
-						let procs = raw_types::funcs::SUSPENDED_PROCS;
-						let buffer = (*procs).buffer;
-						let front = (*procs).front;
-						let back = (*procs).back;
-						let mut found = false;
-
-						'outer: for x in front..back {
-							let instance = *buffer.add(x);
-							let mut current = (*instance).context;
-
-							while !current.is_null() {
-								if target.is((*current).proc_instance) {
-									found = true;
-									break 'outer;
-								}
-								current = (*current).parent_context;
-							}
-						}
-
-						found
-					};
-
-					// TODO: Detect break when we've returned outside of our context
-					if !context_in_stack && !context_suspended {
+					// TODO: Don't break if the context's stack is gone (returned to C)
+					if !proc_instance_is_in_stack(ctx, target) && !proc_instance_is_suspended(target) {
 						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 						did_breakpoint = true;
 					}
