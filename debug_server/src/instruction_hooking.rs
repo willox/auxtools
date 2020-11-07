@@ -66,16 +66,24 @@ fn debug_server_init(_: &DMContext) -> Result<(), String> {
 	Ok(())
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
-struct ExecutionContextRef(usize);
+static mut PTR_REF_ID: u32 = 0x80000000;
 
-impl ExecutionContextRef {
-	fn new(ptr: *mut raw_types::procs::ExecutionContext) -> Self {
-		unsafe { Self(std::mem::transmute(ptr)) }
+#[derive(PartialEq, Eq, Copy, Clone)]
+struct ProcInstanceRef(u32);
+
+impl ProcInstanceRef {
+	fn new(ptr: *mut raw_types::procs::ProcInstance) -> Self {
+		unsafe {
+			PTR_REF_ID += 1;
+			(*ptr).mega_hack = PTR_REF_ID;
+			Self(PTR_REF_ID)
+		}		
 	}
 
-	fn get(&self) -> *mut raw_types::procs::ExecutionContext {
-		return self.0 as *mut _;
+	fn is(&self, ptr: *mut raw_types::procs::ProcInstance) -> bool {
+		unsafe {
+			self.0 == (*ptr).mega_hack
+		}		
 	}
 }
 
@@ -86,7 +94,8 @@ enum DebuggerAction {
 	None,
 	Pause,
 	//StepInto{parent: ExecutionContextRef},
-	StepOver { target: ExecutionContextRef },
+	StepOver { target: ProcInstanceRef },
+	BreakOnNext,
 	//StepOut{target: ExecutionContext},
 }
 
@@ -119,9 +128,11 @@ fn handle_breakpoint(
 
 	match action {
 		ContinueKind::Continue => DebuggerAction::None,
-		ContinueKind::StepOver => DebuggerAction::StepOver {
-			target: ExecutionContextRef::new(ctx),
-		},
+		ContinueKind::StepOver => {
+			DebuggerAction::StepOver {
+				target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
+			}
+		}
 	}
 }
 
@@ -151,6 +162,9 @@ extern "C" fn handle_instruction(
 		}
 	});
 
+	let opcode_ptr = unsafe { (*ctx).bytecode.add((*ctx).bytecode_offset as usize) };
+	let opcode = unsafe { *opcode_ptr };
+
 	// This lets us ignore any actual breakpoints we hit if we've already paused for another reason
 	let mut did_breakpoint = false;
 
@@ -163,19 +177,26 @@ extern "C" fn handle_instruction(
 				did_breakpoint = true;
 			}
 
+			DebuggerAction::BreakOnNext => {
+				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Breakpoint);
+				did_breakpoint = true;
+			}
+
+			// StepOver breaks on either of the following conditions:
+			// 1) The target context has disappeared - this means it has returned or runtimed (TODO: not do this for runtimes)
+			// 2) We're inside the target context and on a DbgLine instruction
 			DebuggerAction::StepOver { target } => {
 				// If we're in the context, break!
-				if ctx == target.get() {
-					CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
-					did_breakpoint = true;
+				if opcode == (OpCode::DbgLine as u32) && target.is((*ctx).proc_instance) {
+					CURRENT_ACTION = DebuggerAction::BreakOnNext;
 				} else {
 					// If the context isn't in any stacks, it has just returned. Break!
 					let context_in_stack = {
-						let mut current = *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
+						let mut current = ctx;
 						let mut found = false;
 
 						while !current.is_null() {
-							if current == target.get() {
+							if target.is((*ctx).proc_instance) {
 								found = true;
 								break;
 							}
@@ -197,7 +218,7 @@ extern "C" fn handle_instruction(
 							let mut current = (*instance).context;
 
 							while !current.is_null() {
-								if current == target.get() {
+								if target.is((*current).proc_instance) {
 									found = true;
 									break 'outer;
 								}
@@ -217,10 +238,6 @@ extern "C" fn handle_instruction(
 			}
 		}
 	}
-
-	let opcode_ptr = unsafe { (*ctx).bytecode.add((*ctx).bytecode_offset as usize) };
-
-	let opcode = unsafe { *opcode_ptr };
 
 	if opcode == DebugBreakOpCode {
 		// We don't want to break twice when stepping on to a breakpoint
@@ -324,6 +341,8 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 	let mut map = ORIGINAL_BYTECODE.lock().unwrap();
 	if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
 		unsafe {
+			// TODO: This check could fail once we add in runtime catching
+			// The solution is to just remove the replace if it is for this instruction
 			assert_eq!(DEFERRED_INSTRUCTION_REPLACE.borrow().as_ref(), None);
 			std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
 		}

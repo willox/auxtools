@@ -26,7 +26,7 @@ pub use callback::Callback;
 pub use context::DMContext;
 pub use debug::CallStacks;
 pub use disassembler::{
-	opcodes::{DebugBreakOpCode, DebugBreakOperand},
+	opcodes::{DebugBreakOpCode, DebugBreakOperand, OpCode},
 	Instruction,
 };
 pub use dm_impl::{hook, init, shutdown};

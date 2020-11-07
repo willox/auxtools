@@ -28,15 +28,3 @@ fn enable_debugging(port: Value) {
 
 	Ok(Value::from(true))
 }
-
-#[hook("/proc/install_instruction")]
-fn hello_proc_hook() {
-	let stacks = CallStacks::new(ctx);
-	let _proc = Proc::find("/proc/test").unwrap();
-
-	println!("{:?}", stacks.active[0].line_number);
-
-	//hook_instruction(&proc, 11).unwrap();
-
-	Ok(Value::from(true))
-}

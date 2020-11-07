@@ -22,13 +22,13 @@ pub struct ProcEntry {
 #[repr(C)]
 pub struct ProcInstance {
 	pub proc: ProcId,
-	unk_0: u32,
+	pub flags: u8,
 	pub usr: values::Value,
 	pub src: values::Value,
 	pub context: *mut ExecutionContext,
 	argslist_idx: values::ValueData,
 	unk_1: u32,
-	unk_2: u32,
+	pub mega_hack: u32,
 	pub args_count: u32,
 	pub args: *mut values::Value,
 	unk_3: [u8; 0x58],
