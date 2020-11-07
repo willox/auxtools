@@ -15,49 +15,45 @@ use dm::*;
 // Server = main-thread code
 // ServerThread = networking-thread code
 //
-// We've got a few channels going on between Server/ServerThread
+// We've got a couple channels going on between Server/ServerThread
+// connection: a TcpStream sent from the ServerThread for the Server to send responses on
 // requests: requests from the debug-client for the Server to handle
-// responses: responses from the Server for the debug-client
-// notifications: similar to responses, but separated because requests/responses are expected to be in-order by the client.
 //
 // TODO: shutdown logic
 //
 
 pub struct Server {
+	connection: mpsc::Receiver<TcpStream>,
 	requests: mpsc::Receiver<Request>,
-	responses: mpsc::Sender<Response>,
-	notifications: mpsc::Sender<Response>,
 	stacks: Option<CallStacks>,
+	stream: Option<TcpStream>,
 	_thread: JoinHandle<()>,
 }
 
 pub struct ServerThread {
+	connection: mpsc::Sender<TcpStream>,
 	requests: mpsc::Sender<Request>,
-	responses: mpsc::Receiver<Response>,
-	notifications: mpsc::Receiver<Response>,
 	listener: TcpListener,
 	stream: Option<TcpStream>,
 }
 
 impl Server {
 	pub fn new(addr: &SocketAddr) -> std::io::Result<Server> {
+		let (connection_sender, cnonection_receiver) = mpsc::channel();
 		let (requests_sender, requests_receiver) = mpsc::channel();
-		let (responses_sender, responses_receiver) = mpsc::channel();
-		let (notifications_sender, notifications_receiver) = mpsc::channel();
 
 		let thread = ServerThread {
+			connection: connection_sender,
 			requests: requests_sender,
-			responses: responses_receiver,
-			notifications: notifications_receiver,
 			listener: TcpListener::bind(addr)?,
 			stream: None,
 		};
 
 		Ok(Server {
+			connection: cnonection_receiver,
 			requests: requests_receiver,
-			responses: responses_sender,
-			notifications: notifications_sender,
 			stacks: None,
+			stream: None,
 			_thread: thread.start_thread(),
 		})
 	}
@@ -103,28 +99,22 @@ impl Server {
 				match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
 					Some(proc) => match hook_instruction(&proc, instruction.offset) {
 						Ok(()) => {
-							self.responses
-								.send(Response::BreakpointSet {
-									result: BreakpointSetResult::Success { line },
-								})
-								.unwrap();
+							self.send(Response::BreakpointSet {
+								result: BreakpointSetResult::Success { line },
+							});
 						}
 
 						Err(_) => {
-							self.responses
-								.send(Response::BreakpointSet {
-									result: BreakpointSetResult::Failed,
-								})
-								.unwrap();
+							self.send(Response::BreakpointSet {
+								result: BreakpointSetResult::Failed,
+							});
 						}
 					},
 
 					None => {
-						self.responses
-							.send(Response::BreakpointSet {
-								result: BreakpointSetResult::Failed,
-							})
-							.unwrap();
+						self.send(Response::BreakpointSet {
+							result: BreakpointSetResult::Failed,
+						});
 					}
 				}
 			}
@@ -133,32 +123,24 @@ impl Server {
 				match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
 					Some(proc) => match unhook_instruction(&proc, instruction.offset) {
 						Ok(()) => {
-							self.responses
-								.send(Response::BreakpointUnset { success: true })
-								.unwrap();
+							self.send(Response::BreakpointUnset { success: true });
 						}
 
 						Err(_) => {
-							self.responses
-								.send(Response::BreakpointUnset { success: false })
-								.unwrap();
+							self.send(Response::BreakpointUnset { success: false });
 						}
 					},
 
 					None => {
-						self.responses
-							.send(Response::BreakpointUnset { success: false })
-							.unwrap();
+						self.send(Response::BreakpointUnset { success: false });
 					}
 				}
 			}
 
 			Request::LineNumber { proc, offset } => {
-				let response = Response::LineNumber {
+				self.send(Response::LineNumber {
 					line: self.get_line_number(proc, offset),
-				};
-
-				self.responses.send(response);
+				});
 			}
 
 			Request::Offset { proc, line } => {
@@ -182,13 +164,11 @@ impl Server {
 							}
 						}
 
-						self.responses.send(Response::Offset { offset }).unwrap();
+						self.send(Response::Offset { offset });
 					}
 
 					None => {
-						self.responses
-							.send(Response::Offset { offset: None })
-							.unwrap();
+						self.send(Response::Offset { offset: None });
 					}
 				}
 			}
@@ -230,21 +210,17 @@ impl Server {
 							});
 						}
 
-						self.responses
-							.send(Response::StackFrames {
-								frames,
-								total_count: stack.len() as u32,
-							})
-							.unwrap();
+						self.send(Response::StackFrames {
+							frames,
+							total_count: stack.len() as u32,
+						});
 					}
 
 					None => {
-						self.responses
-							.send(Response::StackFrames {
-								frames: vec![],
-								total_count: 0,
-							})
-							.unwrap();
+						self.send(Response::StackFrames {
+							frames: vec![],
+							total_count: 0,
+						});
 					}
 				}
 			}
@@ -267,9 +243,7 @@ impl Server {
 		_ctx: *mut raw_types::procs::ExecutionContext,
 		reason: BreakpointReason,
 	) -> ContinueKind {
-		self.notifications
-			.send(Response::BreakpointHit { reason })
-			.unwrap();
+		self.send(Response::BreakpointHit { reason });
 
 		// Cache these now so nothing else has to fetch them
 		self.stacks = Some(CallStacks::new(&DMContext {}));
@@ -291,6 +265,10 @@ impl Server {
 
 	// returns true if we need to pause
 	pub fn process(&mut self) -> bool {
+		while let Ok(stream) = self.connection.try_recv() {
+			self.stream = Some(stream);
+		}
+
 		let mut should_pause = false;
 
 		while let Ok(request) = self.requests.try_recv() {
@@ -299,6 +277,15 @@ impl Server {
 
 		should_pause
 	}
+
+	fn send(&mut self, response: Response) {
+		let mut message = serde_json::to_vec(&response).unwrap();
+		message.push(0); // null-terminator
+		let stream = self.stream.as_mut().unwrap();
+		stream.write_all(&message[..]).unwrap();
+		stream.flush().unwrap();
+	}
+
 }
 
 impl ServerThread {
@@ -307,7 +294,6 @@ impl ServerThread {
 			for incoming in self.listener.incoming() {
 				match incoming {
 					Ok(stream) => {
-						stream.set_nonblocking(true).unwrap();
 						self.stream = Some(stream);
 						self.run();
 						return;
@@ -321,16 +307,6 @@ impl ServerThread {
 		})
 	}
 
-	fn send(&mut self, response: Response) {
-		let mut message = serde_json::to_vec(&response).unwrap();
-		message.push(0); // null-terminator
-		self.stream
-			.as_mut()
-			.unwrap()
-			.write_all(&message[..])
-			.unwrap();
-	}
-
 	fn handle_message(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
 		let request = serde_json::from_slice::<Request>(data)?;
 		self.requests.send(request)?;
@@ -338,21 +314,19 @@ impl ServerThread {
 	}
 
 	fn run(mut self) {
+		self.connection.send(self.stream.as_mut().unwrap().try_clone().unwrap()).unwrap();
+
 		let mut buf = [0u8; 4096];
 		let mut queued_data = vec![];
 
 		// The incoming stream is JSON objects separated by null terminators.
 		loop {
-			let mut got_data = false;
 			match self.stream.as_mut().unwrap().read(&mut buf) {
 				Ok(0) => (),
 				Ok(n) => {
 					queued_data.extend_from_slice(&buf[..n]);
-					got_data = true;
 				}
 
-				// This is a crutch
-				Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
 				Err(_) => panic!("Handle me!"),
 			}
 
@@ -368,15 +342,6 @@ impl ServerThread {
 			// Clear any finished messages from the buffer
 			if let Some(idx) = queued_data.iter().rposition(|x| *x == 0) {
 				queued_data.drain(..idx);
-			}
-
-			// Send any responses to the client
-			while let Ok(response) = self.responses.try_recv() {
-				self.send(response);
-			}
-
-			while let Ok(response) = self.notifications.try_recv() {
-				self.send(response);
 			}
 		}
 	}
