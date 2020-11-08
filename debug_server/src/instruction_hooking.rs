@@ -77,13 +77,11 @@ impl ProcInstanceRef {
 			PTR_REF_ID += 1;
 			(*ptr).mega_hack = PTR_REF_ID;
 			Self(PTR_REF_ID)
-		}		
+		}
 	}
 
 	fn is(&self, ptr: *mut raw_types::procs::ProcInstance) -> bool {
-		unsafe {
-			self.0 == (*ptr).mega_hack
-		}		
+		unsafe { self.0 == (*ptr).mega_hack }
 	}
 }
 
@@ -128,16 +126,12 @@ fn handle_breakpoint(
 
 	match action {
 		ContinueKind::Continue => DebuggerAction::None,
-		ContinueKind::StepOver => {
-			DebuggerAction::StepOver {
-				target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
-			}
-		}
-		ContinueKind::StepInto => {
-			DebuggerAction::StepInto {
-				parent: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
-			}
-		}
+		ContinueKind::StepOver => DebuggerAction::StepOver {
+			target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
+		},
+		ContinueKind::StepInto => DebuggerAction::StepInto {
+			parent: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
+		},
 		ContinueKind::StepOut => {
 			unsafe {
 				// Just continue the code if we've got no parent
@@ -155,7 +149,10 @@ fn handle_breakpoint(
 	}
 }
 
-fn proc_instance_is_in_stack(mut ctx: *mut raw_types::procs::ExecutionContext, proc_ref: ProcInstanceRef) -> bool {
+fn proc_instance_is_in_stack(
+	mut ctx: *mut raw_types::procs::ExecutionContext,
+	proc_ref: ProcInstanceRef,
+) -> bool {
 	unsafe {
 		let mut found = false;
 
@@ -247,7 +244,9 @@ extern "C" fn handle_instruction(
 				} else {
 					// If the context isn't in any stacks, it has just returned. Break!
 					// TODO: Don't break if the context's stack is gone (returned to C)
-					if !proc_instance_is_in_stack(ctx, target) && !proc_instance_is_suspended(target) {
+					if !proc_instance_is_in_stack(ctx, target)
+						&& !proc_instance_is_suspended(target)
+					{
 						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 						did_breakpoint = true;
 					}

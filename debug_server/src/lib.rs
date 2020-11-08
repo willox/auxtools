@@ -19,8 +19,8 @@ fn enable_debugging(port: Value) {
 		IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
 		port.as_number()? as u16,
 	);
-	let server =
-		server::Server::listen(&addr).map_err(|e| runtime!("Couldn't create debug server {:?}", e))?;
+	let server = server::Server::listen(&addr)
+		.map_err(|e| runtime!("Couldn't create debug server {:?}", e))?;
 
 	DEBUG_SERVER.with(|x| {
 		x.replace(Some(server));

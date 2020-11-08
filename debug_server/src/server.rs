@@ -1,8 +1,8 @@
 use super::instruction_hooking::{hook_instruction, unhook_instruction};
+use std::error::Error;
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::thread;
-use std::{error::Error};
 use std::{
 	net::{SocketAddr, TcpListener, TcpStream},
 	thread::JoinHandle,
@@ -19,7 +19,7 @@ use dm::*;
 // connection: a TcpStream sent from the ServerThread for the Server to send responses on
 // requests: requests from the debug-client for the Server to handle
 //
-// TODO: shutdown logic
+// Limitations: only ever accepts one connection & doesn't fully stop processing once that connection dies
 //
 
 pub struct Server {
@@ -87,6 +87,49 @@ impl Server {
 
 			None => None,
 		}
+	}
+
+	fn value_to_variable(name: String, value: &Value) -> Result<Variable, Runtime> {
+		Ok(Variable {
+			name,
+			kind: "TODO".to_owned(),
+			value: format!("{:?}", value),
+			variables: None,
+		})
+	}
+
+	fn value_to_variables(value: &Value) -> Result<Vec<Variable>, Runtime> {
+		let mut variables = vec![];
+
+		/*
+		let vars = value.get_list("vars")?;
+		for i in 1..=vars.len() {
+			let name = vars.get(i)?.as_string()?;
+			let value = value.get(name.as_str())?;
+			variables.push(Self::value_to_variable(name, &value)?);
+		}
+		*/
+
+		let vars = unsafe {
+			if value.value.tag == raw_types::values::ValueTag::World && value.value.data.id == 1 {
+				Value::new(
+					raw_types::values::ValueTag::GlobalVars,
+					raw_types::values::ValueData { id: 0 },
+				)
+			} else {
+				value.get("vars")?
+			}
+		};
+
+		let vars = List::from_value(&vars)?;
+
+		for i in 1..=vars.len() {
+			let name = vars.get(i)?.as_string()?;
+			let value = value.get(name.as_str())?;
+			variables.push(Self::value_to_variable(name, &value)?);
+		}
+
+		Ok(variables)
 	}
 
 	// returns true if we need to break
@@ -217,12 +260,95 @@ impl Server {
 					}
 
 					None => {
+						eprintln!("Debug server received StackFrames request when not paused");
 						Response::StackFrames {
 							frames: vec![],
 							total_count: 0,
 						}
 					}
 				});
+			}
+
+			Request::Scopes { frame_id } => self.send_or_disconnect(match &self.stacks {
+				Some(stacks) => match stacks.active.get(frame_id as usize) {
+					Some(frame) => {
+						let mut arguments = None;
+						let mut locals = None;
+
+						if !frame.args.is_empty() {
+							arguments = Some(VariablesRef::Arguments {
+								frame: frame_id as u16,
+							});
+						}
+
+						if !frame.locals.is_empty() {
+							locals = Some(VariablesRef::Locals {
+								frame: frame_id as u16,
+							});
+						}
+
+						let globals_value = Value::globals();
+						let globals = unsafe {
+							VariablesRef::Internal {
+								tag: globals_value.value.tag as u8,
+								data: globals_value.value.data.id,
+							}
+						};
+
+						Response::Scopes {
+							arguments: arguments,
+							locals: locals,
+							globals: Some(globals),
+						}
+					}
+
+					None => {
+						eprintln!(
+							"Debug server received Scopes request for invalid frame_id ({})",
+							frame_id
+						);
+						Response::Scopes {
+							arguments: None,
+							locals: None,
+							globals: None,
+						}
+					}
+				},
+
+				None => {
+					eprintln!("Debug server received Scopes request when not paused");
+					Response::Scopes {
+						arguments: None,
+						locals: None,
+						globals: None,
+					}
+				}
+			}),
+
+			Request::Variables { vars } => {
+				let response = match vars {
+					VariablesRef::Internal { tag, data } => {
+						let value = unsafe {
+							Value::from_raw(raw_types::values::Value {
+								tag: std::mem::transmute(tag),
+								data: raw_types::values::ValueData { id: data },
+							})
+						};
+
+						match Self::value_to_variables(&value) {
+							Ok(vars) => Response::Variables { vars },
+
+							Err(e) => {
+								eprintln!("Debug server hit a runtime when processing Variables request: {:?}", e);
+								Response::Variables { vars: vec![] }
+							}
+						}
+					}
+
+					_ => Response::Variables { vars: vec![] },
+				};
+
+				self.send_or_disconnect(response);
 			}
 
 			Request::Continue { .. } => {
@@ -290,7 +416,7 @@ impl Server {
 		}
 
 		match self.send(response) {
-			Ok(_) => {},
+			Ok(_) => {}
 			Err(e) => {
 				eprintln!("Debug server failed to send message: {}", e);
 				self.stream = None;
@@ -306,21 +432,18 @@ impl Server {
 		stream.flush()?;
 		Ok(())
 	}
-
 }
 
 impl ServerThread {
 	fn start_thread(mut self) -> JoinHandle<()> {
-		thread::spawn(move || {
-			match self.listener.accept() {
-				Ok((stream, _)) => {
-					self.stream = Some(stream);
-					self.run();
-				}
+		thread::spawn(move || match self.listener.accept() {
+			Ok((stream, _)) => {
+				self.stream = Some(stream);
+				self.run();
+			}
 
-				Err(e) => {
-					println!("Debug server failed to accept connection {}", e);
-				}
+			Err(e) => {
+				println!("Debug server failed to accept connection {}", e);
 			}
 		})
 	}
@@ -332,7 +455,10 @@ impl ServerThread {
 	}
 
 	fn run(mut self) {
-		match self.connection.send(self.stream.as_mut().unwrap().try_clone().unwrap()) {
+		match self
+			.connection
+			.send(self.stream.as_mut().unwrap().try_clone().unwrap())
+		{
 			Ok(_) => {}
 			Err(e) => {
 				eprintln!("Debug server thread failed to pass cloned TcpStream: {}", e);

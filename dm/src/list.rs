@@ -5,8 +5,11 @@ use crate::runtime::ConversionResult;
 use crate::value::Value;
 use std::iter::FromIterator;
 
-fn is_list(tag: ValueTag) -> bool {
-	match tag {
+fn is_list(value: &Value) -> bool {
+	let tag = value.value.tag;
+	let id = unsafe { value.value.data.id };
+
+	match value.value.tag {
 		ValueTag::List
 		| ValueTag::MobVars
 		| ValueTag::ObjVars
@@ -38,8 +41,7 @@ pub struct List {
 #[allow(unused)]
 impl List {
 	pub fn from_value(val: &Value) -> ConversionResult<Self> {
-		let tag = val.value.tag;
-		if !is_list(tag) {
+		if !is_list(val) {
 			return Err(runtime!("attempted to create List from non-list value"));
 		}
 
