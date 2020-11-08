@@ -8,7 +8,7 @@ compile_error!("Auxtools must be compiled for a 32-bit target");
 mod byond_ffi;
 mod callback;
 mod context;
-mod debug;
+pub mod debug;
 mod disassembler;
 mod hooks;
 mod init;
@@ -24,7 +24,6 @@ use init::{get_init_level, set_init_level, InitLevel};
 
 pub use callback::Callback;
 pub use context::DMContext;
-pub use debug::CallStacks;
 pub use disassembler::{
 	opcodes::{OpCode, DEBUG_BREAK_OPCODE, DEBUG_BREAK_OPERAND},
 	Instruction,

@@ -8,9 +8,9 @@ use std::{
 	thread::JoinHandle,
 };
 
-use super::server_types::*;
 use dm::*;
 use dm::raw_types::values::{ValueTag, ValueData};
+use super::server_types::*;
 
 //
 // Server = main-thread code
@@ -26,7 +26,7 @@ use dm::raw_types::values::{ValueTag, ValueData};
 pub struct Server {
 	connection: mpsc::Receiver<TcpStream>,
 	requests: mpsc::Receiver<Request>,
-	stacks: Option<CallStacks>,
+	stacks: Option<debug::CallStacks>,
 	stream: Option<TcpStream>,
 	_thread: JoinHandle<()>,
 }
@@ -162,6 +162,69 @@ impl Server {
 		}
 
 		Ok(variables)
+	}
+
+	fn get_stack_frame(&self, frame_index: u32) -> Option<&debug::StackFrame> {
+		let mut frame_index = frame_index as usize;
+		let stacks = self.stacks.as_ref().unwrap();
+
+		if frame_index < stacks.active.len() {
+			return Some(&stacks.active[frame_index]);
+		}
+
+		frame_index -= stacks.active.len();
+
+		for frame in &stacks.suspended {
+			if frame_index < frame.len() {
+				return Some(&frame[frame_index]);
+			}
+
+			frame_index += frame.len();
+		}
+
+		None
+	}
+
+	fn get_args(&self, frame_index: u32) -> Vec<Variable> {
+		match self.get_stack_frame(frame_index) {
+			Some(frame) => {
+				let mut vars = vec![];
+
+				for (name, local) in &frame.args {
+					let name = match name {
+						Some(name) => String::from(name),
+						None => "<unknown>".to_owned()
+					};
+					vars.push(Self::value_to_variable(name, &local).unwrap());
+				}
+
+				vars
+			}
+
+			None => {
+				eprintln!("Debug server tried to read arguments from invalid frame id: {}", frame_index);
+				vec![]
+			}
+		}
+	}
+
+	fn get_locals(&self, frame_index: u32) -> Vec<Variable> {
+		match self.get_stack_frame(frame_index) {
+			Some(frame) => {
+				let mut vars = vec![];
+
+				for (name, local) in &frame.locals {
+					vars.push(Self::value_to_variable(String::from(name), &local).unwrap());
+				}
+
+				vars
+			}
+
+			None => {
+				eprintln!("Debug server tried to read locals from invalid frame id: {}", frame_index);
+				vec![]
+			}
+		}
 	}
 
 	// returns true if we need to break
@@ -359,6 +422,18 @@ impl Server {
 
 			Request::Variables { vars } => {
 				let response = match vars {
+					VariablesRef::Arguments { frame } => {
+						Response::Variables {
+							vars: self.get_args(frame)
+						}
+					}
+
+					VariablesRef::Locals { frame } => {
+						Response::Variables {
+							vars: self.get_locals(frame)
+						}
+					}
+
 					VariablesRef::Internal { tag, data } => {
 						let value = unsafe {
 							Value::from_raw(raw_types::values::Value {
@@ -376,8 +451,6 @@ impl Server {
 							}
 						}
 					}
-
-					_ => Response::Variables { vars: vec![] },
 				};
 
 				self.send_or_disconnect(response);
@@ -402,7 +475,7 @@ impl Server {
 	) -> ContinueKind {
 		// Cache these now so nothing else has to fetch them
 		// TODO: it'd be cool if all this data was fetched lazily
-		self.stacks = Some(CallStacks::new(&DMContext {}));
+		self.stacks = Some(debug::CallStacks::new(&DMContext {}));
 
 		self.send_or_disconnect(Response::BreakpointHit { reason });
 
