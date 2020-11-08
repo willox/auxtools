@@ -45,6 +45,10 @@ pub enum ValueTag {
 	WorldVars = 0x51,
 	GlobalVars = 0x52,
 
+	Datum = 0x21,
+	SaveFile = 0x23,
+	
+
 	Number = 0x2A,
 	Appearance = 0x3A,
 }

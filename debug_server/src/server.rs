@@ -10,6 +10,7 @@ use std::{
 
 use super::server_types::*;
 use dm::*;
+use dm::raw_types::values::{ValueTag, ValueData};
 
 //
 // Server = main-thread code
@@ -89,40 +90,71 @@ impl Server {
 		}
 	}
 
+	// TODO: Replace this with a check for `value.get("vars") success when multiple runtime catching is fixed
+	fn is_object(value: &Value) -> bool {
+		match value.value.tag {
+			ValueTag::Turf
+			| ValueTag::Obj
+			| ValueTag::Mob
+			| ValueTag::Area
+			| ValueTag::Client
+			| ValueTag::World
+			| ValueTag::Datum
+			| ValueTag::SaveFile => true,
+			_ => false,
+		}
+	}
+
 	fn value_to_variable(name: String, value: &Value) -> Result<Variable, Runtime> {
+		let mut variables = None;
+		let is_list = List::is_list(value);
+		let has_vars = Self::is_object(value);
+
+		if is_list || has_vars {
+			variables = Some(VariablesRef::Internal {
+				tag: value.value.tag as u8,
+				data: unsafe { value.value.data.id },
+			})
+		}
+
 		Ok(Variable {
 			name,
 			kind: "TODO".to_owned(),
 			value: format!("{:?}", value),
-			variables: None,
+			variables,
 		})
 	}
 
 	fn value_to_variables(value: &Value) -> Result<Vec<Variable>, Runtime> {
-		let mut variables = vec![];
+		// Lists are easy (TODO: asssoc)
+		if List::is_list(value) {
+			let mut variables = vec![];
+			let list = List::from_value(value)?;
+			for i in 1..=list.len() {
+				let value = list.get(i)?;
+				variables.push(Self::value_to_variable(format!("[{}]", i), &value)?);
+			}
 
-		/*
-		let vars = value.get_list("vars")?;
-		for i in 1..=vars.len() {
-			let name = vars.get(i)?.as_string()?;
-			let value = value.get(name.as_str())?;
-			variables.push(Self::value_to_variable(name, &value)?);
+			return Ok(variables);
 		}
-		*/
 
-		let vars = unsafe {
-			if value.value.tag == raw_types::values::ValueTag::World && value.value.data.id == 1 {
+		if !Self::is_object(value) {
+			return Ok(vec![]);
+		}
+
+		// Grab `value.vars`. We have a little hack for globals which use a special type.
+		let vars = List::from_value(&unsafe {
+			if value.value.tag == ValueTag::World && value.value.data.id == 1 {
 				Value::new(
-					raw_types::values::ValueTag::GlobalVars,
-					raw_types::values::ValueData { id: 0 },
+					ValueTag::GlobalVars,
+					ValueData { id: 0 },
 				)
 			} else {
 				value.get("vars")?
 			}
-		};
+		})?;
 
-		let vars = List::from_value(&vars)?;
-
+		let mut variables = vec![];
 		for i in 1..=vars.len() {
 			let name = vars.get(i)?.as_string()?;
 			let value = value.get(name.as_str())?;
@@ -277,13 +309,13 @@ impl Server {
 
 						if !frame.args.is_empty() {
 							arguments = Some(VariablesRef::Arguments {
-								frame: frame_id as u16,
+								frame: frame_id,
 							});
 						}
 
 						if !frame.locals.is_empty() {
 							locals = Some(VariablesRef::Locals {
-								frame: frame_id as u16,
+								frame: frame_id,
 							});
 						}
 
@@ -331,7 +363,7 @@ impl Server {
 						let value = unsafe {
 							Value::from_raw(raw_types::values::Value {
 								tag: std::mem::transmute(tag),
-								data: raw_types::values::ValueData { id: data },
+								data: ValueData { id: data },
 							})
 						};
 

@@ -5,33 +5,6 @@ use crate::runtime::ConversionResult;
 use crate::value::Value;
 use std::iter::FromIterator;
 
-fn is_list(value: &Value) -> bool {
-	let tag = value.value.tag;
-	let id = unsafe { value.value.data.id };
-
-	match value.value.tag {
-		ValueTag::List
-		| ValueTag::MobVars
-		| ValueTag::ObjVars
-		| ValueTag::TurfVars
-		| ValueTag::AreaVars
-		| ValueTag::ClientVars
-		| ValueTag::Vars
-		| ValueTag::MobOverlays
-		| ValueTag::MobUnderlays
-		| ValueTag::ObjOverlays
-		| ValueTag::ObjUnderlays
-		| ValueTag::TurfOverlays
-		| ValueTag::TurfUnderlays
-		| ValueTag::AreaOverlays
-		| ValueTag::AreaUnderlays
-		| ValueTag::ImageVars
-		| ValueTag::WorldVars
-		| ValueTag::GlobalVars => true,
-		_ => false,
-	}
-}
-
 /// A wrapper around [Values](struct.Value.html) that make working with lists a little easier
 #[allow(unused)]
 pub struct List {
@@ -41,7 +14,7 @@ pub struct List {
 #[allow(unused)]
 impl List {
 	pub fn from_value(val: &Value) -> ConversionResult<Self> {
-		if !is_list(val) {
+		if !Self::is_list(val) {
 			return Err(runtime!("attempted to create List from non-list value"));
 		}
 
@@ -155,6 +128,30 @@ impl List {
 				1
 			);
 			std::slice::from_raw_parts((*ptr).vector_part as *const _, self.len() as usize).to_vec()
+		}
+	}
+
+	pub fn is_list(value: &Value) -> bool {
+		match value.value.tag {
+			ValueTag::List
+			| ValueTag::MobVars
+			| ValueTag::ObjVars
+			| ValueTag::TurfVars
+			| ValueTag::AreaVars
+			| ValueTag::ClientVars
+			| ValueTag::Vars
+			| ValueTag::MobOverlays
+			| ValueTag::MobUnderlays
+			| ValueTag::ObjOverlays
+			| ValueTag::ObjUnderlays
+			| ValueTag::TurfOverlays
+			| ValueTag::TurfUnderlays
+			| ValueTag::AreaOverlays
+			| ValueTag::AreaUnderlays
+			| ValueTag::ImageVars
+			| ValueTag::WorldVars
+			| ValueTag::GlobalVars => true,
+			_ => false,
 		}
 	}
 }
