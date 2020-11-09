@@ -192,6 +192,27 @@ impl Value {
 		Err(runtime!("External proc call failed"))
 	}
 
+	pub fn to_string(&self) -> ConversionResult<String> {
+		match self.value.tag {
+			raw_types::values::ValueTag::Null |
+			raw_types::values::ValueTag::Number |
+			raw_types::values::ValueTag::String => {
+				return Ok(format!("{}", self.value))
+			}
+
+			_ => {}
+		}
+
+		let mut id = raw_types::strings::StringId(0);
+
+		unsafe {
+			if raw_types::funcs::to_string(&mut id, self.value) != 1 {
+				return Err(runtime!("to_string failed on {:?}", self));
+			}
+			Ok(String::from(string::StringRef::from_id(id)))
+		}
+	}
+
 	/// Creates a Value that references a byond string.
 	/// Will panic if the given string contains null bytes
 	///

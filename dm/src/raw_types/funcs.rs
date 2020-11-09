@@ -33,6 +33,7 @@ extern "C" {
 	pub static mut remove_from_list_byond: *const c_void;
 	pub static mut get_length_byond: *const c_void;
 	pub static mut get_misc_by_id_byond: *const c_void;
+	pub static mut to_string_byond: *const c_void;
 }
 
 // Functions exported by our C++ for Rust to call.
@@ -97,4 +98,5 @@ extern "C" {
 	pub fn remove_from_list(list: values::Value, value: values::Value) -> u8;
 	pub fn get_length(out: *mut u32, value: values::Value) -> u8;
 	pub fn get_misc_by_id(out: *mut *mut misc::Misc, index: misc::MiscId) -> u8;
+	pub fn to_string(out: *mut strings::StringId, value: values::Value) -> u8;
 }

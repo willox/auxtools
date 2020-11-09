@@ -120,7 +120,7 @@ impl Server {
 		Ok(Variable {
 			name,
 			kind: "TODO".to_owned(),
-			value: format!("{:?}", value),
+			value: value.to_string()?,
 			variables,
 		})
 	}
@@ -128,9 +128,19 @@ impl Server {
 	fn value_to_variables(value: &Value) -> Result<Vec<Variable>, Runtime> {
 		// Lists are easy (TODO: asssoc)
 		if List::is_list(value) {
-			let mut variables = vec![];
 			let list = List::from_value(value)?;
-			for i in 1..=list.len() {
+			let len = list.len();
+
+			let mut variables = vec![
+				Variable {
+					name: "len".to_owned(),
+					kind: "TODO".to_owned(),
+					value: format!("{}", len),
+					variables: None,
+				}
+			];
+			
+			for i in 1..=len {
 				let value = list.get(i)?;
 				variables.push(Self::value_to_variable(format!("[{}]", i), &value)?);
 			}
@@ -143,6 +153,7 @@ impl Server {
 		}
 
 		// Grab `value.vars`. We have a little hack for globals which use a special type.
+		// TODO: vars is not always a list
 		let vars = List::from_value(&unsafe {
 			if value.value.tag == ValueTag::World && value.value.data.id == 1 {
 				Value::new(
@@ -211,7 +222,11 @@ impl Server {
 	fn get_locals(&self, frame_index: u32) -> Vec<Variable> {
 		match self.get_stack_frame(frame_index) {
 			Some(frame) => {
-				let mut vars = vec![];
+				let mut vars = vec![
+					Self::value_to_variable(".".to_owned(), &frame.dot).unwrap(),
+					Self::value_to_variable("src".to_owned(), &frame.src).unwrap(),
+					Self::value_to_variable("usr".to_owned(), &frame.usr).unwrap(),
+				];
 
 				for (name, local) in &frame.locals {
 					vars.push(Self::value_to_variable(String::from(name), &local).unwrap());
@@ -368,7 +383,6 @@ impl Server {
 				Some(stacks) => match stacks.active.get(frame_id as usize) {
 					Some(frame) => {
 						let mut arguments = None;
-						let mut locals = None;
 
 						if !frame.args.is_empty() {
 							arguments = Some(VariablesRef::Arguments {
@@ -376,11 +390,10 @@ impl Server {
 							});
 						}
 
-						if !frame.locals.is_empty() {
-							locals = Some(VariablesRef::Locals {
-								frame: frame_id,
-							});
-						}
+						// Never empty because we're putting ./src/usr in here
+						let locals = Some(VariablesRef::Locals {
+							frame: frame_id,
+						});
 
 						let globals_value = Value::globals();
 						let globals = unsafe {
