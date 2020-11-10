@@ -69,6 +69,12 @@ impl Server {
 				let mut reached_offset = false;
 
 				for (instruction_offset, _, instruction) in dism {
+					// If we're in the middle of executing an operand (like call), the offset might be between two instructions
+					if instruction_offset > offset {
+						reached_offset = true;
+						break;
+					}
+
 					if let Instruction::DbgLine(line) = instruction {
 						current_line_number = Some(line);
 					}
