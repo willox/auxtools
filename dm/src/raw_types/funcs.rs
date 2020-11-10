@@ -34,6 +34,7 @@ extern "C" {
 	pub static mut get_length_byond: *const c_void;
 	pub static mut get_misc_by_id_byond: *const c_void;
 	pub static mut to_string_byond: *const c_void;
+	pub static mut runtime_byond: *const c_void;
 }
 
 // Functions exported by our C++ for Rust to call.

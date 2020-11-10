@@ -9,6 +9,7 @@ use dashmap::DashMap;
 use detour::RawDetour;
 use std::cell::RefCell;
 use std::ffi::c_void;
+use std::os::raw::c_char;
 
 #[doc(hidden)]
 pub struct CompileTimeHook {
@@ -28,6 +29,9 @@ extern "C" {
 	static mut call_proc_by_id_original: *const c_void;
 
 	static mut return_value: raw_types::values::Value;
+
+	static mut runtime_original: *const c_void;
+	fn runtime_hook(error: *const c_char);
 
 	fn call_proc_by_id_hook_trampoline(
 		usr: raw_types::values::Value,
@@ -62,6 +66,16 @@ impl std::fmt::Debug for HookFailure {
 
 pub fn init() -> Result<(), String> {
 	unsafe {
+		let runtime_hook = RawDetour::new(
+			raw_types::funcs::runtime_byond as *const (),
+			runtime_hook as *const (),
+		)
+		.unwrap();
+
+		runtime_hook.enable().unwrap();
+		runtime_original = std::mem::transmute(runtime_hook.trampoline());
+		std::mem::forget(runtime_hook);
+
 		let call_hook = RawDetour::new(
 			raw_types::funcs::call_proc_by_id_byond as *const (),
 			call_proc_by_id_hook_trampoline as *const (),

@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "hooks.h"
 
 #ifdef _WIN32
 #define LINUX_REGPARM2
@@ -65,10 +66,12 @@ extern "C" uint8_t call_proc_by_id(
 	uint32_t unk_1,
 	uint32_t unk_2
 ) {
+    RuntimeContext ctx(false);
+
     try {
         *out = call_proc_by_id_byond(usr, proc_type, proc_id, unk_0, src, args, args_count, unk_1, unk_2);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
@@ -84,172 +87,206 @@ extern "C" uint8_t call_datum_proc_by_name(
 	uint32_t unk_0,
 	uint32_t unk_1
 ) {
+    RuntimeContext ctx(false);
+
     try {
         clean(usr);
         clean(src);
         *out = call_datum_proc_by_name_byond(usr, proc_type, proc_name, src, args, args_count, unk_0, unk_1);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t get_proc_array_entry(void** out, uint32_t id) {
+    RuntimeContext ctx(true);
+
     try {
         *out = get_proc_array_entry_byond(id);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t get_string_id(uint32_t* out, const char* data, bool a, bool b, bool c) {
+    RuntimeContext ctx(true);
+
     try {
         *out = get_string_id_byond(data, a, b, c);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t get_variable(Value* out, Value datum, uint32_t string_id) {
+    RuntimeContext ctx(true);
+
     try {
         clean(datum);
         *out = get_variable_byond(datum, string_id);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t set_variable(Value datum, uint32_t string_id, Value value) {
+    RuntimeContext ctx(true);
+
     try {
         clean(datum);
         clean(value);
         set_variable_byond(datum, string_id, value);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }  
 }
 
 extern "C" uint8_t get_string_table_entry(void** out, uint32_t string_id) {
+    RuntimeContext ctx(true);
+
     try {
         *out = get_string_table_entry_byond(string_id);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t inc_ref_count(Value value) {
+    RuntimeContext ctx(true);
+
     try {
         clean(value);
         inc_ref_count_byond(value);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }  
 }
 
 extern "C" uint8_t dec_ref_count(Value value) {
+    RuntimeContext ctx(true);
+
     try {
         clean(value);
         dec_ref_count_byond(value);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }  
 }
 
 extern "C" uint8_t get_list_by_id(void** out, uint32_t list_id) {
+    RuntimeContext ctx(true);
+
     try {
         *out = get_list_by_id_byond(list_id);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t get_assoc_element(Value* out, Value datum, Value index) {
+    RuntimeContext ctx(true);
+
     try {
         clean(datum);
         clean(index);
         *out = get_assoc_element_byond(datum, index);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t set_assoc_element(Value datum, Value index, Value value) {
+    RuntimeContext ctx(true);
+
     try {
         clean(datum);
         clean(index);
         clean(value);
         set_assoc_element_byond(datum, index, value);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t create_list(uint32_t* out, uint32_t reserve_capacity) {
+    RuntimeContext ctx(true);
+
     try {
         *out = create_list_byond(reserve_capacity);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t append_to_list(Value list, Value value) {
+    RuntimeContext ctx(true);
+
     try {
         clean(list);
         clean(value);
         append_to_list_byond(list, value);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t remove_from_list(Value list, Value value) {
+    RuntimeContext ctx(true);
+
     try {
         clean(list);
         clean(value);
         remove_from_list_byond(list, value);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t get_length(uint32_t* out, Value value) {
+    RuntimeContext ctx(true);
+
     try {
         clean(value);
         *out = get_length_byond(value);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t get_misc_by_id(void** out, uint32_t index) {
+    RuntimeContext ctx(true);
+
     try {
         *out = get_misc_by_id_byond(index);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }
 
 extern "C" uint8_t to_string(uint32_t* out, Value value) {
+    RuntimeContext ctx(true);
+
     try {
         clean(value);
         *out = to_string_byond(value);
         return 1;
-    } catch(...) {
+    } catch(AuxtoolsException e) {
         return 0;
     }
 }

@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "hooks.h"
 
 #ifdef _WIN32
 #define LINUX_REGPARM3
@@ -12,15 +13,30 @@ struct Value {
 };
 
 // The type of the func defined in Byond
+using Runtime_Ptr = void(*)(char *pError);
 using CallProcById_Ptr = Value(LINUX_REGPARM3 *)(Value, uint32_t, uint32_t, uint32_t, Value, Value*, uint32_t, uint32_t, uint32_t);
 
 // The type of the hook defined in hooks.rs
 using CallProcById_Hook_Ptr = Value(*)(Value, uint32_t, uint32_t, uint32_t, Value, Value*, uint32_t, uint32_t, uint32_t);
 
-extern "C" Value return_value = Value();
+// The ptr everybody else sees
+extern "C" Runtime_Ptr runtime_byond = nullptr;
 
 // The original function - set by rust after hooking
+extern "C" Runtime_Ptr runtime_original = nullptr;
 extern "C" CallProcById_Ptr call_proc_by_id_original = nullptr;
+
+// If the top of this stack is true, we replace byond's runtime exceptions with our own
+std::stack<bool> runtime_contexts({false});
+
+extern "C" void runtime_hook(char* pError) {
+	if (runtime_contexts.top()) {
+		throw AuxtoolsException(pError);
+		return;
+	}
+
+	return runtime_original(pError);
+}
 
 extern "C" uint8_t call_proc_by_id_hook(
 		Value usr,
@@ -33,6 +49,9 @@ extern "C" uint8_t call_proc_by_id_hook(
 	uint32_t unk_1,
 	uint32_t unk_2);
 
+
+// TODO: move to stack & clean
+extern "C" Value return_value = Value();
 // A little function to handle the odd calling convention on Linux and pass-through to our rust hook
 // Used on Windows too
 extern "C" Value LINUX_REGPARM3 call_proc_by_id_hook_trampoline(
