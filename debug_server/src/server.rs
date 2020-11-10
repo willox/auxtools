@@ -90,27 +90,19 @@ impl Server {
 		}
 	}
 
-	// TODO: Replace this with a check for `value.get("vars") success when multiple runtime catching is fixed
 	fn is_object(value: &Value) -> bool {
-		match value.value.tag {
-			ValueTag::Turf
-			| ValueTag::Obj
-			| ValueTag::Mob
-			| ValueTag::Area
-			| ValueTag::Client
-			| ValueTag::World
-			| ValueTag::Datum
-			| ValueTag::SaveFile => true,
-			_ => false,
+		// Hack for globals
+		if value.value.tag == ValueTag::World && unsafe { value.value.data.id == 1 } {
+			return true;
 		}
+
+		value.get("vars").is_ok()
 	}
 
 	fn value_to_variable(name: String, value: &Value) -> Result<Variable, Runtime> {
 		let mut variables = None;
-		let is_list = List::is_list(value);
-		let has_vars = Self::is_object(value);
 
-		if is_list || has_vars {
+		if List::is_list(value) || Self::is_object(value) {
 			variables = Some(VariablesRef::Internal {
 				tag: value.value.tag as u8,
 				data: unsafe { value.value.data.id },
