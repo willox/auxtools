@@ -55,6 +55,7 @@ extern "C" Value LINUX_REGPARM3 call_proc_by_id_hook_trampoline(
 	Value ret;
 
 	if (call_proc_by_id_hook(&ret, usr, proc_type, proc_id, unk_0, src, args, args_count, unk_1, unk_2)) {
+		clean(ret);
 		return ret;
 	} else {
 		return call_proc_by_id_original(usr, proc_type, proc_id, unk_0, src, args, args_count, unk_1, unk_2);
