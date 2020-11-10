@@ -347,6 +347,7 @@ impl Server {
 							};
 
 							frames.push(StackFrame {
+								id: i as u32,
 								instruction: InstructionRef {
 									proc: proc_ref.clone(),
 									offset: stack[i].offset as u32,
