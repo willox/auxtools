@@ -1,23 +1,6 @@
 #include <stdint.h>
 #include "hooks.h"
 
-#ifdef _WIN32
-#define LINUX_REGPARM2
-#define LINUX_REGPARM3
-#else
-#define LINUX_REGPARM2 __attribute__((regparm(2)))
-#define LINUX_REGPARM3 __attribute__((regparm(3)))
-#endif
-
-struct Value {
-	uint32_t type;
-	uint32_t value;
-};
-
-static void clean(Value& val) {
-    val.type &= 0xFF;
-}
-
 //
 // BYOND likes to use C++ exceptions for some stuff (like runtimes) - Rust can't catch them and code will just unroll back to before our hooks
 // We use these wrappers to hackily handle that and let Rust know an exception happened instead of letting it propogate

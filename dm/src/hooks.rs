@@ -28,8 +28,6 @@ inventory::collect!(CompileTimeHook);
 extern "C" {
 	static mut call_proc_by_id_original: *const c_void;
 
-	static mut return_value: raw_types::values::Value;
-
 	static mut runtime_original: *const c_void;
 	fn runtime_hook(error: *const c_char);
 
@@ -129,6 +127,7 @@ impl Proc {
 
 #[no_mangle]
 extern "C" fn call_proc_by_id_hook(
+	ret: *mut raw_types::values::Value,
 	usr_raw: raw_types::values::Value,
 	_proc_type: u32,
 	proc_id: raw_types::procs::ProcId,
@@ -180,7 +179,7 @@ extern "C" fn call_proc_by_id_hook(
 	}) {
 		Some(result) => {
 			unsafe {
-				return_value = result;
+				*ret = result;
 			}
 			1
 		}
