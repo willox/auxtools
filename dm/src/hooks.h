@@ -20,13 +20,9 @@ static void clean(Value& val) {
 }
 
 struct AuxtoolsException {
-    AuxtoolsException(const char* pMessage) {
-        if (pMessage != nullptr) {
-            message = pMessage;
-        } else {
-            message = "<null>";
-        }
-    }
+    AuxtoolsException(const char* pMessage)
+        : message(pMessage)
+    {}
 
     std::string message;
 };

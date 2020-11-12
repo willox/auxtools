@@ -121,6 +121,9 @@ fn handle_breakpoint(
 ) -> DebuggerAction {
 	let action = DEBUG_SERVER.with(|x| {
 		let mut server = x.borrow_mut();
+		if server.is_none() {
+			return ContinueKind::Continue;
+		}
 		server.as_mut().unwrap().handle_breakpoint(ctx, reason)
 	});
 
@@ -186,6 +189,14 @@ fn proc_instance_is_suspended(proc_ref: ProcInstanceRef) -> bool {
 		}
 
 		found
+	}
+}
+
+#[runtime_handler]
+fn handle_runtime(error: &str) {
+	unsafe {
+		let ctx = *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
+		CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Runtime(error.to_string()));
 	}
 }
 

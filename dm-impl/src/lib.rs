@@ -90,6 +90,26 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn runtime_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
+	let func = syn::parse_macro_input!(item as syn::ItemFn);
+	let func_name = &func.sig.ident;
+
+	let inventory_define = quote! {
+		dm::inventory::submit!(
+			#![crate = dm]
+			dm::RuntimeHook(#func_name)
+		);
+	};
+
+	let code = quote! {
+		#func
+		#inventory_define
+	};
+
+	code.into()
+}
+
+#[proc_macro_attribute]
 pub fn shutdown(_: TokenStream, item: TokenStream) -> TokenStream {
 	let func = syn::parse_macro_input!(item as syn::ItemFn);
 	let func_name = &func.sig.ident;

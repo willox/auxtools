@@ -18,12 +18,16 @@ extern "C" CallProcById_Ptr call_proc_by_id_original = nullptr;
 // If the top of this stack is true, we replace byond's runtime exceptions with our own
 std::stack<bool> runtime_contexts({false});
 
+extern "C" void on_runtime(const char* pError);
+
 extern "C" void runtime_hook(char* pError) {
+	const char* pErrorCorrected = (pError != nullptr) ? pError : "<null>";
 	if (runtime_contexts.top()) {
-		throw AuxtoolsException(pError);
+		throw AuxtoolsException(pErrorCorrected);
 		return;
 	}
 
+	on_runtime(pErrorCorrected);
 	return runtime_original(pError);
 }
 

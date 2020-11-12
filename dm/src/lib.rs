@@ -28,8 +28,8 @@ pub use disassembler::{
 	opcodes::{OpCode, DEBUG_BREAK_OPCODE, DEBUG_BREAK_OPERAND},
 	Instruction,
 };
-pub use dm_impl::{hook, init, shutdown};
-pub use hooks::CompileTimeHook;
+pub use dm_impl::{hook, runtime_handler, init, shutdown};
+pub use hooks::{CompileTimeHook, RuntimeHook};
 pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
 pub use list::List;
 pub use proc::Proc;

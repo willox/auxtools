@@ -7,7 +7,7 @@ use crate::runtime::DMResult;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use detour::RawDetour;
-use std::cell::RefCell;
+use std::{ffi::CStr, cell::RefCell};
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
@@ -24,6 +24,11 @@ impl CompileTimeHook {
 }
 
 inventory::collect!(CompileTimeHook);
+
+// TODO: This is super deceptively named
+#[doc(hidden)]
+pub struct RuntimeHook(pub fn(&str));
+inventory::collect!(RuntimeHook);
 
 extern "C" {
 	static mut call_proc_by_id_original: *const c_void;
@@ -122,6 +127,15 @@ impl Proc {
 	#[allow(unused)]
 	pub fn hook(&self, func: ProcHook) -> Result<(), HookFailure> {
 		hook_by_id(self.id, func)
+	}
+}
+
+#[no_mangle]
+extern "C" fn on_runtime(error: *const c_char) {
+	let str = unsafe { CStr::from_ptr(error) }.to_string_lossy();
+
+	for func in inventory::iter::<RuntimeHook> {
+		func.0(&str);
 	}
 }
 
