@@ -152,9 +152,11 @@ dependencies = [
  "detour",
  "dm-impl",
  "inventory",
+ "lazy_static",
  "msgbox",
  "once_cell",
  "sigscan",
+ "winapi 0.3.9",
 ]
 
 [[package]]

@@ -3,20 +3,18 @@ use crate::runtime;
 use crate::value::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::mpsc;
 
 use crate as dm;
-
-use lazy_static::lazy_static;
-
-lazy_static! {
-	static ref READY_CALLBACKS: Mutex<Vec<FinishedCallback>> = Mutex::new(Vec::new());
-	static ref DROPPED_CALLBACKS: Mutex<Vec<CallbackId>> = Mutex::new(Vec::new());
+enum CallbackMessage {
+	Invoke(CallbackInvocation),
+	Drop(CallbackId),
 }
 
 static mut NEXT_CALLBACK_ID: CallbackId = CallbackId { 0: 0 };
 thread_local! {
 	static CALLBACKS: RefCell<HashMap<CallbackId, Callback>> = RefCell::new(HashMap::new());
+	static INVOCATION_CHANNEL: (mpsc::Sender<CallbackMessage>, mpsc::Receiver<CallbackMessage>) = mpsc::channel();
 }
 
 /// # Callbacks
@@ -54,7 +52,7 @@ pub struct Callback {
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 struct CallbackId(u64);
 
-struct FinishedCallback {
+struct CallbackInvocation {
 	id: CallbackId,
 	closure: Box<dyn Fn() -> Vec<Value> + Send + Sync>,
 }
@@ -62,11 +60,14 @@ struct FinishedCallback {
 /// Invoke callbacks using this.
 pub struct CallbackHandle {
 	id: CallbackId,
+	invoke_channel: mpsc::Sender<CallbackMessage>,
 }
 
 impl Drop for CallbackHandle {
 	fn drop(&mut self) {
-		DROPPED_CALLBACKS.lock().unwrap().push(self.id);
+		self.invoke_channel
+			.send(CallbackMessage::Drop(self.id))
+			.unwrap();
 	}
 }
 
@@ -77,11 +78,13 @@ impl CallbackHandle {
 		F: 'static,
 		F: Fn() -> Vec<Value> + Send + Sync,
 	{
-		let finished = FinishedCallback {
+		let finished = CallbackInvocation {
 			id: self.id,
 			closure: Box::new(closure),
 		};
-		READY_CALLBACKS.lock().unwrap().push(finished);
+		self.invoke_channel
+			.send(CallbackMessage::Invoke(finished))
+			.unwrap();
 	}
 }
 
@@ -98,9 +101,12 @@ impl Callback {
 				.insert(unsafe { NEXT_CALLBACK_ID }, Self { dm_callback: cb })
 		});
 
-		let handle = CallbackHandle {
-			id: unsafe { NEXT_CALLBACK_ID },
-		};
+		let handle = INVOCATION_CHANNEL.with(|c| {
+			CallbackHandle {
+				id: unsafe { NEXT_CALLBACK_ID },
+				invoke_channel: c.0.clone(), // Clone the sender part.
+			}
+		});
 
 		unsafe { NEXT_CALLBACK_ID.0 += 1 };
 
@@ -110,24 +116,25 @@ impl Callback {
 
 #[hook("/proc/_process_callbacks")]
 fn process_callbacks() {
-	let mut ready_cbs = READY_CALLBACKS.lock().unwrap();
-	let mut dropped_cbs = DROPPED_CALLBACKS.lock().unwrap();
 	CALLBACKS.with(|h| {
 		let mut cbs = h.borrow_mut();
 
-		// We don't care if a callback runtimes.
-		#[allow(unused_must_use)]
-		for cb in ready_cbs.iter() {
-			let args = (cb.closure)();
-			let cb_val = cbs.get(&cb.id).unwrap();
-			cb_val.dm_callback.call("Invoke", &args[..]);
-		}
-		ready_cbs.clear();
-
-		for dropped in dropped_cbs.iter() {
-			cbs.remove(dropped);
-		}
-		dropped_cbs.clear();
+		INVOCATION_CHANNEL.with(|c| loop {
+			match c.1.try_recv() {
+				Ok(msg) => match msg {
+					#[allow(unused_must_use)]
+					CallbackMessage::Invoke(cb) => {
+						let args = (cb.closure)();
+						let cb_val = cbs.get(&cb.id).unwrap();
+						cb_val.dm_callback.call("Invoke", &args[..]);
+					}
+					CallbackMessage::Drop(id) => {
+						cbs.remove(&id).unwrap();
+					}
+				},
+				Err(_) => break, // There are no messages for us to process
+			}
+		});
 	});
 	Ok(Value::null())
 }
