@@ -19,7 +19,7 @@ mod value;
 
 use init::{get_init_level, set_init_level, RequiredInitLevel};
 
-pub use callback::Callback;
+pub use callback::{Callback, CallbackHandle};
 pub use context::DMContext;
 pub use dm_impl::hook;
 pub use hooks::CompileTimeHook;
