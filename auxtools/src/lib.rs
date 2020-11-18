@@ -3,15 +3,12 @@
 use dm::*;
 
 #[hook("/proc/hooked")]
-fn hello_proc_hook() {
-	let obj = &args[0];
-	let vars = obj.get_list("vars")?;
-
-	let var_names: Vec<String> = vars
-		.to_vec()
-		.iter()
-		.map(|v| v.as_string().unwrap_or("".to_owned()))
-		.collect();
+fn hello_proc_hook(cb: Value) {
+	let cb = Callback::new(cb).unwrap();
+	std::thread::spawn(move || {
+		std::thread::sleep(std::time::Duration::from_secs(1));
+		cb.invoke(|| vec![Value::from(1337)]);
+	});
 
 	Ok(Value::null())
 }

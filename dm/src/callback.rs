@@ -3,9 +3,12 @@ use crate::runtime;
 use crate::value::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::mpsc;
 
 use crate as dm;
+extern crate flume;
+extern crate lazy_static;
+use lazy_static::lazy_static;
+
 enum CallbackMessage {
 	Invoke(CallbackInvocation),
 	Drop(CallbackId),
@@ -14,7 +17,13 @@ enum CallbackMessage {
 static mut NEXT_CALLBACK_ID: CallbackId = CallbackId { 0: 0 };
 thread_local! {
 	static CALLBACKS: RefCell<HashMap<CallbackId, Callback>> = RefCell::new(HashMap::new());
-	static INVOCATION_CHANNEL: (mpsc::Sender<CallbackMessage>, mpsc::Receiver<CallbackMessage>) = mpsc::channel();
+}
+
+lazy_static! {
+	static ref INVOCATION_CHANNEL: (
+		flume::Sender<CallbackMessage>,
+		flume::Receiver<CallbackMessage>
+	) = flume::unbounded();
 }
 
 /// # Callbacks
@@ -44,7 +53,7 @@ thread_local! {
 /// 	Ok(Value::null())
 ///}
 /// ```
-#[derive(Clone)]
+
 pub struct Callback {
 	dm_callback: Value,
 }
@@ -60,7 +69,7 @@ struct CallbackInvocation {
 /// Invoke callbacks using this.
 pub struct CallbackHandle {
 	id: CallbackId,
-	invoke_channel: mpsc::Sender<CallbackMessage>,
+	invoke_channel: flume::Sender<CallbackMessage>,
 }
 
 impl Drop for CallbackHandle {
@@ -101,12 +110,10 @@ impl Callback {
 				.insert(unsafe { NEXT_CALLBACK_ID }, Self { dm_callback: cb })
 		});
 
-		let handle = INVOCATION_CHANNEL.with(|c| {
-			CallbackHandle {
-				id: unsafe { NEXT_CALLBACK_ID },
-				invoke_channel: c.0.clone(), // Clone the sender part.
-			}
-		});
+		let handle = CallbackHandle {
+			id: unsafe { NEXT_CALLBACK_ID },
+			invoke_channel: INVOCATION_CHANNEL.0.clone(), // Clone the sender part.
+		};
 
 		unsafe { NEXT_CALLBACK_ID.0 += 1 };
 
@@ -119,8 +126,8 @@ fn process_callbacks() {
 	CALLBACKS.with(|h| {
 		let mut cbs = h.borrow_mut();
 
-		INVOCATION_CHANNEL.with(|c| loop {
-			match c.1.try_recv() {
+		loop {
+			match INVOCATION_CHANNEL.1.try_recv() {
 				Ok(msg) => match msg {
 					#[allow(unused_must_use)]
 					CallbackMessage::Invoke(cb) => {
@@ -134,7 +141,7 @@ fn process_callbacks() {
 				},
 				Err(_) => break, // There are no messages for us to process
 			}
-		});
+		}
 	});
 	Ok(Value::null())
 }
