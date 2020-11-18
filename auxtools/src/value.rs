@@ -52,6 +52,17 @@ impl Value {
 		}
 	}
 
+	/// Equivalent to DM's `world`.
+	pub fn world() -> Value {
+		Value {
+			value: raw_types::values::Value {
+				tag: raw_types::values::ValueTag::World,
+				data: raw_types::values::ValueData { id: 0 },
+			},
+			phantom: PhantomData {},
+		}
+	}
+
 	/// Equivalent to DM's `null`.
 	pub fn null() -> Value {
 		Value {
@@ -60,6 +71,48 @@ impl Value {
 				data: raw_types::values::ValueData { number: 0.0 },
 			},
 			phantom: PhantomData {},
+		}
+	}
+
+	/// Gets a turf by ID.
+	pub unsafe fn turf_by_id_unchecked(id: u32) -> Value {
+		Value {
+			value: raw_types::values::Value {
+				tag: raw_types::values::ValueTag::Turf,
+				data: raw_types::values::ValueData {id},
+			},
+			phantom: PhantomData {},
+		}
+	}
+
+	pub fn turf_by_id(id: u32) -> DMResult {
+		let world = Value::world();
+		let max_x = world.get_number("maxx")? as u32;
+		let max_y = world.get_number("maxy")? as u32;
+		let max_z = world.get_number("maxz")? as u32;
+		if (0..max_x*max_y*max_z).contains(&(id-1)) {
+			Ok(unsafe { Value::turf_by_id_unchecked(id) })
+		} else {
+			Err(runtime!("Attempted to get tile with invalid ID {}",id))
+		}
+	}
+
+	/// Gets a turf by coordinates.
+	pub fn turf(x: u32, y: u32, z: u32) -> DMResult {
+		let world = Value::world();
+		let max_x = world.get_number("maxx")? as u32;
+		let max_y = world.get_number("maxy")? as u32;
+		let max_z = world.get_number("maxz")? as u32;
+		let x = x-1; // thanks byond
+		let y = y-1;
+		let z = z-1;
+		if (0..max_x).contains(&x)
+			&& (0..max_y).contains(&y)
+			&& (0..max_z).contains(&z)
+		{
+			Ok(unsafe { Value::turf_by_id_unchecked(x + y * max_x + z * max_x * max_y) })
+		} else {
+			Err(runtime!("Attempted to get out-of-range tile at coords {} {} {}",x+1,y+1,z+1))
 		}
 	}
 
