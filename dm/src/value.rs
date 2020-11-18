@@ -74,26 +74,26 @@ impl Value {
 		}
 	}
 
-	/// Gets a turf by ID.
+	/// Gets a turf by ID, without bounds checking. Use turf_by_id if you're not sure about how to check the bounds.
 	pub unsafe fn turf_by_id_unchecked(id: u32) -> Value {
 		Value {
 			value: raw_types::values::Value {
 				tag: raw_types::values::ValueTag::Turf,
-				data: raw_types::values::ValueData {id},
+				data: raw_types::values::ValueData { id },
 			},
 			phantom: PhantomData {},
 		}
 	}
-
+	/// Gets a turf by ID, with bounds checking.
 	pub fn turf_by_id(id: u32) -> DMResult {
 		let world = Value::world();
 		let max_x = world.get_number("maxx")? as u32;
 		let max_y = world.get_number("maxy")? as u32;
 		let max_z = world.get_number("maxz")? as u32;
-		if (0..max_x*max_y*max_z).contains(&(id-1)) {
+		if (0..max_x * max_y * max_z).contains(&(id - 1)) {
 			Ok(unsafe { Value::turf_by_id_unchecked(id) })
 		} else {
-			Err(runtime!("Attempted to get tile with invalid ID {}",id))
+			Err(runtime!("Attempted to get tile with invalid ID {}", id))
 		}
 	}
 
@@ -103,16 +103,18 @@ impl Value {
 		let max_x = world.get_number("maxx")? as u32;
 		let max_y = world.get_number("maxy")? as u32;
 		let max_z = world.get_number("maxz")? as u32;
-		let x = x-1; // thanks byond
-		let y = y-1;
-		let z = z-1;
-		if (0..max_x).contains(&x)
-			&& (0..max_y).contains(&y)
-			&& (0..max_z).contains(&z)
-		{
+		let x = x - 1; // thanks byond
+		let y = y - 1;
+		let z = z - 1;
+		if (0..max_x).contains(&x) && (0..max_y).contains(&y) && (0..max_z).contains(&z) {
 			Ok(unsafe { Value::turf_by_id_unchecked(x + y * max_x + z * max_x * max_y) })
 		} else {
-			Err(runtime!("Attempted to get out-of-range tile at coords {} {} {}",x+1,y+1,z+1))
+			Err(runtime!(
+				"Attempted to get out-of-range tile at coords {} {} {}",
+				x + 1,
+				y + 1,
+				z + 1
+			))
 		}
 	}
 
