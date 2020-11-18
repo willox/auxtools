@@ -7,7 +7,6 @@ use dm::*;
 
 #[hook("/proc/dump_bytecode")]
 fn hello_proc_hook() {
-
 	let x = Value::null();
 	let y = x.get("penis");
 	let z = x.get("penis");
@@ -36,4 +35,9 @@ fn hello_proc_hook() {
 	}
 
 	Ok(Value::from(1337))
+}
+
+#[hook("/proc/typepaths")]
+fn typepaths(something: Value) {
+	Ok(Value::from(something.is_type("/mob")))
 }

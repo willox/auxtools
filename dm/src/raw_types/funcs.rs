@@ -35,6 +35,8 @@ extern "C" {
 	pub static mut get_misc_by_id_byond: *const c_void;
 	pub static mut to_string_byond: *const c_void;
 	pub static mut runtime_byond: *const c_void;
+	pub static mut is_type_byond: *const c_void;
+	pub static mut text_to_path_byond: *const c_void;
 }
 
 // Functions exported by our C++ for Rust to call.
@@ -100,4 +102,6 @@ extern "C" {
 	pub fn get_length(out: *mut u32, value: values::Value) -> u8;
 	pub fn get_misc_by_id(out: *mut *mut misc::Misc, index: misc::MiscId) -> u8;
 	pub fn to_string(out: *mut strings::StringId, value: values::Value) -> u8;
+	pub fn is_type(out: *mut bool, datum: values::Value, typ: values::Value) -> u8;
+	pub fn text_to_path(out: *mut values::Value, text_id: strings::StringId) -> u8;
 }
