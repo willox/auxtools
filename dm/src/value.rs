@@ -247,12 +247,15 @@ impl Value {
 				return false;
 			}
 
-			let mut is = false;
+			let mut is = 0;
 
 			if raw_types::funcs::is_type(&mut is, self.value, type_as_value) != 1 {
+				raw_types::funcs::dec_ref_count(type_as_value);
 				return false;
 			}
-			is
+			raw_types::funcs::dec_ref_count(type_as_value); // guh
+
+			return is == 1;
 		}
 	}
 

@@ -39,5 +39,5 @@ fn hello_proc_hook() {
 
 #[hook("/proc/typepaths")]
 fn typepaths(something: Value) {
-	Ok(Value::from(something.is_type("/mob")))
+	Ok(Value::from(something.is_type("/datum")))
 }

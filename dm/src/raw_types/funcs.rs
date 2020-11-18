@@ -102,6 +102,6 @@ extern "C" {
 	pub fn get_length(out: *mut u32, value: values::Value) -> u8;
 	pub fn get_misc_by_id(out: *mut *mut misc::Misc, index: misc::MiscId) -> u8;
 	pub fn to_string(out: *mut strings::StringId, value: values::Value) -> u8;
-	pub fn is_type(out: *mut bool, datum: values::Value, typ: values::Value) -> u8;
+	pub fn is_type(out: *mut u8, datum: values::Value, typ: values::Value) -> u8;
 	pub fn text_to_path(out: *mut values::Value, text_id: strings::StringId) -> u8;
 }

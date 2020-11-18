@@ -21,7 +21,7 @@
 DEFINE_byond_REGPARM3(call_proc_by_id, Value, (Value, uint32_t, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
 DEFINE_byond_REGPARM3(call_datum_proc_by_name, Value, (Value, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
 DEFINE_byond(get_proc_array_entry, void *, (uint32_t));
-DEFINE_byond_REGPARM3(get_string_id, uint32_t, (const char *, bool, bool, bool));
+DEFINE_byond_REGPARM3(get_string_id, uint32_t, (const char *, uint8_t, uint8_t, uint8_t));
 DEFINE_byond(get_variable, Value, (Value, uint32_t));
 DEFINE_byond(set_variable, void, (Value, uint32_t, Value));
 DEFINE_byond(get_string_table_entry, void *, (uint32_t));
@@ -36,7 +36,7 @@ DEFINE_byond_REGPARM2(remove_from_list, void, (Value, Value));
 DEFINE_byond(get_length, uint32_t, (Value));
 DEFINE_byond(get_misc_by_id, void *, (uint32_t));
 DEFINE_byond(to_string, uint32_t, (Value));
-DEFINE_byond(is_type, bool, (Value, Value));
+DEFINE_byond(is_type, uint8_t, (Value, Value));
 DEFINE_byond(text_to_path, Value, (unsigned int));
 
 extern "C" uint8_t call_proc_by_id(
@@ -105,7 +105,7 @@ extern "C" uint8_t get_proc_array_entry(void **out, uint32_t id)
 	}
 }
 
-extern "C" uint8_t get_string_id(uint32_t *out, const char *data, bool a, bool b, bool c)
+extern "C" uint8_t get_string_id(uint32_t *out, const char *data, uint8_t a, uint8_t b, uint8_t c)
 {
 	RuntimeContext ctx(true);
 
@@ -346,7 +346,7 @@ extern "C" uint8_t to_string(uint32_t *out, Value value)
 	}
 }
 
-extern "C" uint8_t is_type(bool *out, Value datum, Value typ)
+extern "C" uint8_t is_type(uint8_t *out, Value datum, Value typ)
 {
 	RuntimeContext ctx(true);
 
@@ -354,7 +354,7 @@ extern "C" uint8_t is_type(bool *out, Value datum, Value typ)
 	{
 		clean(datum);
 		clean(typ);
-		*out = is_type_byond(datum, typ);
+		*out = is_type_byond(datum, typ) ? 1 : 0;
 		return 1;
 	}
 	catch (AuxtoolsException e) // I don't think this function can fail but leaving this in just in case
