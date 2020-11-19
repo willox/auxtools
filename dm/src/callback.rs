@@ -24,6 +24,10 @@ lazy_static! {
 		flume::Sender<CallbackMessage>,
 		flume::Receiver<CallbackMessage>
 	) = flume::unbounded();
+	static ref INVOCATION_CHANNEL_BACKGROUND: (
+		flume::Sender<CallbackMessage>,
+		flume::Receiver<CallbackMessage>
+	) = flume::unbounded();
 }
 
 /// # Callbacks
@@ -98,9 +102,10 @@ impl CallbackHandle {
 }
 
 impl Callback {
-	/// Creates a new callback. The passed Value must be of type `/datum/callback`,
-	/// otherwise a [runtime::Runtime] is produced.
-	pub fn new<V: AsRef<Value>>(cb: V) -> Result<CallbackHandle, runtime::Runtime> {
+	fn new_impl<V: AsRef<Value>>(
+		cb: V,
+		channel: flume::Sender<CallbackMessage>,
+	) -> Result<CallbackHandle, runtime::Runtime> {
 		// TODO: Verify this is indeed a /datum/callback
 
 		let cb = cb.as_ref().clone();
@@ -112,12 +117,23 @@ impl Callback {
 
 		let handle = CallbackHandle {
 			id: unsafe { NEXT_CALLBACK_ID },
-			invoke_channel: INVOCATION_CHANNEL.0.clone(), // Clone the sender part.
+			invoke_channel: channel, // Clone the sender part.
 		};
 
 		unsafe { NEXT_CALLBACK_ID.0 += 1 };
 
 		Ok(handle)
+	}
+	/// Creates a new callback. The passed Value must be of type `/datum/callback`,
+	/// otherwise a [runtime::Runtime] is produced. This should be run next tick.
+	pub fn new<V: AsRef<Value>>(cb: V) -> Result<CallbackHandle, runtime::Runtime> {
+		Self::new_impl(cb, INVOCATION_CHANNEL.0.clone())
+	}
+	/// Creates a new callback. The passed Value must be of type `/datum/callback`,
+	/// otherwise a [runtime::Runtime] is produced. These should be run as soon
+	/// as it wouldn't lag the game to do so.
+	pub fn new_background<V: AsRef<Value>>(cb: V) -> Result<CallbackHandle, runtime::Runtime> {
+		Self::new_impl(cb, INVOCATION_CHANNEL_BACKGROUND.0.clone())
 	}
 }
 
@@ -126,22 +142,49 @@ fn process_callbacks() {
 	CALLBACKS.with(|h| {
 		let mut cbs = h.borrow_mut();
 
-		loop {
-			match INVOCATION_CHANNEL.1.try_recv() {
-				Ok(msg) => match msg {
-					#[allow(unused_must_use)]
-					CallbackMessage::Invoke(cb) => {
-						let args = (cb.closure)();
-						let cb_val = cbs.get(&cb.id).unwrap();
-						cb_val.dm_callback.call("Invoke", &args[..]);
-					}
-					CallbackMessage::Drop(id) => {
-						cbs.remove(&id).unwrap();
-					}
-				},
-				Err(_) => break, // There are no messages for us to process
+		for msg in INVOCATION_CHANNEL.1.try_iter() {
+			#[allow(unused_must_use)]
+			match msg {
+				CallbackMessage::Invoke(cb) => {
+					let args = (cb.closure)();
+					let cb_val = cbs.get(&cb.id).unwrap();
+					cb_val.dm_callback.call("Invoke", &args[..]);
+				}
+				CallbackMessage::Drop(id) => {
+					cbs.remove(&id).unwrap();
+				}
 			}
 		}
 	});
 	Ok(Value::null())
+}
+
+#[hook("/proc/_process_callbacks_background")]
+fn process_callbacks_background() {
+	CALLBACKS.with(|h| -> crate::DMResult {
+		let mut cbs = h.borrow_mut();
+		let start_time = coarsetime::Instant::now();
+		let arg_limit = args
+			.get(0)
+			.ok_or_else(|| runtime!("Background callback process expects a time limit."))?
+			.as_number()?;
+		let time_limit = coarsetime::Duration::from_millis(arg_limit as u64);
+		for msg in INVOCATION_CHANNEL_BACKGROUND.1.try_iter() {
+			#[allow(unused_must_use)]
+			match msg {
+				CallbackMessage::Invoke(cb) => {
+					let args = (cb.closure)();
+					let cb_val = cbs.get(&cb.id).unwrap();
+					cb_val.dm_callback.call("Invoke", &args[..]);
+				}
+				CallbackMessage::Drop(id) => {
+					cbs.remove(&id).unwrap();
+				}
+			}
+			if start_time.elapsed() > time_limit {
+				break;
+			}
+		}
+		Ok(Value::from(start_time.elapsed_since_recent() > time_limit))
+	})
 }
