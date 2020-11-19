@@ -20,11 +20,11 @@ thread_local! {
 }
 
 lazy_static! {
-	static ref INVOCATION_CHANNEL: (
+	static ref INVOCATION_CHANNEL_PRIORITY: (
 		flume::Sender<CallbackMessage>,
 		flume::Receiver<CallbackMessage>
 	) = flume::unbounded();
-	static ref INVOCATION_CHANNEL_BACKGROUND: (
+	static ref INVOCATION_CHANNEL: (
 		flume::Sender<CallbackMessage>,
 		flume::Receiver<CallbackMessage>
 	) = flume::unbounded();
@@ -125,24 +125,25 @@ impl Callback {
 		Ok(handle)
 	}
 	/// Creates a new callback. The passed Value must be of type `/datum/callback`,
-	/// otherwise a [runtime::Runtime] is produced. This should be run next tick.
-	pub fn new<V: AsRef<Value>>(cb: V) -> Result<CallbackHandle, runtime::Runtime> {
-		Self::new_impl(cb, INVOCATION_CHANNEL.0.clone())
+	/// otherwise a [runtime::Runtime] is produced. This is for callbacks that should
+	/// always be run ASAP; normally you want new().
+	pub fn new_priority<V: AsRef<Value>>(cb: V) -> Result<CallbackHandle, runtime::Runtime> {
+		Self::new_impl(cb, INVOCATION_CHANNEL_PRIORITY.0.clone())
 	}
 	/// Creates a new callback. The passed Value must be of type `/datum/callback`,
 	/// otherwise a [runtime::Runtime] is produced. These should be run as soon
 	/// as it wouldn't lag the game to do so.
-	pub fn new_background<V: AsRef<Value>>(cb: V) -> Result<CallbackHandle, runtime::Runtime> {
-		Self::new_impl(cb, INVOCATION_CHANNEL_BACKGROUND.0.clone())
+	pub fn new<V: AsRef<Value>>(cb: V) -> Result<CallbackHandle, runtime::Runtime> {
+		Self::new_impl(cb, INVOCATION_CHANNEL.0.clone())
 	}
 }
 
-#[hook("/proc/_process_callbacks")]
-fn process_callbacks() {
+#[hook("/proc/_process_callbacks_priority")]
+fn process_callbacks_priority() {
 	CALLBACKS.with(|h| {
 		let mut cbs = h.borrow_mut();
 
-		for msg in INVOCATION_CHANNEL.1.try_iter() {
+		for msg in INVOCATION_CHANNEL_PRIORITY.1.try_iter() {
 			#[allow(unused_must_use)]
 			match msg {
 				CallbackMessage::Invoke(cb) => {
@@ -159,8 +160,8 @@ fn process_callbacks() {
 	Ok(Value::null())
 }
 
-#[hook("/proc/_process_callbacks_background")]
-fn process_callbacks_background() {
+#[hook("/proc/_process_callbacks")]
+fn process_callbacks() {
 	CALLBACKS.with(|h| -> crate::DMResult {
 		let mut cbs = h.borrow_mut();
 		let start_time = coarsetime::Instant::now();
@@ -169,7 +170,7 @@ fn process_callbacks_background() {
 			.ok_or_else(|| runtime!("Background callback process expects a time limit."))?
 			.as_number()?;
 		let time_limit = coarsetime::Duration::from_millis(arg_limit as u64);
-		for msg in INVOCATION_CHANNEL_BACKGROUND.1.try_iter() {
+		for msg in INVOCATION_CHANNEL.1.try_iter() {
 			#[allow(unused_must_use)]
 			match msg {
 				CallbackMessage::Invoke(cb) => {
