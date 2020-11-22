@@ -16,18 +16,28 @@ use super::server_types::*;
 // Server = main-thread code
 // ServerThread = networking-thread code
 //
-// We've got a couple channels going on between Server/ServerThread
+// We've got a couple of channels going on between Server/ServerThread
 // connection: a TcpStream sent from the ServerThread for the Server to send responses on
 // requests: requests from the debug-client for the Server to handle
 //
-// Limitations: only ever accepts one connection & doesn't fully stop processing once that connection dies
+// Limitations: only ever accepts one connection
 //
+
+enum ServerStream {
+	// The server is waiting for a Stream to be sent on the connection channel
+	Waiting,
+
+	Connected(TcpStream),
+
+	// The server has finished being used
+	Disconnected,
+}
 
 pub struct Server {
 	connection: mpsc::Receiver<TcpStream>,
 	requests: mpsc::Receiver<Request>,
 	stacks: Option<debug::CallStacks>,
-	stream: Option<TcpStream>,
+	stream: ServerStream,
 	_thread: JoinHandle<()>,
 	should_catch_runtimes: bool,
 }
@@ -35,11 +45,34 @@ pub struct Server {
 struct ServerThread {
 	connection: mpsc::Sender<TcpStream>,
 	requests: mpsc::Sender<Request>,
-	listener: TcpListener,
-	stream: Option<TcpStream>,
 }
 
 impl Server {
+	pub fn connect(addr: &SocketAddr) -> std::io::Result<Server> {
+		let stream = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))?;
+		let (connection_sender, connection_receiver) = mpsc::channel();
+		let (requests_sender, requests_receiver) = mpsc::channel();
+
+		let server_thread = ServerThread {
+			connection: connection_sender,
+			requests: requests_sender,
+		};
+
+		let cloned_stream = stream.try_clone().unwrap();
+		let thread = thread::spawn(move || {
+			server_thread.run(cloned_stream);
+		});
+
+		Ok(Server {
+			connection: connection_receiver,
+			requests: requests_receiver,
+			stacks: None,
+			stream: ServerStream::Connected(stream),
+			_thread: thread,
+			should_catch_runtimes: true,
+		})
+	}
+
 	pub fn listen(addr: &SocketAddr) -> std::io::Result<Server> {
 		let (connection_sender, connection_receiver) = mpsc::channel();
 		let (requests_sender, requests_receiver) = mpsc::channel();
@@ -47,16 +80,14 @@ impl Server {
 		let thread = ServerThread {
 			connection: connection_sender,
 			requests: requests_sender,
-			listener: TcpListener::bind(addr)?,
-			stream: None,
-		};
+		}.spawn_listener(TcpListener::bind(addr)?);
 
 		Ok(Server {
 			connection: connection_receiver,
 			requests: requests_receiver,
 			stacks: None,
-			stream: None,
-			_thread: thread.start_thread(),
+			stream: ServerStream::Waiting,
+			_thread: thread,
 			should_catch_runtimes: true,
 		})
 	}
@@ -486,19 +517,19 @@ impl Server {
 		false
 	}
 
-	// TODO: After stream goes null, return false forever
 	pub fn check_connected(&mut self) -> bool {
 		match self.stream {
-			Some(_) => return true,
-			None => {
+			ServerStream::Disconnected => false,
+			ServerStream::Connected(_) => true,
+			ServerStream::Waiting => {
 				if let Ok(stream) = self.connection.try_recv() {
-					self.stream = Some(stream);
-					return true;
+					self.stream = ServerStream::Connected(stream);
+					true
+				} else {
+					false
 				}
 			}
 		}
-		
-		false
 	}
 
 	pub fn handle_breakpoint(
@@ -506,8 +537,7 @@ impl Server {
 		_ctx: *mut raw_types::procs::ExecutionContext,
 		reason: BreakpointReason,
 	) -> ContinueKind {
-		// Ignore all breakpoints until we're connected
-		// TODO: Could wait for the connection
+		// Ignore all breakpoints unless we're connected
 		if !self.check_connected() {
 			return ContinueKind::Continue;
 		}
@@ -557,40 +587,55 @@ impl Server {
 	}
 
 	fn send_or_disconnect(&mut self, response: Response) {
-		if self.stream.is_none() {
-			return;
-		}
-
-		match self.send(response) {
-			Ok(_) => {}
-			Err(e) => {
-				eprintln!("Debug server failed to send message: {}", e);
-				// TODO: Tell network thread to disconnect
-				self.stream = None;
+		match self.stream {
+			ServerStream::Connected(_) => {
+				match self.send(response) {
+					Ok(_) => {}
+					Err(e) => {
+						eprintln!("Debug server failed to send message: {}", e);
+						self.disconnect();
+					}
+				}
 			}
+
+			ServerStream::Waiting | ServerStream::Disconnected => panic!("Debug Server is not connected")
 		}
 	}
 
+	fn disconnect(&mut self) {
+		eprintln!("Debug server disconneting");
+
+		if let ServerStream::Connected(stream) = &mut self.stream {
+			let _ = stream.write_all(&[0]);
+			let _ = stream.flush();
+			let _ = stream.shutdown(std::net::Shutdown::Both);
+		}
+
+		self.stream = ServerStream::Disconnected;
+	}
+
 	fn send(&mut self, response: Response) -> Result<(), Box<dyn std::error::Error>> {
-		let stream = self.stream.as_mut().unwrap();
-		let data = serde_json::to_vec(&response)?;
-		stream.write_all(&data[..])?;
-		stream.write_all(&[0])?; // null-terminator
-		stream.flush()?;
-		Ok(())
+		if let ServerStream::Connected(stream) = &mut self.stream {
+			let data = serde_json::to_vec(&response)?;
+			stream.write_all(&data[..])?;
+			stream.write_all(&[0])?; // null-terminator
+			stream.flush()?;
+			return Ok(())
+		}
+
+		unreachable!();	
 	}
 }
 
 impl ServerThread {
-	fn start_thread(mut self) -> JoinHandle<()> {
-		thread::spawn(move || match self.listener.accept() {
+	fn spawn_listener(mut self, listener: TcpListener) -> JoinHandle<()> {
+		thread::spawn(move || match listener.accept() {
 			Ok((stream, _)) => {
-				self.stream = Some(stream);
-				self.run();
+				self.run(stream);
 			}
 
 			Err(e) => {
-				println!("Debug server failed to accept connection {}", e);
+				eprintln!("Debug server failed to accept connection: {}", e);
 			}
 		})
 	}
@@ -601,10 +646,10 @@ impl ServerThread {
 		Ok(())
 	}
 
-	fn run(mut self) {
+	fn run(mut self, mut stream: TcpStream) {
 		match self
 			.connection
-			.send(self.stream.as_mut().unwrap().try_clone().unwrap())
+			.send(stream.try_clone().unwrap())
 		{
 			Ok(_) => {}
 			Err(e) => {
@@ -618,7 +663,7 @@ impl ServerThread {
 
 		// The incoming stream is JSON objects separated by null terminators.
 		loop {
-			match self.stream.as_mut().unwrap().read(&mut buf) {
+			match stream.read(&mut buf) {
 				Ok(0) => return,
 
 				Ok(n) => {

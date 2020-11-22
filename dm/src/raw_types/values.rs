@@ -48,7 +48,6 @@ pub enum ValueTag {
 	Datum = 0x21,
 	SaveFile = 0x23,
 
-
 	Number = 0x2A,
 	Appearance = 0x3A,
 }
@@ -81,11 +80,7 @@ impl fmt::Debug for Value {
 					let id = self.data.string;
 					let mut entry: *mut strings::StringEntry = std::ptr::null_mut();
 					assert_eq!(funcs::get_string_table_entry(&mut entry, id), 1);
-					write!(
-						f,
-						"{:?}",
-						CStr::from_ptr((*entry).data).to_string_lossy()
-					)
+					write!(f, "{:?}", CStr::from_ptr((*entry).data).to_string_lossy())
 				}
 				_ => write!(f, "Value({}, {})", self.tag as u8, self.data.id),
 			}

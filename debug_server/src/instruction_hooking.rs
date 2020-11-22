@@ -202,6 +202,7 @@ fn handle_runtime(error: &str) {
 
 // Handles any instruction BYOND tries to execute.
 // This function has to leave `*CURRENT_EXECUTION_CONTEXT` in EAX, so make sure to return it.
+// TODO: perf is bad!
 #[no_mangle]
 extern "C" fn handle_instruction(
 	ctx: *mut raw_types::procs::ExecutionContext,

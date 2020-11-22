@@ -7,9 +7,9 @@ use crate::runtime::DMResult;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use detour::RawDetour;
-use std::{ffi::CStr, cell::RefCell};
 use std::ffi::c_void;
 use std::os::raw::c_char;
+use std::{cell::RefCell, ffi::CStr};
 
 #[doc(hidden)]
 pub struct CompileTimeHook {
