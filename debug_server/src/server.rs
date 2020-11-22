@@ -292,6 +292,10 @@ impl Server {
 	// returns true if we need to break
 	fn handle_request(&mut self, request: Request) -> bool {
 		match request {
+			Request::Disconnect => {
+				unreachable!("Request::Disconnect should be handled by the network thread");
+			}
+
 			Request::BreakpointSet { instruction } => {
 				let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
 
@@ -619,9 +623,10 @@ impl Server {
 	}
 
 	fn disconnect(&mut self) {
-		eprintln!("Debug server disconneting");
-
 		if let ServerStream::Connected(stream) = &mut self.stream {
+			eprintln!("Debug server disconneting");
+			let data = serde_json::to_vec(&Response::Disconnect).unwrap();
+			let _ = stream.write_all(&data[..]);
 			let _ = stream.write_all(&[0]);
 			let _ = stream.flush();
 			let _ = stream.shutdown(std::net::Shutdown::Both);
@@ -640,6 +645,12 @@ impl Server {
 		}
 
 		unreachable!();	
+	}
+}
+
+impl Drop for Server {
+	fn drop(&mut self) {
+		self.disconnect();
 	}
 }
 
@@ -667,10 +678,16 @@ impl ServerThread {
 		})
 	}
 
-	fn handle_request(&mut self, data: &[u8]) -> Result<(), Box<dyn Error>> {
+	// returns true if we should disconnect
+	fn handle_request(&mut self, data: &[u8]) -> Result<bool, Box<dyn Error>> {
 		let request = serde_json::from_slice::<Request>(data)?;
+
+		if let Request::Disconnect = request {
+			return Ok(true);
+		}
+
 		self.requests.send(request)?;
-		Ok(())
+		Ok(false)
 	}
 
 	fn run(mut self, mut stream: TcpStream) {
@@ -699,7 +716,12 @@ impl ServerThread {
 				}
 
 				match self.handle_request(message) {
-					Ok(_) => {}
+					Ok(requested_disconnect) => {
+						if requested_disconnect {
+							eprintln!("Debug client disconnected");
+							return;
+						}
+					}
 
 					Err(e) => {
 						eprintln!("Debug server thread failed to handle request: {}", e);

@@ -13,6 +13,13 @@ thread_local! {
 	pub static DEBUG_SERVER: RefCell<Option<server::Server>> = RefCell::new(None);
 }
 
+#[shutdown]
+fn shutdown_debugger() {
+	DEBUG_SERVER.with(|x| {
+		x.replace(None);
+	});
+}
+
 #[hook("/proc/enable_debugging")]
 fn enable_debugging(port: Value) {
 	let addr = SocketAddr::new(
