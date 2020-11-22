@@ -486,11 +486,32 @@ impl Server {
 		false
 	}
 
+	// TODO: After stream goes null, return false forever
+	pub fn check_connected(&mut self) -> bool {
+		match self.stream {
+			Some(_) => return true,
+			None => {
+				if let Ok(stream) = self.connection.try_recv() {
+					self.stream = Some(stream);
+					return true;
+				}
+			}
+		}
+		
+		false
+	}
+
 	pub fn handle_breakpoint(
 		&mut self,
 		_ctx: *mut raw_types::procs::ExecutionContext,
 		reason: BreakpointReason,
 	) -> ContinueKind {
+		// Ignore all breakpoints until we're connected
+		// TODO: Could wait for the connection
+		if !self.check_connected() {
+			return ContinueKind::Continue;
+		}
+
 		if let BreakpointReason::Runtime(_) = reason {
 			if !self.should_catch_runtimes {
 				return ContinueKind::Continue;
@@ -521,13 +542,9 @@ impl Server {
 
 	// returns true if we need to pause
 	pub fn process(&mut self) -> bool {
-		// Don't do anything until we've got a stream
-		if self.stream.is_none() {
-			if let Ok(stream) = self.connection.try_recv() {
-				self.stream = Some(stream);
-			} else {
-				return false;
-			}
+		// Don't do anything until we're connected
+		if !self.check_connected() {
+			return false;
 		}
 
 		let mut should_pause = false;
@@ -548,16 +565,17 @@ impl Server {
 			Ok(_) => {}
 			Err(e) => {
 				eprintln!("Debug server failed to send message: {}", e);
+				// TODO: Tell network thread to disconnect
 				self.stream = None;
 			}
 		}
 	}
 
 	fn send(&mut self, response: Response) -> Result<(), Box<dyn std::error::Error>> {
-		let mut message = serde_json::to_vec(&response)?;
 		let stream = self.stream.as_mut().unwrap();
-		message.push(0); // null-terminator
-		stream.write_all(&message[..])?;
+		let data = serde_json::to_vec(&response)?;
+		stream.write_all(&data[..])?;
+		stream.write_all(&[0])?; // null-terminator
 		stream.flush()?;
 		Ok(())
 	}
