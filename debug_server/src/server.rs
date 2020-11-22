@@ -138,7 +138,7 @@ impl Server {
 		value.get("vars").is_ok()
 	}
 
-	fn value_to_variable(name: String, value: &Value) -> Result<Variable, Runtime> {
+	fn value_to_variable(name: String, value: &Value) -> Variable {
 		let mut variables = None;
 
 		if List::is_list(value) || Self::is_object(value) {
@@ -148,12 +148,25 @@ impl Server {
 			})
 		}
 
-		Ok(Variable {
-			name,
-			kind: "TODO".to_owned(),
-			value: value.to_string()?,
-			variables,
-		})
+		match value.to_string() {
+			Ok(value) => {
+				Variable {
+					name,
+					kind: "TODO".to_owned(),
+					value,
+					variables,
+				}
+			},
+
+			Err(Runtime { message }) => {
+				Variable {
+					name,
+					kind: "TODO".to_owned(),
+					value: format!("failed to read value: {:?}", message),
+					variables,
+				}
+			}
+		}
 	}
 
 	fn value_to_variables(value: &Value) -> Result<Vec<Variable>, Runtime> {
@@ -173,7 +186,7 @@ impl Server {
 			
 			for i in 1..=len {
 				let value = list.get(i)?;
-				variables.push(Self::value_to_variable(format!("[{}]", i), &value)?);
+				variables.push(Self::value_to_variable(format!("[{}]", i), &value));
 			}
 
 			return Ok(variables);
@@ -200,7 +213,7 @@ impl Server {
 		for i in 1..=vars.len() {
 			let name = vars.get(i)?.as_string()?;
 			let value = value.get(name.as_str())?;
-			variables.push(Self::value_to_variable(name, &value)?);
+			variables.push(Self::value_to_variable(name, &value));
 		}
 
 		Ok(variables)
@@ -208,7 +221,10 @@ impl Server {
 
 	fn get_stack_frame(&self, frame_index: u32) -> Option<&debug::StackFrame> {
 		let mut frame_index = frame_index as usize;
-		let stacks = self.stacks.as_ref().unwrap();
+		let stacks = match self.stacks.as_ref() {
+			Some(x) => x,
+			None => return None,
+		};
 
 		if frame_index < stacks.active.len() {
 			return Some(&stacks.active[frame_index]);
@@ -237,7 +253,7 @@ impl Server {
 						Some(name) => String::from(name),
 						None => "<unknown>".to_owned()
 					};
-					vars.push(Self::value_to_variable(name, &local).unwrap());
+					vars.push(Self::value_to_variable(name, &local));
 				}
 
 				vars
@@ -254,13 +270,13 @@ impl Server {
 		match self.get_stack_frame(frame_index) {
 			Some(frame) => {
 				let mut vars = vec![
-					Self::value_to_variable(".".to_owned(), &frame.dot).unwrap(),
-					Self::value_to_variable("src".to_owned(), &frame.src).unwrap(),
-					Self::value_to_variable("usr".to_owned(), &frame.usr).unwrap(),
+					Self::value_to_variable(".".to_owned(), &frame.dot),
+					Self::value_to_variable("src".to_owned(), &frame.src),
+					Self::value_to_variable("usr".to_owned(), &frame.usr),
 				];
 
 				for (name, local) in &frame.locals {
-					vars.push(Self::value_to_variable(String::from(name), &local).unwrap());
+					vars.push(Self::value_to_variable(String::from(name), &local));
 				}
 
 				vars
