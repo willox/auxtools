@@ -628,9 +628,20 @@ impl Server {
 }
 
 impl ServerThread {
-	fn spawn_listener(mut self, listener: TcpListener) -> JoinHandle<()> {
+	fn spawn_listener(self, listener: TcpListener) -> JoinHandle<()> {
 		thread::spawn(move || match listener.accept() {
 			Ok((stream, _)) => {
+				match self
+					.connection
+					.send(stream.try_clone().unwrap())
+				{
+					Ok(_) => {}
+					Err(e) => {
+						eprintln!("Debug server thread failed to pass cloned TcpStream: {}", e);
+						return;
+					}
+				}
+
 				self.run(stream);
 			}
 
@@ -647,17 +658,6 @@ impl ServerThread {
 	}
 
 	fn run(mut self, mut stream: TcpStream) {
-		match self
-			.connection
-			.send(stream.try_clone().unwrap())
-		{
-			Ok(_) => {}
-			Err(e) => {
-				eprintln!("Debug server thread failed to pass cloned TcpStream: {}", e);
-				return;
-			}
-		}
-
 		let mut buf = [0u8; 4096];
 		let mut queued_data = vec![];
 
