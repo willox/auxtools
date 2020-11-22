@@ -29,6 +29,7 @@ pub struct Server {
 	stacks: Option<debug::CallStacks>,
 	stream: Option<TcpStream>,
 	_thread: JoinHandle<()>,
+	should_catch_runtimes: bool,
 }
 
 struct ServerThread {
@@ -56,6 +57,7 @@ impl Server {
 			stacks: None,
 			stream: None,
 			_thread: thread.start_thread(),
+			should_catch_runtimes: true,
 		})
 	}
 
@@ -288,6 +290,10 @@ impl Server {
 				}
 			}
 
+			Request::SetCatchRuntimes(b) => {
+				self.should_catch_runtimes = b
+			}
+
 			Request::LineNumber { proc, offset } => {
 				self.send_or_disconnect(Response::LineNumber {
 					line: self.get_line_number(proc, offset),
@@ -485,6 +491,12 @@ impl Server {
 		_ctx: *mut raw_types::procs::ExecutionContext,
 		reason: BreakpointReason,
 	) -> ContinueKind {
+		if let BreakpointReason::Runtime(_) = reason {
+			if !self.should_catch_runtimes {
+				return ContinueKind::Continue;
+			}
+		}
+
 		// Cache these now so nothing else has to fetch them
 		// TODO: it'd be cool if all this data was fetched lazily
 		self.stacks = Some(debug::CallStacks::new(&DMContext {}));
