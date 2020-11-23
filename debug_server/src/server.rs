@@ -680,7 +680,7 @@ impl Server {
 				}
 			}
 
-			ServerStream::Waiting(_) | ServerStream::Disconnected => panic!("Debug Server is not connected")
+			ServerStream::Waiting(_) | ServerStream::Disconnected => unreachable!("Debug Server is not connected")
 		}
 	}
 
