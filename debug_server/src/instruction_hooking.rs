@@ -100,7 +100,8 @@ enum DebuggerAction {
 static mut CURRENT_ACTION: DebuggerAction = DebuggerAction::None;
 
 // TODO: Clear on shutdown
-static mut DEFERRED_INSTRUCTION_REPLACE: UnsafeCell<Option<(Vec<u32>, *mut u32)>> = UnsafeCell::new(None);
+static mut DEFERRED_INSTRUCTION_REPLACE: UnsafeCell<Option<(Vec<u32>, *mut u32)>> =
+	UnsafeCell::new(None);
 
 #[derive(PartialEq, Eq, Hash)]
 struct PtrKey(usize);
@@ -117,9 +118,7 @@ lazy_static! {
 
 fn get_proc_ctx(stack_id: u32) -> *mut raw_types::procs::ExecutionContext {
 	if stack_id == 0 {
-		return unsafe {
-			*raw_types::funcs::CURRENT_EXECUTION_CONTEXT
-		};
+		return unsafe { *raw_types::funcs::CURRENT_EXECUTION_CONTEXT };
 	}
 
 	unsafe {
@@ -333,7 +332,7 @@ extern "C" fn handle_instruction(
 				assert_eq!(*deferred_replace, None);
 				*deferred_replace = Some((
 					std::slice::from_raw_parts(opcode_ptr, original.len()).to_vec(),
-					opcode_ptr
+					opcode_ptr,
 				));
 				std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
 			}

@@ -1,26 +1,40 @@
 use super::instruction_hooking::{hook_instruction, unhook_instruction};
-use std::{error::Error, cell::RefCell};
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::thread;
+use std::{cell::RefCell, error::Error};
 use std::{
-	net::{SocketAddr, TcpListener, TcpStream},
 	collections::HashMap,
+	net::{SocketAddr, TcpListener, TcpStream},
 	thread::JoinHandle,
 };
 
-use dm::*;
-use dm::raw_types::values::{ValueTag, ValueData};
 use super::server_types::*;
+use dm::raw_types::values::{ValueData, ValueTag};
+use dm::*;
 
 #[derive(Clone, Hash, Eq, PartialEq)]
 enum Variables {
-	Arguments { frame: u32 },
-	Locals { frame: u32 },
-	ObjectVars { tag: u8, data: u32 },
-	ListContents { tag: u8, data: u32 }
-	//AssocKeys(Value),
-	//AssocValues(Value),
+	Arguments {
+		frame: u32,
+	},
+	Locals {
+		frame: u32,
+	},
+	ObjectVars {
+		tag: u8,
+		data: u32,
+	},
+	ListContents {
+		tag: u8,
+		data: u32,
+	},
+	ListPair {
+		key_tag: u8,
+		key_data: u32,
+		value_tag: u8,
+		value_data: u32,
+	},
 }
 
 struct State {
@@ -41,17 +55,19 @@ impl State {
 	fn get_ref(&self, vars: Variables) -> VariablesRef {
 		let mut variables_to_refs = self.variables_to_refs.borrow_mut();
 		let mut variables = self.variables.borrow_mut();
-		(*variables_to_refs.entry(vars.clone())
-			.or_insert_with(|| {
-				let reference = VariablesRef(variables.len() as i32 + 1);
-				variables.push(vars);
-				reference
-			})).clone()
+		(*variables_to_refs.entry(vars.clone()).or_insert_with(|| {
+			let reference = VariablesRef(variables.len() as i32 + 1);
+			variables.push(vars);
+			reference
+		}))
+		.clone()
 	}
 
 	fn get_variables(&self, reference: VariablesRef) -> Option<Variables> {
 		let variables = self.variables.borrow();
-		variables.get(reference.0 as usize - 1).map(|x| (*x).clone())
+		variables
+			.get(reference.0 as usize - 1)
+			.map(|x| (*x).clone())
 	}
 }
 
@@ -117,7 +133,8 @@ impl Server {
 
 		let thread = ServerThread {
 			requests: requests_sender,
-		}.spawn_listener(TcpListener::bind(addr)?, connection_sender);
+		}
+		.spawn_listener(TcpListener::bind(addr)?, connection_sender);
 
 		Ok(Server {
 			requests: requests_receiver,
@@ -192,42 +209,59 @@ impl Server {
 		}
 
 		match value.to_string() {
-			Ok(value) => {
-				Variable {
-					name,
-					kind: "TODO".to_owned(),
-					value,
-					variables,
-				}
+			Ok(value) => Variable {
+				name,
+				kind: "TODO".to_owned(),
+				value,
+				variables,
 			},
 
-			Err(Runtime { message }) => {
-				Variable {
-					name,
-					kind: "TODO".to_owned(),
-					value: format!("failed to read value: {:?}", message),
-					variables,
-				}
-			}
+			Err(Runtime { message }) => Variable {
+				name,
+				kind: "TODO".to_owned(),
+				value: format!("failed to read value: {:?}", message),
+				variables,
+			},
 		}
 	}
 
 	fn list_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
+		let state = self.state.as_ref().unwrap();
 		let list = List::from_value(value)?;
 		let len = list.len();
 
-		let mut variables = vec![
-			Variable {
-				name: "len".to_owned(),
-				kind: "TODO".to_owned(),
-				value: format!("{}", len),
-				variables: None,
-			}
-		];
-		
+		let mut variables = vec![Variable {
+			name: "len".to_owned(),
+			kind: "TODO".to_owned(),
+			value: format!("{}", len),
+			variables: None,
+		}];
+
 		for i in 1..=len {
-			let value = list.get(i)?;
-			variables.push(self.value_to_variable(format!("[{}]", i), &value));
+			let key = list.get(i)?;
+
+			if let Ok(value) = list.get(&key) {
+				if value.value.tag != raw_types::values::ValueTag::Null {
+					// assoc entry
+					variables.push(Variable {
+						name: format!("[{}]", i),
+						kind: "TODO".to_owned(),
+						value: format!("{} = {}", key.to_string()?, value.to_string()?), // TODO: prettify these prints?
+						variables: Some(state.get_ref(unsafe {
+							Variables::ListPair {
+								key_tag: key.value.tag as u8,
+								key_data: key.value.data.id,
+								value_tag: value.value.tag as u8,
+								value_data: value.value.data.id,
+							}
+						})),
+					});
+					continue;
+				}
+			}
+
+			// non-assoc entry
+			variables.push(self.value_to_variable(format!("[{}]", i), &key));
 		}
 
 		return Ok(variables);
@@ -238,10 +272,7 @@ impl Server {
 		// TODO: vars is not always a list
 		let vars = List::from_value(&unsafe {
 			if value.value.tag == ValueTag::World && value.value.data.id == 1 {
-				Value::new(
-					ValueTag::GlobalVars,
-					ValueData { id: 0 },
-				)
+				Value::new(ValueTag::GlobalVars, ValueData { id: 0 })
 			} else {
 				value.get("vars")?
 			}
@@ -323,7 +354,7 @@ impl Server {
 				for (name, local) in &frame.args {
 					let name = match name {
 						Some(name) => String::from(name),
-						None => "<unknown>".to_owned()
+						None => "<unknown>".to_owned(),
 					};
 					vars.push(self.value_to_variable(name, &local));
 				}
@@ -332,7 +363,10 @@ impl Server {
 			}
 
 			None => {
-				self.notify(format!("tried to read arguments from invalid frame id: {}", frame_index));
+				self.notify(format!(
+					"tried to read arguments from invalid frame id: {}",
+					frame_index
+				));
 				vec![]
 			}
 		}
@@ -355,7 +389,10 @@ impl Server {
 			}
 
 			None => {
-				self.notify(format!("tried to read locals from invalid frame id: {}", frame_index));
+				self.notify(format!(
+					"tried to read locals from invalid frame id: {}",
+					frame_index
+				));
 				vec![]
 			}
 		}
@@ -413,9 +450,7 @@ impl Server {
 				}
 			}
 
-			Request::SetCatchRuntimes(b) => {
-				self.should_catch_runtimes = b
-			}
+			Request::SetCatchRuntimes(b) => self.should_catch_runtimes = b,
 
 			Request::LineNumber { proc, offset } => {
 				self.send_or_disconnect(Response::LineNumber {
@@ -475,9 +510,7 @@ impl Server {
 					None => vec![],
 				};
 
-				self.send_or_disconnect(Response::Stacks{
-					stacks
-				});
+				self.send_or_disconnect(Response::Stacks { stacks });
 			}
 
 			Request::StackFrames {
@@ -541,15 +574,11 @@ impl Server {
 						let mut arguments = None;
 
 						if !frame.args.is_empty() {
-							arguments = Some(Variables::Arguments {
-								frame: frame_id,
-							});
+							arguments = Some(Variables::Arguments { frame: frame_id });
 						}
 
 						// Never empty because we're putting ./src/usr in here
-						let locals = Some(Variables::Locals {
-							frame: frame_id,
-						});
+						let locals = Some(Variables::Locals { frame: frame_id });
 
 						let globals_value = Value::globals();
 						let globals = unsafe {
@@ -586,66 +615,86 @@ impl Server {
 
 			Request::Variables { vars } => {
 				let response = match &self.state {
-					Some(state) => {
-						match state.get_variables(vars) {
-							Some(vars) => {
-								match vars {
-									Variables::Arguments { frame } => {
-										Response::Variables {
-											vars: self.get_args(frame)
-										}
-									}
-				
-									Variables::Locals { frame } => {
-										Response::Variables {
-											vars: self.get_locals(frame)
-										}
-									}
-				
-									Variables::ObjectVars { tag, data } => {
-										let value = unsafe {
-											Value::from_raw(raw_types::values::Value {
-												tag: std::mem::transmute(tag),
-												data: ValueData { id: data },
-											})
-										};
-				
-										match self.object_to_variables(&value) {
-											Ok(vars) => Response::Variables { vars },
-				
-											Err(e) => {
-												self.notify(format!("runtime occured while processing Variables request: {:?}", e));
-												Response::Variables { vars: vec![] }
-											}
-										}
-									}
+					Some(state) => match state.get_variables(vars) {
+						Some(vars) => match vars {
+							Variables::Arguments { frame } => Response::Variables {
+								vars: self.get_args(frame),
+							},
 
-									Variables::ListContents { tag, data } => {
-										let value = unsafe {
-											Value::from_raw(raw_types::values::Value {
-												tag: std::mem::transmute(tag),
-												data: ValueData { id: data },
-											})
-										};
-	
-										match self.list_to_variables(&value) {
-											Ok(vars) => Response::Variables { vars },
-				
-											Err(e) => {
-												self.notify(format!("runtime occured while processing Variables request: {:?}", e));
-												Response::Variables { vars: vec![] }
-											}
-										}
+							Variables::Locals { frame } => Response::Variables {
+								vars: self.get_locals(frame),
+							},
+
+							Variables::ObjectVars { tag, data } => {
+								let value = unsafe {
+									Value::from_raw(raw_types::values::Value {
+										tag: std::mem::transmute(tag),
+										data: ValueData { id: data },
+									})
+								};
+
+								match self.object_to_variables(&value) {
+									Ok(vars) => Response::Variables { vars },
+
+									Err(e) => {
+										self.notify(format!("runtime occured while processing Variables request: {:?}", e));
+										Response::Variables { vars: vec![] }
 									}
 								}
 							}
 
-							None => {
-								self.notify("received unknown VariableRef in Variables request");
-								Response::Variables { vars: vec![] }
+							Variables::ListContents { tag, data } => {
+								let value = unsafe {
+									Value::from_raw(raw_types::values::Value {
+										tag: std::mem::transmute(tag),
+										data: ValueData { id: data },
+									})
+								};
+
+								match self.list_to_variables(&value) {
+									Ok(vars) => Response::Variables { vars },
+
+									Err(e) => {
+										self.notify(format!("runtime occured while processing Variables request: {:?}", e));
+										Response::Variables { vars: vec![] }
+									}
+								}
 							}
+
+							Variables::ListPair {
+								key_tag,
+								key_data,
+								value_tag,
+								value_data,
+							} => {
+								let key = unsafe {
+									Value::from_raw(raw_types::values::Value {
+										tag: std::mem::transmute(key_tag),
+										data: ValueData { id: key_data },
+									})
+								};
+
+								let value = unsafe {
+									Value::from_raw(raw_types::values::Value {
+										tag: std::mem::transmute(value_tag),
+										data: ValueData { id: value_data },
+									})
+								};
+
+								Response::Variables {
+									vars: vec![
+										self.value_to_variable("key".to_owned(), &key),
+										self.value_to_variable("value".to_owned(), &value),
+									],
+								}
+							}
+						},
+
+						None => {
+							self.notify("received unknown VariableRef in Variables request");
+							Response::Variables { vars: vec![] }
 						}
-					}
+					},
 
 					None => {
 						self.notify("recevied Variables request while not paused");
@@ -691,9 +740,7 @@ impl Server {
 			return;
 		}
 
-		self.send_or_disconnect(Response::Notification {
-			message
-		});
+		self.send_or_disconnect(Response::Notification { message });
 	}
 
 	pub fn handle_breakpoint(
@@ -752,17 +799,17 @@ impl Server {
 
 	fn send_or_disconnect(&mut self, response: Response) {
 		match self.stream {
-			ServerStream::Connected(_) => {
-				match self.send(response) {
-					Ok(_) => {}
-					Err(e) => {
-						eprintln!("Debug server failed to send message: {}", e);
-						self.disconnect();
-					}
+			ServerStream::Connected(_) => match self.send(response) {
+				Ok(_) => {}
+				Err(e) => {
+					eprintln!("Debug server failed to send message: {}", e);
+					self.disconnect();
 				}
-			}
+			},
 
-			ServerStream::Waiting(_) | ServerStream::Disconnected => unreachable!("Debug Server is not connected")
+			ServerStream::Waiting(_) | ServerStream::Disconnected => {
+				unreachable!("Debug Server is not connected")
+			}
 		}
 	}
 
@@ -785,10 +832,10 @@ impl Server {
 			stream.write_all(&data[..])?;
 			stream.write_all(&[0])?; // null-terminator
 			stream.flush()?;
-			return Ok(())
+			return Ok(());
 		}
 
-		unreachable!();	
+		unreachable!();
 	}
 }
 
@@ -799,11 +846,14 @@ impl Drop for Server {
 }
 
 impl ServerThread {
-	fn spawn_listener(self, listener: TcpListener, connection_sender: mpsc::Sender<TcpStream>) -> JoinHandle<()> {
+	fn spawn_listener(
+		self,
+		listener: TcpListener,
+		connection_sender: mpsc::Sender<TcpStream>,
+	) -> JoinHandle<()> {
 		thread::spawn(move || match listener.accept() {
 			Ok((stream, _)) => {
-				match connection_sender.send(stream.try_clone().unwrap())
-				{
+				match connection_sender.send(stream.try_clone().unwrap()) {
 					Ok(_) => {}
 					Err(e) => {
 						eprintln!("Debug server thread failed to pass cloned TcpStream: {}", e);
