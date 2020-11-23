@@ -219,6 +219,40 @@ impl Server {
 		Ok(variables)
 	}
 
+	fn get_stack(&self, stack_id: u32) -> Option<&Vec<debug::StackFrame>> {
+		let stack_id = stack_id as usize;
+		let stacks = match self.stacks.as_ref() {
+			Some(x) => x,
+			None => return None,
+		};
+
+		if stack_id == 0 {
+			return Some(&stacks.active);
+		}
+
+		stacks.suspended.get(stack_id - 1)
+	}
+
+	fn get_stack_base_frame_id(&self, stack_id: u32) -> u32 {
+		let stack_id = stack_id as usize;
+		let stacks = match self.stacks.as_ref() {
+			Some(x) => x,
+			None => return 0,
+		};
+
+		if stack_id == 0 {
+			return 0;
+		}
+
+		let mut current_base = stacks.active.len();
+
+		for frame in &stacks.suspended[..stack_id - 1] {
+			current_base += frame.len();
+		}
+
+		current_base as u32
+	}
+
 	fn get_stack_frame(&self, frame_index: u32) -> Option<&debug::StackFrame> {
 		let mut frame_index = frame_index as usize;
 		let stacks = match self.stacks.as_ref() {
@@ -381,16 +415,41 @@ impl Server {
 				}
 			}
 
+			Request::Stacks => {
+				let stacks = match self.stacks.as_ref() {
+					Some(stacks) => {
+						let mut ret = vec![];
+						ret.push(Stack {
+							id: 0,
+							name: stacks.active[0].proc.path.clone(),
+						});
+
+						for (idx, stack) in stacks.suspended.iter().enumerate() {
+							ret.push(Stack {
+								id: (idx + 1) as u32,
+								name: stack[0].proc.path.clone(),
+							});
+						}
+
+						ret
+					}
+
+					None => vec![],
+				};
+
+				self.send_or_disconnect(Response::Stacks{
+					stacks
+				});
+			}
+
 			Request::StackFrames {
-				thread_id,
+				stack_id,
 				start_frame,
 				count,
 			} => {
-				assert_eq!(thread_id, 0);
-
-				self.send_or_disconnect(match &self.stacks {
-					Some(stacks) => {
-						let stack = &stacks.active;
+				self.send_or_disconnect(match self.get_stack(stack_id) {
+					Some(stack) => {
+						let frame_base = self.get_stack_base_frame_id(stack_id);
 						let start_frame = start_frame.unwrap_or(0);
 						let end_frame = start_frame + count.unwrap_or(stack.len() as u32);
 
@@ -410,7 +469,7 @@ impl Server {
 							};
 
 							frames.push(StackFrame {
-								id: i as u32,
+								id: frame_base + (i as u32),
 								instruction: InstructionRef {
 									proc: proc_ref.clone(),
 									offset: stack[i].offset as u32,
@@ -435,8 +494,8 @@ impl Server {
 				});
 			}
 
-			Request::Scopes { frame_id } => self.send_or_disconnect(match &self.stacks {
-				Some(stacks) => match stacks.active.get(frame_id as usize) {
+			Request::Scopes { frame_id } => {
+				self.send_or_disconnect(match self.get_stack_frame(frame_id) {
 					Some(frame) => {
 						let mut arguments = None;
 
@@ -477,17 +536,8 @@ impl Server {
 							globals: None,
 						}
 					}
-				},
-
-				None => {
-					eprintln!("Debug server received Scopes request when not paused");
-					Response::Scopes {
-						arguments: None,
-						locals: None,
-						globals: None,
-					}
-				}
-			}),
+				});
+			}
 
 			Request::Variables { vars } => {
 				let response = match vars {
@@ -636,6 +686,8 @@ impl Server {
 	}
 
 	fn send(&mut self, response: Response) -> Result<(), Box<dyn std::error::Error>> {
+		eprintln!("Debug response: {:?}", response);
+		
 		if let ServerStream::Connected(stream) = &mut self.stream {
 			let data = serde_json::to_vec(&response)?;
 			stream.write_all(&data[..])?;
@@ -681,6 +733,8 @@ impl ServerThread {
 	// returns true if we should disconnect
 	fn handle_request(&mut self, data: &[u8]) -> Result<bool, Box<dyn Error>> {
 		let request = serde_json::from_slice::<Request>(data)?;
+
+		eprintln!("Debug request: {:?}", request);
 
 		if let Request::Disconnect = request {
 			return Ok(true);

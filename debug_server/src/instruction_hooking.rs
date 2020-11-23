@@ -115,6 +115,29 @@ lazy_static! {
 	static ref ORIGINAL_BYTECODE: Mutex<HashMap<PtrKey, Vec<u32>>> = Mutex::new(HashMap::new());
 }
 
+fn get_proc_ctx(stack_id: u32) -> *mut raw_types::procs::ExecutionContext {
+	if stack_id == 0 {
+		return unsafe {
+			*raw_types::funcs::CURRENT_EXECUTION_CONTEXT
+		};
+	}
+
+	unsafe {
+		let procs = raw_types::funcs::SUSPENDED_PROCS;
+		let buffer = (*procs).buffer;
+		let front = (*procs).front;
+		let back = (*procs).back;
+
+		// bad default
+		if back - front < stack_id as usize {
+			return *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
+		}
+
+		let instance = *buffer.add(front + (stack_id - 1) as usize);
+		(*instance).context
+	}
+}
+
 fn handle_breakpoint(
 	ctx: *mut raw_types::procs::ExecutionContext,
 	reason: BreakpointReason,
@@ -129,16 +152,23 @@ fn handle_breakpoint(
 
 	match action {
 		ContinueKind::Continue => DebuggerAction::None,
-		ContinueKind::StepOver => DebuggerAction::StepOver {
-			target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
-		},
-		ContinueKind::StepInto => DebuggerAction::StepInto {
-			parent: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
-		},
-		ContinueKind::StepOut => {
+		ContinueKind::StepOver { stack_id } => {
+			let ctx = get_proc_ctx(stack_id);
+			DebuggerAction::StepOver {
+				target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
+			}
+		}
+		ContinueKind::StepInto { stack_id } => {
+			let ctx = get_proc_ctx(stack_id);
+			DebuggerAction::StepInto {
+				parent: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
+			}
+		}
+		ContinueKind::StepOut { stack_id } => {
 			unsafe {
 				// Just continue the code if we've got no parent
 				// Otherwise, treat this as a StepOver on the parent proc
+				let ctx = get_proc_ctx(stack_id);
 				let parent = (*ctx).parent_context;
 				if parent.is_null() {
 					DebuggerAction::None
