@@ -1,16 +1,58 @@
 use super::instruction_hooking::{hook_instruction, unhook_instruction};
-use std::error::Error;
+use std::{error::Error, cell::RefCell};
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::thread;
 use std::{
 	net::{SocketAddr, TcpListener, TcpStream},
+	collections::HashMap,
 	thread::JoinHandle,
 };
 
 use dm::*;
 use dm::raw_types::values::{ValueTag, ValueData};
 use super::server_types::*;
+
+#[derive(Clone, Hash, Eq, PartialEq)]
+enum Variables {
+	Arguments { frame: u32 },
+	Locals { frame: u32 },
+	Internal { tag: u8, data: u32 },
+	//AssocKeys(Value),
+	//AssocValues(Value),
+}
+
+struct State {
+	stacks: debug::CallStacks,
+	variables: RefCell<Vec<Variables>>,
+	variables_to_refs: RefCell<HashMap<Variables, VariablesRef>>,
+}
+
+impl State {
+	fn new() -> Self {
+		Self {
+			stacks: debug::CallStacks::new(&DMContext {}),
+			variables: RefCell::new(vec![]),
+			variables_to_refs: RefCell::new(HashMap::new()),
+		}
+	}
+
+	fn get_ref(&self, vars: Variables) -> VariablesRef {
+		let mut variables_to_refs = self.variables_to_refs.borrow_mut();
+		let mut variables = self.variables.borrow_mut();
+		(*variables_to_refs.entry(vars.clone())
+			.or_insert_with(|| {
+				let reference = VariablesRef(variables.len() as i32 + 1);
+				variables.push(vars);
+				reference
+			})).clone()
+	}
+
+	fn get_variables(&self, reference: VariablesRef) -> Option<Variables> {
+		let variables = self.variables.borrow();
+		variables.get(reference.0 as usize - 1).map(|x| (*x).clone())
+	}
+}
 
 //
 // Server = main-thread code
@@ -35,10 +77,10 @@ enum ServerStream {
 
 pub struct Server {
 	requests: mpsc::Receiver<Request>,
-	stacks: Option<debug::CallStacks>,
 	stream: ServerStream,
 	_thread: JoinHandle<()>,
 	should_catch_runtimes: bool,
+	state: Option<State>,
 }
 
 struct ServerThread {
@@ -61,10 +103,10 @@ impl Server {
 
 		Ok(Server {
 			requests: requests_receiver,
-			stacks: None,
 			stream: ServerStream::Connected(stream),
 			_thread: thread,
 			should_catch_runtimes: true,
+			state: None,
 		})
 	}
 
@@ -78,10 +120,10 @@ impl Server {
 
 		Ok(Server {
 			requests: requests_receiver,
-			stacks: None,
 			stream: ServerStream::Waiting(connection_receiver),
 			_thread: thread,
 			should_catch_runtimes: true,
+			state: None,
 		})
 	}
 
@@ -131,14 +173,16 @@ impl Server {
 		value.get("vars").is_ok()
 	}
 
-	fn value_to_variable(name: String, value: &Value) -> Variable {
+	fn value_to_variable(&self, name: String, value: &Value) -> Variable {
 		let mut variables = None;
+		let state = self.state.as_ref().unwrap();
 
 		if List::is_list(value) || Self::is_object(value) {
-			variables = Some(VariablesRef::Internal {
+			// TODO: if assoc
+			variables = Some(state.get_ref(Variables::Internal {
 				tag: value.value.tag as u8,
 				data: unsafe { value.value.data.id },
-			})
+			}));
 		}
 
 		match value.to_string() {
@@ -162,7 +206,7 @@ impl Server {
 		}
 	}
 
-	fn value_to_variables(value: &Value) -> Result<Vec<Variable>, Runtime> {
+	fn value_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
 		// Lists are easy (TODO: asssoc)
 		if List::is_list(value) {
 			let list = List::from_value(value)?;
@@ -179,7 +223,7 @@ impl Server {
 			
 			for i in 1..=len {
 				let value = list.get(i)?;
-				variables.push(Self::value_to_variable(format!("[{}]", i), &value));
+				variables.push(self.value_to_variable(format!("[{}]", i), &value));
 			}
 
 			return Ok(variables);
@@ -206,7 +250,7 @@ impl Server {
 		for i in 1..=vars.len() {
 			let name = vars.get(i)?.as_string()?;
 			let value = value.get(name.as_str())?;
-			variables.push(Self::value_to_variable(name, &value));
+			variables.push(self.value_to_variable(name, &value));
 		}
 
 		Ok(variables)
@@ -214,8 +258,8 @@ impl Server {
 
 	fn get_stack(&self, stack_id: u32) -> Option<&Vec<debug::StackFrame>> {
 		let stack_id = stack_id as usize;
-		let stacks = match self.stacks.as_ref() {
-			Some(x) => x,
+		let stacks = match &self.state {
+			Some(state) => &state.stacks,
 			None => return None,
 		};
 
@@ -228,8 +272,8 @@ impl Server {
 
 	fn get_stack_base_frame_id(&self, stack_id: u32) -> u32 {
 		let stack_id = stack_id as usize;
-		let stacks = match self.stacks.as_ref() {
-			Some(x) => x,
+		let stacks = match &self.state {
+			Some(state) => &state.stacks,
 			None => return 0,
 		};
 
@@ -248,8 +292,8 @@ impl Server {
 
 	fn get_stack_frame(&self, frame_index: u32) -> Option<&debug::StackFrame> {
 		let mut frame_index = frame_index as usize;
-		let stacks = match self.stacks.as_ref() {
-			Some(x) => x,
+		let stacks = match &self.state {
+			Some(state) => &state.stacks,
 			None => return None,
 		};
 
@@ -280,7 +324,7 @@ impl Server {
 						Some(name) => String::from(name),
 						None => "<unknown>".to_owned()
 					};
-					vars.push(Self::value_to_variable(name, &local));
+					vars.push(self.value_to_variable(name, &local));
 				}
 
 				vars
@@ -297,13 +341,13 @@ impl Server {
 		match self.get_stack_frame(frame_index) {
 			Some(frame) => {
 				let mut vars = vec![
-					Self::value_to_variable(".".to_owned(), &frame.dot),
-					Self::value_to_variable("src".to_owned(), &frame.src),
-					Self::value_to_variable("usr".to_owned(), &frame.usr),
+					self.value_to_variable(".".to_owned(), &frame.dot),
+					self.value_to_variable("src".to_owned(), &frame.src),
+					self.value_to_variable("usr".to_owned(), &frame.usr),
 				];
 
 				for (name, local) in &frame.locals {
-					vars.push(Self::value_to_variable(String::from(name), &local));
+					vars.push(self.value_to_variable(String::from(name), &local));
 				}
 
 				vars
@@ -409,15 +453,15 @@ impl Server {
 			}
 
 			Request::Stacks => {
-				let stacks = match self.stacks.as_ref() {
-					Some(stacks) => {
+				let stacks = match &self.state {
+					Some(state) => {
 						let mut ret = vec![];
 						ret.push(Stack {
 							id: 0,
-							name: stacks.active[0].proc.path.clone(),
+							name: state.stacks.active[0].proc.path.clone(),
 						});
 
-						for (idx, stack) in stacks.suspended.iter().enumerate() {
+						for (idx, stack) in state.stacks.suspended.iter().enumerate() {
 							ret.push(Stack {
 								id: (idx + 1) as u32,
 								name: stack[0].proc.path.clone(),
@@ -492,31 +536,32 @@ impl Server {
 			Request::Scopes { frame_id } => {
 				let response = match self.get_stack_frame(frame_id) {
 					Some(frame) => {
+						let state = self.state.as_ref().unwrap();
 						let mut arguments = None;
 
 						if !frame.args.is_empty() {
-							arguments = Some(VariablesRef::Arguments {
+							arguments = Some(Variables::Arguments {
 								frame: frame_id,
 							});
 						}
 
 						// Never empty because we're putting ./src/usr in here
-						let locals = Some(VariablesRef::Locals {
+						let locals = Some(Variables::Locals {
 							frame: frame_id,
 						});
 
 						let globals_value = Value::globals();
 						let globals = unsafe {
-							VariablesRef::Internal {
+							Variables::Internal {
 								tag: globals_value.value.tag as u8,
 								data: globals_value.value.data.id,
 							}
 						};
 
 						Response::Scopes {
-							arguments: arguments,
-							locals: locals,
-							globals: Some(globals),
+							arguments: arguments.map(|x| state.get_ref(x)),
+							locals: locals.map(|x| state.get_ref(x)),
+							globals: Some(state.get_ref(globals)),
 						}
 					}
 
@@ -533,39 +578,59 @@ impl Server {
 					}
 				};
 
+				println!("{:?}", response);
+
 				self.send_or_disconnect(response);
 			}
 
 			Request::Variables { vars } => {
-				let response = match vars {
-					VariablesRef::Arguments { frame } => {
-						Response::Variables {
-							vars: self.get_args(frame)
-						}
-					}
+				let response = match &self.state {
+					Some(state) => {
+						match state.get_variables(vars) {
+							Some(vars) => {
+								match vars {
+									Variables::Arguments { frame } => {
+										Response::Variables {
+											vars: self.get_args(frame)
+										}
+									}
+				
+									Variables::Locals { frame } => {
+										Response::Variables {
+											vars: self.get_locals(frame)
+										}
+									}
+				
+									Variables::Internal { tag, data } => {
+										let value = unsafe {
+											Value::from_raw(raw_types::values::Value {
+												tag: std::mem::transmute(tag),
+												data: ValueData { id: data },
+											})
+										};
+				
+										match self.value_to_variables(&value) {
+											Ok(vars) => Response::Variables { vars },
+				
+											Err(e) => {
+												self.notify(format!("runtime occured while processing Variables request: {:?}", e));
+												Response::Variables { vars: vec![] }
+											}
+										}
+									}
+								}
+							}
 
-					VariablesRef::Locals { frame } => {
-						Response::Variables {
-							vars: self.get_locals(frame)
-						}
-					}
-
-					VariablesRef::Internal { tag, data } => {
-						let value = unsafe {
-							Value::from_raw(raw_types::values::Value {
-								tag: std::mem::transmute(tag),
-								data: ValueData { id: data },
-							})
-						};
-
-						match Self::value_to_variables(&value) {
-							Ok(vars) => Response::Variables { vars },
-
-							Err(e) => {
-								self.notify(format!("runtime occured while processing Variables request: {:?}", e));
+							None => {
+								self.notify("received unknown VariableRef in Variables request");
 								Response::Variables { vars: vec![] }
 							}
 						}
+					}
+
+					None => {
+						self.notify("recevied Variables request while not paused");
+						Response::Variables { vars: vec![] }
 					}
 				};
 
@@ -630,16 +695,14 @@ impl Server {
 
 		self.notify(format!("Pausing execution (reason: {:?})", reason));
 
-		// Cache these now so nothing else has to fetch them
-		// TODO: it'd be cool if all this data was fetched lazily
-		self.stacks = Some(debug::CallStacks::new(&DMContext {}));
+		self.state = Some(State::new());
 
 		self.send_or_disconnect(Response::BreakpointHit { reason });
 
 		while let Ok(request) = self.requests.recv() {
 			// Hijack and handle any Continue requests
 			if let Request::Continue { kind } = request {
-				self.stacks = None;
+				self.state = None;
 				return kind;
 			}
 
@@ -648,7 +711,7 @@ impl Server {
 		}
 
 		// Client disappeared?
-		self.stacks = None;
+		self.state = None;
 		ContinueKind::Continue
 	}
 
