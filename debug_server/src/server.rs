@@ -25,7 +25,7 @@ use super::server_types::*;
 
 enum ServerStream {
 	// The server is waiting for a Stream to be sent on the connection channel
-	Waiting,
+	Waiting(mpsc::Receiver<TcpStream>),
 
 	Connected(TcpStream),
 
@@ -34,7 +34,6 @@ enum ServerStream {
 }
 
 pub struct Server {
-	connection: mpsc::Receiver<TcpStream>,
 	requests: mpsc::Receiver<Request>,
 	stacks: Option<debug::CallStacks>,
 	stream: ServerStream,
@@ -43,18 +42,15 @@ pub struct Server {
 }
 
 struct ServerThread {
-	connection: mpsc::Sender<TcpStream>,
 	requests: mpsc::Sender<Request>,
 }
 
 impl Server {
 	pub fn connect(addr: &SocketAddr) -> std::io::Result<Server> {
 		let stream = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))?;
-		let (connection_sender, connection_receiver) = mpsc::channel();
 		let (requests_sender, requests_receiver) = mpsc::channel();
 
 		let server_thread = ServerThread {
-			connection: connection_sender,
 			requests: requests_sender,
 		};
 
@@ -64,7 +60,6 @@ impl Server {
 		});
 
 		Ok(Server {
-			connection: connection_receiver,
 			requests: requests_receiver,
 			stacks: None,
 			stream: ServerStream::Connected(stream),
@@ -78,15 +73,13 @@ impl Server {
 		let (requests_sender, requests_receiver) = mpsc::channel();
 
 		let thread = ServerThread {
-			connection: connection_sender,
 			requests: requests_sender,
-		}.spawn_listener(TcpListener::bind(addr)?);
+		}.spawn_listener(TcpListener::bind(addr)?, connection_sender);
 
 		Ok(Server {
-			connection: connection_receiver,
 			requests: requests_receiver,
 			stacks: None,
-			stream: ServerStream::Waiting,
+			stream: ServerStream::Waiting(connection_receiver),
 			_thread: thread,
 			should_catch_runtimes: true,
 		})
@@ -588,11 +581,11 @@ impl Server {
 	}
 
 	pub fn check_connected(&mut self) -> bool {
-		match self.stream {
+		match &self.stream {
 			ServerStream::Disconnected => false,
 			ServerStream::Connected(_) => true,
-			ServerStream::Waiting => {
-				if let Ok(stream) = self.connection.try_recv() {
+			ServerStream::Waiting(receiver) => {
+				if let Ok(stream) = receiver.try_recv() {
 					self.stream = ServerStream::Connected(stream);
 					true
 				} else {
@@ -668,7 +661,7 @@ impl Server {
 				}
 			}
 
-			ServerStream::Waiting | ServerStream::Disconnected => panic!("Debug Server is not connected")
+			ServerStream::Waiting(_) | ServerStream::Disconnected => panic!("Debug Server is not connected")
 		}
 	}
 
@@ -687,7 +680,7 @@ impl Server {
 
 	fn send(&mut self, response: Response) -> Result<(), Box<dyn std::error::Error>> {
 		eprintln!("Debug response: {:?}", response);
-		
+
 		if let ServerStream::Connected(stream) = &mut self.stream {
 			let data = serde_json::to_vec(&response)?;
 			stream.write_all(&data[..])?;
@@ -707,12 +700,10 @@ impl Drop for Server {
 }
 
 impl ServerThread {
-	fn spawn_listener(self, listener: TcpListener) -> JoinHandle<()> {
+	fn spawn_listener(self, listener: TcpListener, connection_sender: mpsc::Sender<TcpStream>) -> JoinHandle<()> {
 		thread::spawn(move || match listener.accept() {
 			Ok((stream, _)) => {
-				match self
-					.connection
-					.send(stream.try_clone().unwrap())
+				match connection_sender.send(stream.try_clone().unwrap())
 				{
 					Ok(_) => {}
 					Err(e) => {
