@@ -17,7 +17,8 @@ use super::server_types::*;
 enum Variables {
 	Arguments { frame: u32 },
 	Locals { frame: u32 },
-	Internal { tag: u8, data: u32 },
+	ObjectVars { tag: u8, data: u32 },
+	ListContents { tag: u8, data: u32 }
 	//AssocKeys(Value),
 	//AssocValues(Value),
 }
@@ -177,9 +178,14 @@ impl Server {
 		let mut variables = None;
 		let state = self.state.as_ref().unwrap();
 
-		if List::is_list(value) || Self::is_object(value) {
-			// TODO: if assoc
-			variables = Some(state.get_ref(Variables::Internal {
+		// TODO: is assoc
+		if List::is_list(value) {
+			variables = Some(state.get_ref(Variables::ListContents {
+				tag: value.value.tag as u8,
+				data: unsafe { value.value.data.id },
+			}));
+		} else if Self::is_object(value) {
+			variables = Some(state.get_ref(Variables::ObjectVars {
 				tag: value.value.tag as u8,
 				data: unsafe { value.value.data.id },
 			}));
@@ -206,33 +212,28 @@ impl Server {
 		}
 	}
 
-	fn value_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
-		// Lists are easy (TODO: asssoc)
-		if List::is_list(value) {
-			let list = List::from_value(value)?;
-			let len = list.len();
+	fn list_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
+		let list = List::from_value(value)?;
+		let len = list.len();
 
-			let mut variables = vec![
-				Variable {
-					name: "len".to_owned(),
-					kind: "TODO".to_owned(),
-					value: format!("{}", len),
-					variables: None,
-				}
-			];
-			
-			for i in 1..=len {
-				let value = list.get(i)?;
-				variables.push(self.value_to_variable(format!("[{}]", i), &value));
+		let mut variables = vec![
+			Variable {
+				name: "len".to_owned(),
+				kind: "TODO".to_owned(),
+				value: format!("{}", len),
+				variables: None,
 			}
-
-			return Ok(variables);
+		];
+		
+		for i in 1..=len {
+			let value = list.get(i)?;
+			variables.push(self.value_to_variable(format!("[{}]", i), &value));
 		}
 
-		if !Self::is_object(value) {
-			return Ok(vec![]);
-		}
+		return Ok(variables);
+	}
 
+	fn object_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
 		// Grab `value.vars`. We have a little hack for globals which use a special type.
 		// TODO: vars is not always a list
 		let vars = List::from_value(&unsafe {
@@ -552,7 +553,7 @@ impl Server {
 
 						let globals_value = Value::globals();
 						let globals = unsafe {
-							Variables::Internal {
+							Variables::ObjectVars {
 								tag: globals_value.value.tag as u8,
 								data: globals_value.value.data.id,
 							}
@@ -601,7 +602,7 @@ impl Server {
 										}
 									}
 				
-									Variables::Internal { tag, data } => {
+									Variables::ObjectVars { tag, data } => {
 										let value = unsafe {
 											Value::from_raw(raw_types::values::Value {
 												tag: std::mem::transmute(tag),
@@ -609,7 +610,25 @@ impl Server {
 											})
 										};
 				
-										match self.value_to_variables(&value) {
+										match self.object_to_variables(&value) {
+											Ok(vars) => Response::Variables { vars },
+				
+											Err(e) => {
+												self.notify(format!("runtime occured while processing Variables request: {:?}", e));
+												Response::Variables { vars: vec![] }
+											}
+										}
+									}
+
+									Variables::ListContents { tag, data } => {
+										let value = unsafe {
+											Value::from_raw(raw_types::values::Value {
+												tag: std::mem::transmute(tag),
+												data: ValueData { id: data },
+											})
+										};
+	
+										match self.list_to_variables(&value) {
 											Ok(vars) => Response::Variables { vars },
 				
 											Err(e) => {
