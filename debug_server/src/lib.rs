@@ -3,21 +3,19 @@ mod server;
 mod server_types;
 
 use std::{
-	cell::RefCell,
+	cell::UnsafeCell,
 	net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
 use dm::*;
 
-thread_local! {
-	pub static DEBUG_SERVER: RefCell<Option<server::Server>> = RefCell::new(None);
-}
+pub static mut DEBUG_SERVER: UnsafeCell<Option<server::Server>> = UnsafeCell::new(None);
 
 #[shutdown]
 fn shutdown_debugger() {
-	DEBUG_SERVER.with(|x| {
-		x.replace(None);
-	});
+	unsafe {
+		*DEBUG_SERVER.get() = None;
+	}
 }
 
 #[hook("/proc/enable_debugging")]
@@ -29,9 +27,9 @@ fn enable_debugging(port: Value) {
 	let server = server::Server::listen(&addr)
 		.map_err(|e| runtime!("Couldn't create debug server {:?}", e))?;
 
-	DEBUG_SERVER.with(|x| {
-		x.replace(Some(server));
-	});
+	unsafe {
+		*DEBUG_SERVER.get() = Some(server);
+	}
 
 	Ok(Value::from(true))
 }

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ffi::c_void};
+use std::{cell::UnsafeCell, ffi::c_void};
 
 use crate::server_types::{BreakpointReason, ContinueKind};
 use crate::DEBUG_SERVER;
@@ -100,7 +100,7 @@ enum DebuggerAction {
 static mut CURRENT_ACTION: DebuggerAction = DebuggerAction::None;
 
 // TODO: Clear on shutdown
-static mut DEFERRED_INSTRUCTION_REPLACE: RefCell<Option<(Vec<u32>, *mut u32)>> = RefCell::new(None);
+static mut DEFERRED_INSTRUCTION_REPLACE: UnsafeCell<Option<(Vec<u32>, *mut u32)>> = UnsafeCell::new(None);
 
 #[derive(PartialEq, Eq, Hash)]
 struct PtrKey(usize);
@@ -142,13 +142,12 @@ fn handle_breakpoint(
 	ctx: *mut raw_types::procs::ExecutionContext,
 	reason: BreakpointReason,
 ) -> DebuggerAction {
-	let action = DEBUG_SERVER.with(|x| {
-		let mut server = x.borrow_mut();
-		if server.is_none() {
-			return ContinueKind::Continue;
+	let action = unsafe {
+		match &mut *DEBUG_SERVER.get() {
+			Some(server) => server.handle_breakpoint(ctx, reason),
+			None => ContinueKind::Continue,
 		}
-		server.as_mut().unwrap().handle_breakpoint(ctx, reason)
-	});
+	};
 
 	match action {
 		ContinueKind::Continue => DebuggerAction::None,
@@ -239,23 +238,20 @@ extern "C" fn handle_instruction(
 ) -> *const raw_types::procs::ExecutionContext {
 	// Always handle the deferred instruction replacement first - everything else will depend on it
 	unsafe {
-		let mut deferred = DEFERRED_INSTRUCTION_REPLACE.borrow_mut();
+		let deferred = DEFERRED_INSTRUCTION_REPLACE.get();
 		if let Some((src, dst)) = &*deferred {
 			std::ptr::copy_nonoverlapping(src.as_ptr(), *dst, src.len());
 			*deferred = None;
 		}
 	}
 
-	DEBUG_SERVER.with(|x| {
-		let mut server = x.borrow_mut();
-		if let Some(server) = server.as_mut() {
+	unsafe {
+		if let Some(server) = &mut *DEBUG_SERVER.get() {
 			if server.process() {
-				unsafe {
-					CURRENT_ACTION = DebuggerAction::Pause;
-				}
+				CURRENT_ACTION = DebuggerAction::Pause;
 			}
 		}
-	});
+	}
 
 	let opcode_ptr = unsafe { (*ctx).bytecode.add((*ctx).bytecode_offset as usize) };
 	let opcode = unsafe { *opcode_ptr };
@@ -333,13 +329,12 @@ extern "C" fn handle_instruction(
 		let map = ORIGINAL_BYTECODE.lock().unwrap();
 		if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
 			unsafe {
-				assert_eq!(
-					DEFERRED_INSTRUCTION_REPLACE.replace(Some((
-						std::slice::from_raw_parts(opcode_ptr, original.len()).to_vec(),
-						opcode_ptr
-					))),
-					None
-				);
+				let deferred_replace = DEFERRED_INSTRUCTION_REPLACE.get();
+				assert_eq!(*deferred_replace, None);
+				*deferred_replace = Some((
+					std::slice::from_raw_parts(opcode_ptr, original.len()).to_vec(),
+					opcode_ptr
+				));
 				std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
 			}
 		}
@@ -425,7 +420,7 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 		unsafe {
 			// TODO: This check could fail once we add in runtime catching
 			// The solution is to just remove the replace if it is for this instruction
-			assert_eq!(DEFERRED_INSTRUCTION_REPLACE.borrow().as_ref(), None);
+			assert_eq!(*DEFERRED_INSTRUCTION_REPLACE.get(), None);
 			std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
 		}
 
