@@ -270,7 +270,7 @@ impl Server {
 		None
 	}
 
-	fn get_args(&self, frame_index: u32) -> Vec<Variable> {
+	fn get_args(&mut self, frame_index: u32) -> Vec<Variable> {
 		match self.get_stack_frame(frame_index) {
 			Some(frame) => {
 				let mut vars = vec![];
@@ -287,13 +287,13 @@ impl Server {
 			}
 
 			None => {
-				eprintln!("Debug server tried to read arguments from invalid frame id: {}", frame_index);
+				self.notify(format!("tried to read arguments from invalid frame id: {}", frame_index));
 				vec![]
 			}
 		}
 	}
 
-	fn get_locals(&self, frame_index: u32) -> Vec<Variable> {
+	fn get_locals(&mut self, frame_index: u32) -> Vec<Variable> {
 		match self.get_stack_frame(frame_index) {
 			Some(frame) => {
 				let mut vars = vec![
@@ -310,7 +310,7 @@ impl Server {
 			}
 
 			None => {
-				eprintln!("Debug server tried to read locals from invalid frame id: {}", frame_index);
+				self.notify(format!("tried to read locals from invalid frame id: {}", frame_index));
 				vec![]
 			}
 		}
@@ -320,7 +320,7 @@ impl Server {
 	fn handle_request(&mut self, request: Request) -> bool {
 		match request {
 			Request::Disconnect => {
-				unreachable!("Request::Disconnect should be handled by the network thread");
+				unreachable!();
 			}
 
 			Request::BreakpointSet { instruction } => {
@@ -440,7 +440,7 @@ impl Server {
 				start_frame,
 				count,
 			} => {
-				self.send_or_disconnect(match self.get_stack(stack_id) {
+				let response = match self.get_stack(stack_id) {
 					Some(stack) => {
 						let frame_base = self.get_stack_base_frame_id(stack_id);
 						let start_frame = start_frame.unwrap_or(0);
@@ -478,17 +478,19 @@ impl Server {
 					}
 
 					None => {
-						eprintln!("Debug server received StackFrames request when not paused");
+						self.notify("received StackFrames request when not paused");
 						Response::StackFrames {
 							frames: vec![],
 							total_count: 0,
 						}
 					}
-				});
+				};
+
+				self.send_or_disconnect(response);
 			}
 
 			Request::Scopes { frame_id } => {
-				self.send_or_disconnect(match self.get_stack_frame(frame_id) {
+				let response = match self.get_stack_frame(frame_id) {
 					Some(frame) => {
 						let mut arguments = None;
 
@@ -519,17 +521,19 @@ impl Server {
 					}
 
 					None => {
-						eprintln!(
+						self.notify(format!(
 							"Debug server received Scopes request for invalid frame_id ({})",
 							frame_id
-						);
+						));
 						Response::Scopes {
 							arguments: None,
 							locals: None,
 							globals: None,
 						}
 					}
-				});
+				};
+
+				self.send_or_disconnect(response);
 			}
 
 			Request::Variables { vars } => {
@@ -558,7 +562,7 @@ impl Server {
 							Ok(vars) => Response::Variables { vars },
 
 							Err(e) => {
-								eprintln!("Debug server hit a runtime when processing Variables request: {:?}", e);
+								self.notify(format!("runtime occured while processing Variables request: {:?}", e));
 								Response::Variables { vars: vec![] }
 							}
 						}
@@ -569,7 +573,7 @@ impl Server {
 			}
 
 			Request::Continue { .. } => {
-				eprintln!("Debug server received a continue request when not paused. Ignoring.");
+				self.notify("received a continue request when not paused");
 			}
 
 			Request::Pause => {
@@ -595,6 +599,19 @@ impl Server {
 		}
 	}
 
+	pub fn notify<T: Into<String>>(&mut self, message: T) {
+		let message = message.into();
+		eprintln!("Debug Server: {:?}", message);
+
+		if !self.check_connected() {
+			return;
+		}
+
+		self.send_or_disconnect(Response::Notification {
+			message
+		});
+	}
+
 	pub fn handle_breakpoint(
 		&mut self,
 		_ctx: *mut raw_types::procs::ExecutionContext,
@@ -610,6 +627,8 @@ impl Server {
 				return ContinueKind::Continue;
 			}
 		}
+
+		self.notify(format!("Pausing execution (reason: {:?})", reason));
 
 		// Cache these now so nothing else has to fetch them
 		// TODO: it'd be cool if all this data was fetched lazily
@@ -667,7 +686,7 @@ impl Server {
 
 	fn disconnect(&mut self) {
 		if let ServerStream::Connected(stream) = &mut self.stream {
-			eprintln!("Debug server disconneting");
+			eprintln!("Debug server disconnecting");
 			let data = serde_json::to_vec(&Response::Disconnect).unwrap();
 			let _ = stream.write_all(&data[..]);
 			let _ = stream.write_all(&[0]);
@@ -679,8 +698,6 @@ impl Server {
 	}
 
 	fn send(&mut self, response: Response) -> Result<(), Box<dyn std::error::Error>> {
-		eprintln!("Debug response: {:?}", response);
-
 		if let ServerStream::Connected(stream) = &mut self.stream {
 			let data = serde_json::to_vec(&response)?;
 			stream.write_all(&data[..])?;
@@ -724,8 +741,6 @@ impl ServerThread {
 	// returns true if we should disconnect
 	fn handle_request(&mut self, data: &[u8]) -> Result<bool, Box<dyn Error>> {
 		let request = serde_json::from_slice::<Request>(data)?;
-
-		eprintln!("Debug request: {:?}", request);
 
 		if let Request::Disconnect = request {
 			return Ok(true);

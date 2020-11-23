@@ -269,7 +269,7 @@ extern "C" fn handle_instruction(
 			}
 
 			DebuggerAction::BreakOnNext => {
-				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Breakpoint);
+				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 				did_breakpoint = true;
 			}
 
