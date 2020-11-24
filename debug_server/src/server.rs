@@ -195,7 +195,6 @@ impl Server {
 		let mut variables = None;
 		let state = self.state.as_ref().unwrap();
 
-		// TODO: is assoc
 		if List::is_list(value) {
 			variables = Some(state.get_ref(Variables::ListContents {
 				tag: value.value.tag as u8,
@@ -269,7 +268,6 @@ impl Server {
 
 	fn object_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
 		// Grab `value.vars`. We have a little hack for globals which use a special type.
-		// TODO: vars is not always a list
 		let vars = List::from_value(&unsafe {
 			if value.value.tag == ValueTag::World && value.value.data.id == 1 {
 				Value::new(ValueTag::GlobalVars, ValueData { id: 0 })
@@ -340,7 +338,7 @@ impl Server {
 				return Some(&frame[frame_index]);
 			}
 
-			frame_index += frame.len();
+			frame_index -= frame.len();
 		}
 
 		None
@@ -408,7 +406,6 @@ impl Server {
 			Request::BreakpointSet { instruction } => {
 				let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
 
-				// TODO: better error handling
 				match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
 					Some(proc) => match hook_instruction(&proc, instruction.offset) {
 						Ok(()) => {
@@ -607,8 +604,6 @@ impl Server {
 						}
 					}
 				};
-
-				println!("{:?}", response);
 
 				self.send_or_disconnect(response);
 			}

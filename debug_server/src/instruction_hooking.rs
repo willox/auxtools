@@ -230,7 +230,6 @@ fn handle_runtime(error: &str) {
 
 // Handles any instruction BYOND tries to execute.
 // This function has to leave `*CURRENT_EXECUTION_CONTEXT` in EAX, so make sure to return it.
-// TODO: perf is bad!
 #[no_mangle]
 extern "C" fn handle_instruction(
 	ctx: *mut raw_types::procs::ExecutionContext,
@@ -417,9 +416,12 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 	let mut map = ORIGINAL_BYTECODE.lock().unwrap();
 	if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
 		unsafe {
-			// TODO: This check could fail once we add in runtime catching
-			// The solution is to just remove the replace if it is for this instruction
-			assert_eq!(*DEFERRED_INSTRUCTION_REPLACE.get(), None);
+			let deferred = DEFERRED_INSTRUCTION_REPLACE.get();
+			if let Some((_, dst)) = *deferred {
+				if dst == opcode_ptr {
+					deferred.replace(None);
+				}
+			}
 			std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
 		}
 
