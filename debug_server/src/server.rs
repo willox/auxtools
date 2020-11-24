@@ -892,7 +892,7 @@ impl ServerThread {
 
 				Err(e) => {
 					eprintln!("Debug server thread read error: {}", e);
-					return;
+					break;
 				}
 			};
 
@@ -902,7 +902,7 @@ impl ServerThread {
 
 				Err(e) => {
 					eprintln!("Debug server thread read error: {}", e);
-					return;
+					break;
 				}
 			};
 
@@ -910,15 +910,17 @@ impl ServerThread {
 				Ok(requested_disconnect) => {
 					if requested_disconnect {
 						eprintln!("Debug client disconnected");
-						return;
+						break;
 					}
 				}
 
 				Err(e) => {
 					eprintln!("Debug server thread failed to handle request: {}", e);
-					return;
+					break;
 				}
 			}
 		}
+
+		eprintln!("Debug server thread finished");
 	}
 }
