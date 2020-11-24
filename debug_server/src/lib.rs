@@ -12,7 +12,7 @@ use dm::*;
 pub static mut DEBUG_SERVER: UnsafeCell<Option<server::Server>> = UnsafeCell::new(None);
 
 #[shutdown]
-fn shutdown_debugger() {
+fn debugger_shutdown() {
 	unsafe {
 		*DEBUG_SERVER.get() = None;
 	}

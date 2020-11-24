@@ -20,7 +20,7 @@ extern "C" {
 }
 
 #[init(full)]
-fn debug_server_init(_: &DMContext) -> Result<(), String> {
+fn instruction_hooking_init(_: &DMContext) -> Result<(), String> {
 	let byondcore = sigscan::Scanner::for_module(BYONDCORE).unwrap();
 
 	if cfg!(windows) {
@@ -59,11 +59,20 @@ fn debug_server_init(_: &DMContext) -> Result<(), String> {
 
 		execute_instruction_original = std::mem::transmute(hook.trampoline());
 
-		// We never remove or disable the hook, so just forget about it. (atm)
+		// We never remove or disable the hook, so just forget about it.
 		std::mem::forget(hook);
 	}
 
 	Ok(())
+}
+
+#[shutdown]
+fn instruction_hooking_shutdown() {
+	unsafe {
+		CURRENT_ACTION = DebuggerAction::None;
+		*DEFERRED_INSTRUCTION_REPLACE.get() = None;
+		*ORIGINAL_BYTECODE.lock().unwrap() = HashMap::new();
+	}
 }
 
 static mut PTR_REF_ID: u16 = 0x8000;
@@ -86,7 +95,6 @@ impl ProcInstanceRef {
 }
 
 // A lot of these store the parent ExecutionContext so we can tell if our proc has returned
-// TODO: line/instruction variants
 #[derive(Copy, Clone)]
 enum DebuggerAction {
 	None,
@@ -99,7 +107,6 @@ enum DebuggerAction {
 
 static mut CURRENT_ACTION: DebuggerAction = DebuggerAction::None;
 
-// TODO: Clear on shutdown
 static mut DEFERRED_INSTRUCTION_REPLACE: UnsafeCell<Option<(Vec<u32>, *mut u32)>> =
 	UnsafeCell::new(None);
 
