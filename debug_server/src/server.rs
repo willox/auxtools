@@ -815,9 +815,9 @@ impl Server {
 	fn disconnect(&mut self) {
 		if let ServerStream::Connected(stream) = &mut self.stream {
 			eprintln!("Debug server disconnecting");
-			let data = serde_json::to_vec(&Response::Disconnect).unwrap();
+			let data = bincode::serialize(&Response::Disconnect).unwrap();
+			let _ = stream.write_all(&(data.len() as u32).to_le_bytes());
 			let _ = stream.write_all(&data[..]);
-			let _ = stream.write_all(&[0]);
 			let _ = stream.flush();
 			let _ = stream.shutdown(std::net::Shutdown::Both);
 		}
@@ -827,9 +827,9 @@ impl Server {
 
 	fn send(&mut self, response: Response) -> Result<(), Box<dyn std::error::Error>> {
 		if let ServerStream::Connected(stream) = &mut self.stream {
-			let data = serde_json::to_vec(&response)?;
+			let data = bincode::serialize(&response)?;
+			stream.write_all(&(data.len() as u32).to_le_bytes())?;
 			stream.write_all(&data[..])?;
-			stream.write_all(&[0])?; // null-terminator
 			stream.flush()?;
 			return Ok(());
 		}
@@ -871,7 +871,7 @@ impl ServerThread {
 
 	// returns true if we should disconnect
 	fn handle_request(&mut self, data: &[u8]) -> Result<bool, Box<dyn Error>> {
-		let request = serde_json::from_slice::<Request>(data)?;
+		let request = bincode::deserialize::<Request>(data)?;
 
 		if let Request::Disconnect = request {
 			return Ok(true);
@@ -882,48 +882,42 @@ impl ServerThread {
 	}
 
 	fn run(mut self, mut stream: TcpStream) {
-		let mut buf = [0u8; 4096];
-		let mut queued_data = vec![];
+		let mut buf = vec![];
 
-		// The incoming stream is JSON objects separated by null terminators.
+		// The incoming stream is a u32 followed by a bincode-encoded Request.
 		loop {
-			match stream.read(&mut buf) {
-				Ok(0) => return,
-
-				Ok(n) => {
-					queued_data.extend_from_slice(&buf[..n]);
-				}
+			let mut len_bytes = [0u8; 4];
+			let len = match stream.read_exact(&mut len_bytes) {
+				Ok(_) => u32::from_le_bytes(len_bytes),
 
 				Err(e) => {
 					eprintln!("Debug server thread read error: {}", e);
 					return;
 				}
-			}
+			};
 
-			for message in queued_data.split(|x| *x == 0) {
-				// split can give us empty slices
-				if message.is_empty() {
-					continue;
+			buf.resize(len as usize, 0);
+			match stream.read_exact(&mut buf) {
+				Ok(_) => (),
+
+				Err(e) => {
+					eprintln!("Debug server thread read error: {}", e);
+					return;
 				}
+			};
 
-				match self.handle_request(message) {
-					Ok(requested_disconnect) => {
-						if requested_disconnect {
-							eprintln!("Debug client disconnected");
-							return;
-						}
-					}
-
-					Err(e) => {
-						eprintln!("Debug server thread failed to handle request: {}", e);
+			match self.handle_request(&buf[..]) {
+				Ok(requested_disconnect) => {
+					if requested_disconnect {
+						eprintln!("Debug client disconnected");
 						return;
 					}
 				}
-			}
 
-			// Clear any finished messages from the buffer
-			if let Some(idx) = queued_data.iter().rposition(|x| *x == 0) {
-				queued_data.drain(..idx);
+				Err(e) => {
+					eprintln!("Debug server thread failed to handle request: {}", e);
+					return;
+				}
 			}
 		}
 	}
