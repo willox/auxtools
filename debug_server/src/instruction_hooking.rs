@@ -75,7 +75,6 @@ fn instruction_hooking_shutdown() {
 	}
 }
 
-static mut PTR_REF_ID: u16 = 0x8000;
 
 #[derive(PartialEq, Eq, Copy, Clone)]
 struct ProcInstanceRef(u16);
@@ -83,6 +82,7 @@ struct ProcInstanceRef(u16);
 impl ProcInstanceRef {
 	fn new(ptr: *mut raw_types::procs::ProcInstance) -> Self {
 		unsafe {
+			static mut PTR_REF_ID: u16 = 0x8000;
 			PTR_REF_ID += 1;
 			(*ptr).mega_hack = PTR_REF_ID;
 			Self(PTR_REF_ID)

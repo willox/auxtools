@@ -200,6 +200,19 @@ impl Server {
 				tag: value.value.tag as u8,
 				data: unsafe { value.value.data.id },
 			}));
+
+			// Early return for lists so we can include their length in the value
+			let stringified = match List::from_value(value) {
+				Ok(list) => format!("/list {{len = {}}}", list.len()),
+				Err(Runtime { message }) => format!("/list (failed to get len: {:?})", message),
+			};
+
+			return Variable {
+				name,
+				kind: "list".to_owned(),
+				value: stringified,
+				variables,
+			};
 		} else if Self::is_object(value) {
 			variables = Some(state.get_ref(Variables::ObjectVars {
 				tag: value.value.tag as u8,
@@ -207,20 +220,16 @@ impl Server {
 			}));
 		}
 
-		match value.to_string() {
-			Ok(value) => Variable {
-				name,
-				kind: "TODO".to_owned(),
-				value,
-				variables,
-			},
+		let stringified = match value.to_string() {
+			Ok(value) => value,
+			Err(Runtime { message }) => format!("failed to stringify value: {:?}", message),
+		};
 
-			Err(Runtime { message }) => Variable {
-				name,
-				kind: "TODO".to_owned(),
-				value: format!("failed to read value: {:?}", message),
-				variables,
-			},
+		Variable {
+			name,
+			kind: "TODO".to_owned(),
+			value: stringified,
+			variables,
 		}
 	}
 
@@ -229,12 +238,7 @@ impl Server {
 		let list = List::from_value(value)?;
 		let len = list.len();
 
-		let mut variables = vec![Variable {
-			name: "len".to_owned(),
-			kind: "TODO".to_owned(),
-			value: format!("{}", len),
-			variables: None,
-		}];
+		let mut variables = vec![];
 
 		for i in 1..=len {
 			let key = list.get(i)?;
