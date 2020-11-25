@@ -182,6 +182,36 @@ impl Server {
 		}
 	}
 
+	fn get_offset(&self, proc: ProcRef, line: u32) -> Option<u32> {
+		match dm::Proc::find_override(proc.path, proc.override_id) {
+			Some(proc) => {
+				// We're ignoring disassemble errors because any bytecode in the result is still valid
+				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
+				let (dism, _) = proc.disassemble();
+				let mut offset = None;
+				let mut at_offset = false;
+
+				for (instruction_offset, _, instruction) in dism {
+					if at_offset {
+						offset = Some(instruction_offset);
+						break;
+					}
+					if let Instruction::DbgLine(current_line) = instruction {
+						if current_line == line {
+							at_offset = true;
+						}
+					}
+				}
+
+				return offset;
+			}
+
+			None => {
+				return None;
+			}
+		}
+	}
+
 	fn is_object(value: &Value) -> bool {
 		// Hack for globals
 		if value.value.tag == ValueTag::World && unsafe { value.value.data.id == 1 } {
@@ -209,7 +239,6 @@ impl Server {
 
 			return Variable {
 				name,
-				kind: "list".to_owned(),
 				value: stringified,
 				variables,
 			};
@@ -227,7 +256,6 @@ impl Server {
 
 		Variable {
 			name,
-			kind: "TODO".to_owned(),
 			value: stringified,
 			variables,
 		}
@@ -248,7 +276,6 @@ impl Server {
 					// assoc entry
 					variables.push(Variable {
 						name: format!("[{}]", i),
-						kind: "TODO".to_owned(),
 						value: format!("{} = {}", key.to_string()?, value.to_string()?), // TODO: prettify these prints?
 						variables: Some(state.get_ref(unsafe {
 							Variables::ListPair {
@@ -400,230 +427,181 @@ impl Server {
 		}
 	}
 
-	// returns true if we need to break
-	fn handle_request(&mut self, request: Request) -> bool {
-		match request {
-			Request::Disconnect => {
-				unreachable!();
-			}
+	fn handle_breakpoint_set(&mut self, instruction: InstructionRef) {
+		let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
 
-			Request::BreakpointSet { instruction } => {
-				let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
-
-				match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
-					Some(proc) => match hook_instruction(&proc, instruction.offset) {
-						Ok(()) => {
-							self.send_or_disconnect(Response::BreakpointSet {
-								result: BreakpointSetResult::Success { line },
-							});
-						}
-
-						Err(_) => {
-							self.send_or_disconnect(Response::BreakpointSet {
-								result: BreakpointSetResult::Failed,
-							});
-						}
-					},
-
-					None => {
-						self.send_or_disconnect(Response::BreakpointSet {
-							result: BreakpointSetResult::Failed,
-						});
-					}
+		match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
+			Some(proc) => match hook_instruction(&proc, instruction.offset) {
+				Ok(()) => {
+					self.send_or_disconnect(Response::BreakpointSet {
+						result: BreakpointSetResult::Success { line },
+					});
 				}
-			}
 
-			Request::BreakpointUnset { instruction } => {
-				match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
-					Some(proc) => match unhook_instruction(&proc, instruction.offset) {
-						Ok(()) => {
-							self.send_or_disconnect(Response::BreakpointUnset { success: true });
-						}
-
-						Err(_) => {
-							self.send_or_disconnect(Response::BreakpointUnset { success: false });
-						}
-					},
-
-					None => {
-						self.send_or_disconnect(Response::BreakpointUnset { success: false });
-					}
+				Err(_) => {
+					self.send_or_disconnect(Response::BreakpointSet {
+						result: BreakpointSetResult::Failed,
+					});
 				}
-			}
+			},
 
-			Request::SetCatchRuntimes(b) => self.should_catch_runtimes = b,
-
-			Request::LineNumber { proc, offset } => {
-				self.send_or_disconnect(Response::LineNumber {
-					line: self.get_line_number(proc, offset),
+			None => {
+				self.send_or_disconnect(Response::BreakpointSet {
+					result: BreakpointSetResult::Failed,
 				});
 			}
+		}
+	}
 
-			Request::Offset { proc, line } => {
-				match dm::Proc::find_override(proc.path, proc.override_id) {
-					Some(proc) => {
-						// We're ignoring disassemble errors because any bytecode in the result is still valid
-						// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
-						let (dism, _) = proc.disassemble();
-						let mut offset = None;
-						let mut at_offset = false;
+	fn handle_breakpoint_unset(&mut self, instruction: InstructionRef) {
+		match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
+			Some(proc) => match unhook_instruction(&proc, instruction.offset) {
+				Ok(()) => {
+					self.send_or_disconnect(Response::BreakpointUnset { success: true });
+				}
 
-						for (instruction_offset, _, instruction) in dism {
-							if at_offset {
-								offset = Some(instruction_offset);
-								break;
-							}
-							if let Instruction::DbgLine(current_line) = instruction {
-								if current_line == line {
-									at_offset = true;
-								}
-							}
-						}
+				Err(_) => {
+					self.send_or_disconnect(Response::BreakpointUnset { success: false });
+				}
+			},
 
-						self.send_or_disconnect(Response::Offset { offset });
+			None => {
+				self.send_or_disconnect(Response::BreakpointUnset { success: false });
+			}
+		}
+	}
+
+	fn handle_stacks(&mut self) {
+		let stacks = match &self.state {
+			Some(state) => {
+				let mut ret = vec![];
+				ret.push(Stack {
+					id: 0,
+					name: state.stacks.active[0].proc.path.clone(),
+				});
+
+				for (idx, stack) in state.stacks.suspended.iter().enumerate() {
+					ret.push(Stack {
+						id: (idx + 1) as u32,
+						name: stack[0].proc.path.clone(),
+					});
+				}
+
+				ret
+			}
+
+			None => vec![],
+		};
+
+		self.send_or_disconnect(Response::Stacks { stacks });
+	}
+
+	fn handle_stack_frames(&mut self, stack_id: u32, start_frame: Option<u32>, count: Option<u32>) {
+		let response = match self.get_stack(stack_id) {
+			Some(stack) => {
+				let frame_base = self.get_stack_base_frame_id(stack_id);
+				let start_frame = start_frame.unwrap_or(0);
+				let end_frame = start_frame + count.unwrap_or(stack.len() as u32);
+
+				let start_frame = start_frame as usize;
+				let end_frame = end_frame as usize;
+
+				let mut frames = vec![];
+
+				for i in start_frame..end_frame {
+					if i >= stack.len() {
+						break;
 					}
 
-					None => {
-						self.send_or_disconnect(Response::Offset { offset: None });
-					}
+					let proc_ref = ProcRef {
+						path: stack[i].proc.path.to_owned(),
+						override_id: stack[i].proc.override_id(),
+					};
+
+					frames.push(StackFrame {
+						id: frame_base + (i as u32),
+						instruction: InstructionRef {
+							proc: proc_ref.clone(),
+							offset: stack[i].offset as u32,
+						},
+						line: self.get_line_number(proc_ref, stack[i].offset as u32),
+					});
+				}
+
+				Response::StackFrames {
+					frames,
+					total_count: stack.len() as u32,
 				}
 			}
 
-			Request::Stacks => {
-				let stacks = match &self.state {
-					Some(state) => {
-						let mut ret = vec![];
-						ret.push(Stack {
-							id: 0,
-							name: state.stacks.active[0].proc.path.clone(),
-						});
-
-						for (idx, stack) in state.stacks.suspended.iter().enumerate() {
-							ret.push(Stack {
-								id: (idx + 1) as u32,
-								name: stack[0].proc.path.clone(),
-							});
-						}
-
-						ret
-					}
-
-					None => vec![],
-				};
-
-				self.send_or_disconnect(Response::Stacks { stacks });
+			None => {
+				self.notify("received StackFrames request when not paused");
+				Response::StackFrames {
+					frames: vec![],
+					total_count: 0,
+				}
 			}
+		};
 
-			Request::StackFrames {
-				stack_id,
-				start_frame,
-				count,
-			} => {
-				let response = match self.get_stack(stack_id) {
-					Some(stack) => {
-						let frame_base = self.get_stack_base_frame_id(stack_id);
-						let start_frame = start_frame.unwrap_or(0);
-						let end_frame = start_frame + count.unwrap_or(stack.len() as u32);
+		self.send_or_disconnect(response);
+	}
 
-						let start_frame = start_frame as usize;
-						let end_frame = end_frame as usize;
+	fn handle_scopes(&mut self, frame_id: u32) {
+		let response = match self.get_stack_frame(frame_id) {
+			Some(frame) => {
+				let state = self.state.as_ref().unwrap();
+				let mut arguments = None;
 
-						let mut frames = vec![];
+				if !frame.args.is_empty() {
+					arguments = Some(Variables::Arguments { frame: frame_id });
+				}
 
-						for i in start_frame..end_frame {
-							if i >= stack.len() {
-								break;
-							}
+				// Never empty because we're putting ./src/usr in here
+				let locals = Some(Variables::Locals { frame: frame_id });
 
-							let proc_ref = ProcRef {
-								path: stack[i].proc.path.to_owned(),
-								override_id: 0,
-							};
-
-							frames.push(StackFrame {
-								id: frame_base + (i as u32),
-								instruction: InstructionRef {
-									proc: proc_ref.clone(),
-									offset: stack[i].offset as u32,
-								},
-								line: self.get_line_number(proc_ref, stack[i].offset as u32),
-							});
-						}
-
-						Response::StackFrames {
-							frames,
-							total_count: stack.len() as u32,
-						}
-					}
-
-					None => {
-						self.notify("received StackFrames request when not paused");
-						Response::StackFrames {
-							frames: vec![],
-							total_count: 0,
-						}
+				let globals_value = Value::globals();
+				let globals = unsafe {
+					Variables::ObjectVars {
+						tag: globals_value.value.tag as u8,
+						data: globals_value.value.data.id,
 					}
 				};
 
-				self.send_or_disconnect(response);
+				Response::Scopes {
+					arguments: arguments.map(|x| state.get_ref(x)),
+					locals: locals.map(|x| state.get_ref(x)),
+					globals: Some(state.get_ref(globals)),
+				}
 			}
 
-			Request::Scopes { frame_id } => {
-				let response = match self.get_stack_frame(frame_id) {
-					Some(frame) => {
-						let state = self.state.as_ref().unwrap();
-						let mut arguments = None;
-
-						if !frame.args.is_empty() {
-							arguments = Some(Variables::Arguments { frame: frame_id });
-						}
-
-						// Never empty because we're putting ./src/usr in here
-						let locals = Some(Variables::Locals { frame: frame_id });
-
-						let globals_value = Value::globals();
-						let globals = unsafe {
-							Variables::ObjectVars {
-								tag: globals_value.value.tag as u8,
-								data: globals_value.value.data.id,
-							}
-						};
-
-						Response::Scopes {
-							arguments: arguments.map(|x| state.get_ref(x)),
-							locals: locals.map(|x| state.get_ref(x)),
-							globals: Some(state.get_ref(globals)),
-						}
-					}
-
-					None => {
-						self.notify(format!(
-							"Debug server received Scopes request for invalid frame_id ({})",
-							frame_id
-						));
-						Response::Scopes {
-							arguments: None,
-							locals: None,
-							globals: None,
-						}
-					}
-				};
-
-				self.send_or_disconnect(response);
+			None => {
+				self.notify(format!(
+					"Debug server received Scopes request for invalid frame_id ({})",
+					frame_id
+				));
+				Response::Scopes {
+					arguments: None,
+					locals: None,
+					globals: None,
+				}
 			}
+		};
 
-			Request::Variables { vars } => {
-				let response = match &self.state {
-					Some(state) => match state.get_variables(vars) {
+		self.send_or_disconnect(response);
+	}
+
+	fn handle_variables(&mut self, vars: VariablesRef) {
+		let response =
+			match &self.state {
+				Some(state) => {
+					match state.get_variables(vars) {
 						Some(vars) => match vars {
 							Variables::Arguments { frame } => Response::Variables {
 								vars: self.get_args(frame),
 							},
-
 							Variables::Locals { frame } => Response::Variables {
 								vars: self.get_locals(frame),
 							},
-
 							Variables::ObjectVars { tag, data } => {
 								let value = unsafe {
 									Value::from_raw(raw_types::values::Value {
@@ -641,7 +619,6 @@ impl Server {
 									}
 								}
 							}
-
 							Variables::ListContents { tag, data } => {
 								let value = unsafe {
 									Value::from_raw(raw_types::values::Value {
@@ -693,30 +670,55 @@ impl Server {
 							self.notify("received unknown VariableRef in Variables request");
 							Response::Variables { vars: vec![] }
 						}
-					},
-
-					None => {
-						self.notify("recevied Variables request while not paused");
-						Response::Variables { vars: vec![] }
 					}
-				};
+				}
 
-				self.send_or_disconnect(response);
+				None => {
+					self.notify("recevied Variables request while not paused");
+					Response::Variables { vars: vec![] }
+				}
+			};
+
+		self.send_or_disconnect(response);
+	}
+
+	// returns true if we need to break
+	fn handle_request(&mut self, request: Request) -> bool {
+		match request {
+			Request::Disconnect => unreachable!(),
+			Request::CatchRuntimes { should_catch } => self.should_catch_runtimes = should_catch,
+			Request::BreakpointSet { instruction } => self.handle_breakpoint_set(instruction),
+			Request::BreakpointUnset { instruction } => self.handle_breakpoint_unset(instruction),
+			Request::Stacks => self.handle_stacks(),
+			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
+			Request::Variables { vars } => self.handle_variables(vars),
+
+			Request::StackFrames {
+				stack_id,
+				start_frame,
+				count,
+			} => self.handle_stack_frames(stack_id, start_frame, count),
+
+			Request::LineNumber { proc, offset } => {
+				self.send_or_disconnect(Response::LineNumber {
+					line: self.get_line_number(proc, offset),
+				});
 			}
 
-			Request::Continue { .. } => {
-				self.notify("received a continue request when not paused");
+			Request::Offset { proc, line } => {
+				self.send_or_disconnect(Response::Offset {
+					offset: self.get_offset(proc, line),
+				});
 			}
 
-			Request::Pause => {
-				return true;
-			}
+			Request::Continue { .. } => (),
+			Request::Pause => return true,
 		}
 
 		false
 	}
 
-	pub fn check_connected(&mut self) -> bool {
+	fn check_connected(&mut self) -> bool {
 		match &self.stream {
 			ServerStream::Disconnected => false,
 			ServerStream::Connected(_) => true,
@@ -731,7 +733,7 @@ impl Server {
 		}
 	}
 
-	pub fn notify<T: Into<String>>(&mut self, message: T) {
+	fn notify<T: Into<String>>(&mut self, message: T) {
 		let message = message.into();
 		eprintln!("Debug Server: {:?}", message);
 

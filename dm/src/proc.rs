@@ -43,7 +43,7 @@ pub struct Proc {
 	pub path: String,
 }
 
-impl<'a> Proc {
+impl Proc {
 	/// Finds the first proc with the given path
 	pub fn find<S: Into<String>>(path: S) -> Option<Self> {
 		get_proc(path)
@@ -169,6 +169,15 @@ impl<'a> Proc {
 
 		Err(runtime!("External proc call failed"))
 	}
+
+	pub fn override_id(&self) -> u32 {
+		PROC_OVERRIDE_IDS.with(|override_ids| {
+			match override_ids.borrow().get(&self.id) {
+				Some(id) => *id,
+				None => 0,
+			}
+		})
+	}
 }
 
 impl fmt::Debug for Proc {
@@ -179,6 +188,7 @@ impl fmt::Debug for Proc {
 }
 
 thread_local!(static PROCS_BY_NAME: RefCell<DashMap<String, Vec<Proc>>> = RefCell::new(DashMap::new()));
+thread_local!(static PROC_OVERRIDE_IDS: RefCell<DashMap<ProcId, u32>> = RefCell::new(DashMap::new()));
 
 fn strip_path(p: String) -> String {
 	p.replace("/proc/", "/").replace("/verb/", "/")
@@ -193,15 +203,22 @@ pub fn populate_procs() {
 		}
 		let proc = proc.unwrap();
 
-		PROCS_BY_NAME.with(|h| {
-			match h.borrow_mut().entry(proc.path.clone()) {
-				Entry::Occupied(mut o) => {
-					o.get_mut().push(proc);
-				}
-				Entry::Vacant(v) => {
-					v.insert(vec![proc]);
-				}
-			};
+		PROC_OVERRIDE_IDS.with(|override_ids| {
+			let override_ids = override_ids.borrow_mut();
+
+			PROCS_BY_NAME.with(|h| {
+				match h.borrow_mut().entry(proc.path.clone()) {
+					Entry::Occupied(mut o) => {
+						let vec = o.get_mut();
+						override_ids.insert(proc.id, vec.len() as u32);
+						vec.push(proc);
+					}
+					Entry::Vacant(v) => {
+						override_ids.insert(proc.id, 0);
+						v.insert(vec![proc]);
+					}
+				};
+			});
 		});
 
 		i += 1;
@@ -209,7 +226,8 @@ pub fn populate_procs() {
 }
 
 pub fn clear_procs() {
-	PROCS_BY_NAME.with(|h| h.borrow_mut().clear())
+	PROCS_BY_NAME.with(|h| h.borrow_mut().clear());
+	PROC_OVERRIDE_IDS.with(|override_ids| override_ids.borrow_mut().clear());
 }
 
 pub fn get_proc_override<S: Into<String>>(path: S, override_id: u32) -> Option<Proc> {

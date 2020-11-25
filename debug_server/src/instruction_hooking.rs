@@ -75,7 +75,6 @@ fn instruction_hooking_shutdown() {
 	}
 }
 
-
 #[derive(PartialEq, Eq, Copy, Clone)]
 struct ProcInstanceRef(u16);
 
