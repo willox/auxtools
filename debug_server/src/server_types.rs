@@ -89,7 +89,6 @@ pub enum Response {
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct ProcRef {
 	pub path: String,
-	// TODO: this is 0 in some places
 	pub override_id: u32,
 }
 
