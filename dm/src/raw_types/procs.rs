@@ -71,8 +71,12 @@ pub struct ExecutionContext {
 }
 
 #[repr(C)]
-pub struct SuspendedProcs {
+pub struct SuspendedProcsBuffer {
 	pub buffer: *mut *mut ProcInstance,
+}
+
+#[repr(C)]
+pub struct SuspendedProcs {
 	pub front: usize,
 	pub back: usize,
 	pub capacity: usize,

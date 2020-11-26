@@ -92,8 +92,8 @@ impl CallStacks {
 		let mut suspended = vec![];
 
 		unsafe {
+			let buffer = (*funcs::SUSPENDED_PROCS_BUFFER).buffer;
 			let procs = funcs::SUSPENDED_PROCS;
-			let buffer = (*procs).buffer;
 			let front = (*procs).front;
 			let back = (*procs).back;
 

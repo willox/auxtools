@@ -128,8 +128,8 @@ fn get_proc_ctx(stack_id: u32) -> *mut raw_types::procs::ExecutionContext {
 	}
 
 	unsafe {
+		let buffer = (*raw_types::funcs::SUSPENDED_PROCS_BUFFER).buffer;
 		let procs = raw_types::funcs::SUSPENDED_PROCS;
-		let buffer = (*procs).buffer;
 		let front = (*procs).front;
 		let back = (*procs).back;
 
@@ -207,8 +207,8 @@ fn proc_instance_is_in_stack(
 
 fn proc_instance_is_suspended(proc_ref: ProcInstanceRef) -> bool {
 	unsafe {
+		let buffer = (*raw_types::funcs::SUSPENDED_PROCS_BUFFER).buffer;
 		let procs = raw_types::funcs::SUSPENDED_PROCS;
-		let buffer = (*procs).buffer;
 		let front = (*procs).front;
 		let back = (*procs).back;
 		let mut found = false;

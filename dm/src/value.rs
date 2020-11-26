@@ -211,8 +211,7 @@ impl Value {
 		}
 	}
 
-	/// Gets the type of the Value as a string. For most situations, it's probably better
-	/// to use `is_type` and `is_exact_type`.
+	/// Gets the type of the Value as a string
 	pub fn get_type(&self) -> Result<String, runtime::Runtime> {
 		self.get("type")?.to_string()
 	}
@@ -222,40 +221,6 @@ impl Value {
 		match self.get_type() {
 			Err(_) => false,
 			Ok(my_type) => my_type == typepath.as_ref(),
-		}
-	}
-
-	/// Checks whether this Value is a subtype of `typepath`.
-	/// Equivalent to DM's `istype(some_thing, /some/path)`
-	pub fn is_type<S: AsRef<str>>(&self, typepath: S) -> bool {
-		let my_type = match self.get("type") {
-			Ok(typ) => typ,
-			Err(_) => return false,
-		};
-
-		unsafe {
-			let mut type_as_value = raw_types::values::Value {
-				tag: raw_types::values::ValueTag::Null,
-				data: raw_types::values::ValueData { id: 0 },
-			};
-
-			if raw_types::funcs::text_to_path(
-				&mut type_as_value,
-				Value::from_string(typepath.as_ref()).value.data.string,
-			) != 1
-			{
-				return false;
-			}
-
-			let mut is = 0;
-
-			if raw_types::funcs::is_type(&mut is, self.value, type_as_value) != 1 {
-				raw_types::funcs::dec_ref_count(type_as_value);
-				return false;
-			}
-			raw_types::funcs::dec_ref_count(type_as_value); // guh
-
-			return is == 1;
 		}
 	}
 

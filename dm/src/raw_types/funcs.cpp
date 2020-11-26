@@ -36,8 +36,6 @@ DEFINE_byond_REGPARM2(remove_from_list, void, (Value, Value));
 DEFINE_byond(get_length, uint32_t, (Value));
 DEFINE_byond(get_misc_by_id, void *, (uint32_t));
 DEFINE_byond(to_string, uint32_t, (Value));
-DEFINE_byond(is_type, uint8_t, (Value, Value));
-DEFINE_byond(text_to_path, Value, (unsigned int));
 
 extern "C" uint8_t call_proc_by_id(
 	Value *out,
@@ -341,38 +339,6 @@ extern "C" uint8_t to_string(uint32_t *out, Value value)
 		return 1;
 	}
 	catch (AuxtoolsException e)
-	{
-		return 0;
-	}
-}
-
-extern "C" uint8_t is_type(uint8_t *out, Value datum, Value typ)
-{
-	RuntimeContext ctx(true);
-
-	try
-	{
-		clean(datum);
-		clean(typ);
-		*out = is_type_byond(datum, typ) ? 1 : 0;
-		return 1;
-	}
-	catch (AuxtoolsException e) // I don't think this function can fail but leaving this in just in case
-	{
-		return 0;
-	}
-}
-
-extern "C" uint8_t text_to_path(Value *out, unsigned int text_id)
-{
-	RuntimeContext ctx(true);
-
-	try
-	{
-		*out = text_to_path_byond(text_id);
-		return 1;
-	}
-	catch (AuxtoolsException e) // I don't think this function can fail but leaving this in just in case
 	{
 		return 0;
 	}
