@@ -2,8 +2,8 @@
 
 //! For when BYOND is not enough. Probably often.
 
-#[cfg(not(target_pointer_width = "32"))]
-compile_error!("Auxtools must be compiled for a 32-bit target");
+//#[cfg(not(target_pointer_width = "32"))]
+//compile_error!("Auxtools must be compiled for a 32-bit target");
 
 mod byond_ffi;
 mod context;
@@ -165,10 +165,6 @@ fn pin_dll() -> Result<(), ()> {
 }
 
 byond_ffi_fn! { auxtools_init(_input) {
-	unsafe {
-		core::arch::x86::_mm_undefined_si128();
-	}
-
 	if get_init_level() == InitLevel::None {
 		return Some("SUCCESS (Already initialized)".to_owned())
 	}
