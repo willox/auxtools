@@ -10,8 +10,8 @@ use std::{
 };
 
 use super::server_types::*;
-use dm::raw_types::values::{ValueData, ValueTag};
-use dm::*;
+use auxtools::raw_types::values::{ValueData, ValueTag};
+use auxtools::*;
 
 #[derive(Clone, Hash, Eq, PartialEq)]
 enum Variables {
@@ -146,7 +146,7 @@ impl Server {
 	}
 
 	fn get_line_number(&self, proc: ProcRef, offset: u32) -> Option<u32> {
-		match dm::Proc::find_override(proc.path, proc.override_id) {
+		match auxtools::Proc::find_override(proc.path, proc.override_id) {
 			Some(proc) => {
 				// We're ignoring disassemble errors because any bytecode in the result is still valid
 				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
@@ -183,7 +183,7 @@ impl Server {
 	}
 
 	fn get_offset(&self, proc: ProcRef, line: u32) -> Option<u32> {
-		match dm::Proc::find_override(proc.path, proc.override_id) {
+		match auxtools::Proc::find_override(proc.path, proc.override_id) {
 			Some(proc) => {
 				// We're ignoring disassemble errors because any bytecode in the result is still valid
 				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
@@ -430,7 +430,7 @@ impl Server {
 	fn handle_breakpoint_set(&mut self, instruction: InstructionRef) {
 		let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
 
-		match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
+		match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
 			Some(proc) => match hook_instruction(&proc, instruction.offset) {
 				Ok(()) => {
 					self.send_or_disconnect(Response::BreakpointSet {
@@ -454,7 +454,7 @@ impl Server {
 	}
 
 	fn handle_breakpoint_unset(&mut self, instruction: InstructionRef) {
-		match dm::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
+		match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
 			Some(proc) => match unhook_instruction(&proc, instruction.offset) {
 				Ok(()) => {
 					self.send_or_disconnect(Response::BreakpointUnset { success: true });

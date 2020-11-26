@@ -1,8 +1,8 @@
 [workspace]
 members = [
+	"auxtools",
+	"auxtools-impl",
 	"debug_server",
-	"dm",
-	"dm-impl",
 	"sigscan",
 ]
 

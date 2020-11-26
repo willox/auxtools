@@ -3,7 +3,7 @@ use std::{cell::UnsafeCell, ffi::c_void};
 use crate::server_types::{BreakpointReason, ContinueKind};
 use crate::DEBUG_SERVER;
 use detour::RawDetour;
-use dm::*;
+use auxtools::*;
 use lazy_static::lazy_static;
 use sigscan;
 use std::collections::HashMap;

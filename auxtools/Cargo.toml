@@ -1,5 +1,5 @@
 [package]
-name = "dm"
+name = "auxtools"
 version = "0.1.0"
 authors = ["William Wallace <me@wiox.me>"]
 edition = "2018"
@@ -8,7 +8,7 @@ edition = "2018"
 cc = "1.0"
 
 [dependencies]
-dm-impl = { path = "../dm-impl" }
+auxtools-impl = { path = "../auxtools-impl" }
 sigscan = { path = "../sigscan" }
 once_cell = "1.4"
 inventory = "0.1"

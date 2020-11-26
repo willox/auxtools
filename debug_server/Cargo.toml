@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 cc = "1.0"
 
 [dependencies]
-dm = { path = "../dm" }
+auxtools = { path = "../auxtools" }
 sigscan = { path = "../sigscan" }
 lazy_static = "1.4.0"
 serde = { version = "1.0.117", features = ["derive"] }

@@ -65,8 +65,8 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let func_name = &func.sig.ident;
 
 	let func_type = match init_type.to_string().as_str() {
-		"full" => quote! { dm::FullInitFunc },
-		"partial" => quote! { dm::PartialInitFunc },
+		"full" => quote! { auxtools::FullInitFunc },
+		"partial" => quote! { auxtools::PartialInitFunc },
 		_ => {
 			return syn::Error::new(init_type.span(), "invalid init type")
 				.to_compile_error()
@@ -75,8 +75,8 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 	};
 
 	let inventory_define = quote! {
-		dm::inventory::submit!(
-			#![crate = dm]
+		auxtools::inventory::submit!(
+			#![crate = auxtools]
 			#func_type(#func_name)
 		);
 	};
@@ -95,9 +95,9 @@ pub fn runtime_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
 	let func_name = &func.sig.ident;
 
 	let inventory_define = quote! {
-		dm::inventory::submit!(
-			#![crate = dm]
-			dm::RuntimeHook(#func_name)
+		auxtools::inventory::submit!(
+			#![crate = auxtools]
+			auxtools::RuntimeHook(#func_name)
 		);
 	};
 
@@ -115,9 +115,9 @@ pub fn shutdown(_: TokenStream, item: TokenStream) -> TokenStream {
 	let func_name = &func.sig.ident;
 
 	let inventory_define = quote! {
-		dm::inventory::submit!(
-			#![crate = dm]
-			dm::PartialShutdownFunc(#func_name)
+		auxtools::inventory::submit!(
+			#![crate = auxtools]
+			auxtools::PartialShutdownFunc(#func_name)
 		);
 	};
 
@@ -178,20 +178,20 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 	let cthook_prelude = match proc {
 		Some(p) => quote! {
-			dm::inventory::submit!(
-				#![crate = dm]
-				dm::CompileTimeHook::new(#p, #func_name)
+			auxtools::inventory::submit!(
+				#![crate = auxtools]
+				auxtools::CompileTimeHook::new(#p, #func_name)
 			);
 		},
 		None => quote! {},
 	};
 	let signature = quote! {
 		fn #func_name(
-			ctx: &dm::DMContext,
-			src: &dm::Value,
-			usr: &dm::Value,
-			args: &mut Vec<dm::Value>,
-		) -> dm::DMResult
+			ctx: &auxtools::DMContext,
+			src: &auxtools::Value,
+			usr: &auxtools::Value,
+			args: &mut Vec<auxtools::Value>,
+		) -> auxtools::DMResult
 	};
 
 	let body = &input.block;
@@ -215,14 +215,14 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	}
 	let _default_null = quote! {
 		#[allow(unreachable_code)]
-		dm::Value::null()
+		auxtools::Value::null()
 	};
 	let result = quote! {
 		#cthook_prelude
 		#signature {
 			if #args_len > args.len() {
 				for i in 0..#args_len - args.len() {
-					args.push(dm::Value::null())
+					args.push(auxtools::Value::null())
 				}
 			}
 			let (#arg_names) = (#proc_arg_unpacker);

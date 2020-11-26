@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use std::cell::RefCell;
 use std::sync::Mutex;
 
-use crate as dm;
+use crate as auxtools;
 
 use lazy_static::lazy_static;
 
