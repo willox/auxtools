@@ -19,20 +19,16 @@ fn debugger_shutdown() {
 }
 
 fn get_default_mode() -> String {
-	static DEFAULT: &'static str = "NONE";
-
 	match std::env::var("AUXTOOLS_DEBUG_MODE") {
 		Ok(val) => val,
-		Err(_) => DEFAULT.into(),
+		Err(_) => "NONE".into(),
 	}
 }
 
 fn get_default_port() -> u16 {
-	static DEFAULT: u16 = 2448;
-
 	match std::env::var("AUXTOOLS_DEBUG_PORT") {
-		Ok(val) => val.parse::<u16>().unwrap_or(DEFAULT),
-		Err(_) => DEFAULT,
+		Ok(val) => val.parse::<u16>().unwrap_or(server_types::DEFAULT_PORT),
+		Err(_) => server_types::DEFAULT_PORT,
 	}
 }
 
@@ -44,7 +40,7 @@ fn enable_debugging(mode: Value, port: Value) {
 		.map(|x| x as u16)
 		.unwrap_or_else(|_| get_default_port());
 
-	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
+	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
 
 	let server = match mode.as_str() {
 		"NONE" => {
@@ -60,7 +56,7 @@ fn enable_debugging(mode: Value, port: Value) {
 		"BLOCK" => {
 			let mut server = server::Server::listen(&addr)
 				.map_err(|e| runtime!("Couldn't create debug server: {}", e))?;
-			server.wait_for_connection();
+			server.wait_for_connection(); // might never return 😳
 			server
 		}
 
