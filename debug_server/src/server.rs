@@ -718,7 +718,7 @@ impl Server {
 			Request::Pause => {
 				self.send_or_disconnect(Response::Ack);
 				return true;
-			},
+			}
 		}
 
 		false
@@ -736,6 +736,18 @@ impl Server {
 					false
 				}
 			}
+		}
+	}
+
+	pub fn wait_for_connection(&mut self) {
+		match &self.stream {
+			ServerStream::Waiting(receiver) => {
+				if let Ok(stream) = receiver.recv() {
+					self.stream = ServerStream::Connected(stream);
+				}
+			}
+
+			_ => (),
 		}
 	}
 

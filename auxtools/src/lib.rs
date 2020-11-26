@@ -7,10 +7,6 @@ use dm::*;
 
 #[hook("/proc/dump_bytecode")]
 fn hello_proc_hook() {
-	let x = Value::null();
-	let y = x.get("penis");
-	let z = x.get("penis");
-
 	let mut file = File::create("E:/bytecode.txt").unwrap();
 
 	let mut proc_id: u32 = 0;

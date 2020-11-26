@@ -171,11 +171,9 @@ impl Proc {
 	}
 
 	pub fn override_id(&self) -> u32 {
-		PROC_OVERRIDE_IDS.with(|override_ids| {
-			match override_ids.borrow().get(&self.id) {
-				Some(id) => *id,
-				None => 0,
-			}
+		PROC_OVERRIDE_IDS.with(|override_ids| match override_ids.borrow().get(&self.id) {
+			Some(id) => *id,
+			None => 0,
 		})
 	}
 }
