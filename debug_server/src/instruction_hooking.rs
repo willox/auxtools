@@ -5,7 +5,6 @@ use crate::DEBUG_SERVER;
 use detour::RawDetour;
 use auxtools::*;
 use lazy_static::lazy_static;
-use sigscan;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -25,7 +24,7 @@ fn instruction_hooking_init(_: &DMContext) -> Result<(), String> {
 
 	if cfg!(windows) {
 		let ptr = byondcore
-			.find(sigscan::signature!(
+			.find(signature!(
 				"0F B7 48 ?? 8B 78 ?? 8B F1 8B 14 ?? 81 FA 59 01 00 00 0F 87 ?? ?? ?? ??"
 			))
 			.ok_or_else(|| "Couldn't find EXECUTE_INSTRUCTION")?;
@@ -37,7 +36,7 @@ fn instruction_hooking_init(_: &DMContext) -> Result<(), String> {
 
 	if cfg!(unix) {
 		let ptr = byondcore
-			.find(sigscan::signature!(
+			.find(signature!(
 				"0F B7 47 ?? 8B 57 ?? 0F B7 D8 8B 0C ?? 81 F9 59 01 00 00 77 ?? FF 24 8D ?? ?? ?? ??"
 			))
 			.ok_or_else(|| "Couldn't find EXECUTE_INSTRUCTION")?;

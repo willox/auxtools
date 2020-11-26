@@ -17,7 +17,7 @@ pub mod raw_types;
 mod runtime;
 mod string;
 mod value;
-use sigscan::{signature, signatures};
+pub mod sigscan;
 
 use init::{get_init_level, set_init_level, InitLevel};
 

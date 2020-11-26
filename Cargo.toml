@@ -3,7 +3,6 @@ members = [
 	"auxtools",
 	"auxtools-impl",
 	"debug_server",
-	"sigscan",
 ]
 
 [profile.release]

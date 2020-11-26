@@ -2,6 +2,8 @@
 name = "auxtools-impl"
 version = "0.1.0"
 authors = ["Aspen <luxx4x@protonmail.com>", "William Wallace <me@wiox.me>"]
+license = "MIT"
+repository = "https://github.com/willox/auxtools"
 edition = "2018"
 
 [lib]

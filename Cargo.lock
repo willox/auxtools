@@ -32,9 +32,9 @@ dependencies = [
  "detour",
  "inventory",
  "lazy_static",
+ "libc",
  "msgbox",
  "once_cell",
- "sigscan",
  "winapi 0.3.9",
 ]
 
@@ -212,7 +212,6 @@ dependencies = [
  "detour",
  "lazy_static",
  "serde",
- "sigscan",
 ]
 
 [[package]]
@@ -672,15 +671,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "sigscan"
-version = "0.1.0"
-dependencies = [
- "auxtools-impl",
- "libc",
- "winapi 0.3.9",
 ]
 
 [[package]]
