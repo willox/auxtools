@@ -711,8 +711,14 @@ impl Server {
 				});
 			}
 
-			Request::Continue { .. } => (),
-			Request::Pause => return true,
+			Request::Continue { .. } => {
+				self.send_or_disconnect(Response::Ack);
+			}
+
+			Request::Pause => {
+				self.send_or_disconnect(Response::Ack);
+				return true;
+			},
 		}
 
 		false
@@ -769,6 +775,7 @@ impl Server {
 		while let Ok(request) = self.requests.recv() {
 			// Hijack and handle any Continue requests
 			if let Request::Continue { kind } = request {
+				self.send_or_disconnect(Response::Ack);
 				self.state = None;
 				return kind;
 			}
