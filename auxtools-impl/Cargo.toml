@@ -1,5 +1,6 @@
 [package]
 name = "auxtools-impl"
+description = "procedural macros for use with the auxtools crate"
 version = "0.1.0"
 authors = ["Aspen <luxx4x@protonmail.com>", "William Wallace <me@wiox.me>"]
 license = "MIT"
