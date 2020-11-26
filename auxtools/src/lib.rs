@@ -166,7 +166,7 @@ fn pin_dll() -> Result<(), ()> {
 
 byond_ffi_fn! { auxtools_init(_input) {
 	if get_init_level() == InitLevel::None {
-		return Some("SUCCESS (Already initialized)".to_owned())
+		return Some("SUCCESS".to_owned())
 	}
 
 	let byondcore = match sigscan::Scanner::for_module(BYONDCORE) {
