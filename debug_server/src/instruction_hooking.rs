@@ -101,7 +101,7 @@ enum DebuggerAction {
 	StepOver { target: ProcInstanceRef },
 	StepInto { parent: ProcInstanceRef },
 	BreakOnNext,
-	//StepOut{target: ExecutionContext},
+	StepOut { target: ProcInstanceRef },
 }
 
 static mut CURRENT_ACTION: DebuggerAction = DebuggerAction::None;
@@ -120,6 +120,18 @@ impl PtrKey {
 
 lazy_static! {
 	static ref ORIGINAL_BYTECODE: Mutex<HashMap<PtrKey, Vec<u32>>> = Mutex::new(HashMap::new());
+}
+
+fn is_generated_proc(ctx: *mut raw_types::procs::ExecutionContext) -> bool {
+	unsafe {
+		let instance = (*ctx).proc_instance;
+		if let Some(proc) = Proc::from_id((*instance).proc) {
+			return proc.path.ends_with("(init)");
+		}
+	}
+
+	// worst-case just pretend it is generated
+	true
 }
 
 fn get_proc_ctx(stack_id: u32) -> *mut raw_types::procs::ExecutionContext {
@@ -171,13 +183,12 @@ fn handle_breakpoint(
 		ContinueKind::StepOut { stack_id } => {
 			unsafe {
 				// Just continue the code if we've got no parent
-				// Otherwise, treat this as a StepOver on the parent proc
 				let ctx = get_proc_ctx(stack_id);
 				let parent = (*ctx).parent_context;
 				if parent.is_null() {
 					DebuggerAction::None
 				} else {
-					DebuggerAction::StepOver {
+					DebuggerAction::StepOut {
 						target: ProcInstanceRef::new((*parent).proc_instance),
 					}
 				}
@@ -300,21 +311,42 @@ extern "C" fn handle_instruction(
 			// 2) We're inside a context that is inside the parent context and on a DbgLine instruction
 			// 3) We're inside the parent context and on a DbgLine instruction
 			DebuggerAction::StepInto { parent } => {
-				let is_dbgline = opcode == (OpCode::DbgLine as u32);
+				if !is_generated_proc(ctx) {
+					let is_dbgline = opcode == (OpCode::DbgLine as u32);
+					let is_in_parent = parent.is((*ctx).proc_instance);
 
-				if is_dbgline && parent.is((*ctx).proc_instance) {
-					CURRENT_ACTION = DebuggerAction::BreakOnNext;
-				} else {
-					let in_stack = proc_instance_is_in_stack(ctx, parent);
-					let is_suspended = proc_instance_is_suspended(parent);
+					if is_dbgline && is_in_parent {
+						CURRENT_ACTION = DebuggerAction::BreakOnNext;
+					} else if !is_in_parent {
+						let in_stack = proc_instance_is_in_stack(ctx, parent);
+						let is_suspended = proc_instance_is_suspended(parent);
 
-					// If the context isn't in any stacks, it has just returned. Break!
-					// TODO: Don't break if the context's stack is gone (returned to C)
-					if !in_stack && !is_suspended {
+						// If the context isn't in any stacks, it has just returned. Break!
+						// TODO: Don't break if the context's stack is gone (returned to C)
+						if !in_stack && !is_suspended {
+							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
+							did_breakpoint = true;
+						} else if in_stack && is_dbgline {
+							CURRENT_ACTION = DebuggerAction::BreakOnNext;
+						}
+					}
+				}
+			}
+
+			// Just breaks the moment we're in the target instance
+			DebuggerAction::StepOut { target } => {
+				if !is_generated_proc(ctx) {
+					if target.is((*ctx).proc_instance) {
 						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 						did_breakpoint = true;
-					} else if in_stack && is_dbgline {
-						CURRENT_ACTION = DebuggerAction::BreakOnNext;
+					} else {
+						// If Our context disappeared, just stop the step
+						let in_stack = proc_instance_is_in_stack(ctx, target);
+						let is_suspended = proc_instance_is_suspended(target);
+
+						if !in_stack && !is_suspended {
+							CURRENT_ACTION = DebuggerAction::None;
+						}
 					}
 				}
 			}
