@@ -2,7 +2,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, spanned::Spanned, Lit};
+use syn::{parse_macro_input, spanned::Spanned, Lit, FnArg};
 
 fn from_signature(s: String) -> Vec<Option<u8>> {
 	s.trim()

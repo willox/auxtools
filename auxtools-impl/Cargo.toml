@@ -11,6 +11,9 @@ proc-macro = true
 
 [dependencies]
 proc-macro2 = "1.0"
-syn = "1.0.48"
 quote = "1.0"
 hex = "0.4"
+
+[dependencies.syn]
+version = "1.0"
+features = ["full"]
