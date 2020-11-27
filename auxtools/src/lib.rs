@@ -94,7 +94,7 @@ signatures! {
 	to_string => "55 89 E5 83 EC 58 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ?? 89 7D ?? 80 FB 54",
 	runtime => "E8 ?? ?? ?? ?? 31 C0 8D B4 26 00 00 00 00 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC",
 	suspended_procs => "A3 ?? ?? ?? ?? 8D 14 ?? 73 ?? 8D 74 26 00 83 C0 01 8B 14 ?? 39 C3 89 54 ?? ??",
-	suspended_procs_buffer => "C0 A3 ?? ?? ?? ?? 74 ?? 8B 15 ?? ?? ?? ?? 89 74 24 ?? 89 04 24 C1 E2 02 81"
+	suspended_procs_buffer => "89 35 ?? ?? ?? ?? C7 04 24 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 45 ?? 83 C0 08"
 }
 
 macro_rules! find_function {
@@ -103,10 +103,10 @@ macro_rules! find_function {
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name) {
 			unsafe {
 				$name = std::mem::transmute(ptr as *const c_void);
-				}
+			}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-			}
+		}
 	};
 }
 
@@ -120,7 +120,7 @@ macro_rules! find_function_by_call {
 				}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-			}
+		}
 	};
 }
 
