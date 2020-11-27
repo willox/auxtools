@@ -8,12 +8,14 @@ using CallProcById_Ptr = Value(LINUX_REGPARM3 *)(Value, uint32_t, uint32_t, uint
 // The type of the hook defined in hooks.rs
 using CallProcById_Hook_Ptr = Value(*)(Value, uint32_t, uint32_t, uint32_t, Value, Value*, uint32_t, uint32_t, uint32_t);
 
-// The ptr everybody else sees
-extern "C" Runtime_Ptr runtime_byond = nullptr;
+extern "C" {
+	// The ptr everybody else sees
+	Runtime_Ptr runtime_byond = nullptr;
 
-// The original function - set by rust after hooking
-extern "C" Runtime_Ptr runtime_original = nullptr;
-extern "C" CallProcById_Ptr call_proc_by_id_original = nullptr;
+	// The original function - set by rust after hooking
+	Runtime_Ptr runtime_original = nullptr;
+	CallProcById_Ptr call_proc_by_id_original = nullptr;
+}
 
 // If the top of this stack is true, we replace byond's runtime exceptions with our own
 std::stack<bool> runtime_contexts({false});
