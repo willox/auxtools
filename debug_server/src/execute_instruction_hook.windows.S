@@ -1,3 +1,4 @@
+// for i686-pc-windows-gnu
 .intel_syntax noprefix
 .global _execute_instruction_hook
 .extern _execute_instruction_original

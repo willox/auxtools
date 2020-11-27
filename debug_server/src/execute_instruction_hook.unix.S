@@ -1,4 +1,5 @@
-.intel_syntax noprefix  
+// for i686-unknown-linux-gnu
+.intel_syntax noprefix
 .global execute_instruction_hook
 .extern execute_instruction_original
 .extern handle_instruction
