@@ -51,5 +51,7 @@ struct RuntimeContext {
         runtime_contexts.pop();
     }
     RuntimeContext(const RuntimeContext&) = delete;
+    RuntimeContext(RuntimeContext&&) = delete;
     RuntimeContext& operator=(const RuntimeContext&) = delete;
+    RuntimeContext& operator=(RuntimeContext&&) = delete;
 };

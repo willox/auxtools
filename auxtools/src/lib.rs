@@ -103,10 +103,10 @@ macro_rules! find_function {
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name) {
 			unsafe {
 				$name = std::mem::transmute(ptr as *const c_void);
-				}
+			}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-			}
+		}
 	};
 }
 
@@ -120,7 +120,7 @@ macro_rules! find_function_by_call {
 				}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-			}
+		}
 	};
 }
 
