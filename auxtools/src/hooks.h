@@ -1,6 +1,4 @@
 #pragma once
-#include <stack>
-#include <string>
 
 #ifdef _WIN32
 #define LINUX_REGPARM2
@@ -8,6 +6,21 @@
 #else
 #define LINUX_REGPARM2 __attribute__((regparm(2)))
 #define LINUX_REGPARM3 __attribute__((regparm(3)))
+#endif
+
+#ifdef __MINGW32__
+#define USE_SJLJ
+#endif
+
+#ifdef USE_SJLJ
+#include <setjmp.h>
+#endif
+
+#include <stack>
+#include <string>
+
+#ifdef USE_SJLJ
+extern jmp_buf* current_jmp;
 #endif
 
 struct Value {

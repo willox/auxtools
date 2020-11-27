@@ -25,7 +25,11 @@ extern "C" void on_runtime(const char* pError);
 extern "C" void runtime_hook(char* pError) {
 	const char* pErrorCorrected = (pError != nullptr) ? pError : "<null>";
 	if (runtime_contexts.top()) {
+#ifdef USE_SJLJ
+		longjmp(*current_jmp, 1);
+#else
 		throw AuxtoolsException(pErrorCorrected);
+#endif
 		return;
 	}
 
