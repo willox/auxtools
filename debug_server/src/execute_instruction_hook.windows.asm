@@ -1,4 +1,4 @@
-// for i686-pc-windows-msvc
+; for i686-pc-windows-msvc
 .MODEL FLAT, C
 .CODE
 
