@@ -23,17 +23,32 @@ jmp_buf* current_jmp;
 	Fn##name##_byond name##_byond = nullptr;
 
 #ifdef __MINGW32__
+
+struct RestoreJmpBuf {
+	jmp_buf* to_restore;
+
+	RestoreJmpBuf() : to_restore(current_jmp) {}
+	~RestoreJmpBuf() { current_jmp = to_restore; }
+	RestoreJmpBuf(const RestoreJmpBuf&) = delete;
+	RestoreJmpBuf(RestoreJmpBuf&&) = delete;
+	RestoreJmpBuf& operator=(const RestoreJmpBuf&) = delete;
+	RestoreJmpBuf& operator=(RestoreJmpBuf&&) = delete;
+};
+
 #define BYOND_TRY                   \
-	jmp_buf* last_jmp = current_jmp;  \
+	RestoreJmpBuf restore;            \
 	jmp_buf jmp;                      \
 	current_jmp = &jmp;               \
 	int jmp_val = setjmp(jmp);        \
 	if (jmp_val == 0)
 #define BYOND_CATCH \
-	if (jmp_val == 1)
+	else
+
 #else
+
 #define BYOND_TRY try
 #define BYOND_CATCH catch(AuxtoolsException _)
+
 #endif
 
 extern "C" {
