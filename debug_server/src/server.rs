@@ -252,7 +252,7 @@ impl Server {
 		let stringified = match value.to_string() {
 			Ok(v) if v.is_empty() => value.value.to_string(),
 			Ok(value) => value,
-			Err(Runtime { message }) => format!("{} -- stringify error: {:?}", value.value.to_string(), message),
+			Err(Runtime { message }) => format!("{} -- stringify error: {:?}", value.value, message),
 		};
 
 		Variable {
