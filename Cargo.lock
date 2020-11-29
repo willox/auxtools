@@ -118,6 +118,7 @@ dependencies = [
  "cc",
  "detour",
  "lazy_static",
+ "libc",
  "serde",
  "winapi 0.3.9",
 ]

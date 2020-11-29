@@ -13,6 +13,8 @@ static mut STDDEF: Option<&'static str> = None;
 
 #[init(full)]
 fn stddef_init(_: &DMContext) -> Result<(), String> {
+	let stddef_fn: extern "C" fn(*const c_void) -> *const c_char;
+
 	#[cfg(windows)]
 	{
 		use winapi::um::libloaderapi;
@@ -28,20 +30,40 @@ fn stddef_init(_: &DMContext) -> Result<(), String> {
 				return Err("Couldn't get module handle for BYONDCORE".into());
 			}
 
-			let stddef_fn =
-				libloaderapi::GetProcAddress(module, STDDEF_FN_SYMBOL.as_ptr() as *const i8);
-			if stddef_fn.is_null() {
+			let symbol =
+				libloaderapi::GetProcAddress(module, STDDEF_FN_SYMBOL.as_ptr() as *const c_char);
+			if symbol.is_null() {
 				return Err("Couldn't find STDDEF_FN in BYONDCORE".into());
 			}
 
-			let stddef_fn: extern "C" fn(*const c_void) -> *const c_char =
-				std::mem::transmute(stddef_fn);
+			stddef_fn = std::mem::transmute(symbol);
+		}
+	}
 
-			match CStr::from_ptr(stddef_fn(std::ptr::null())).to_str() {
-				Ok(str) => STDDEF = Some(str),
-				Err(e) => {
-					return Err(format!("Couldn't convert STDDEF from CStr: {}", e));
-				}
+	#[cfg(unix)]
+	{
+		use libc::{dlopen, dlsym, RTLD_LAZY};
+
+		unsafe {
+			let module = dlopen(CString::new(BYONDCORE).unwrap().as_ptr(), RTLD_LAZY);
+			if module.is_null() {
+				return Err("Couldn't get module handle for BYONDCORE".into());
+			}
+
+			let symbol = dlsym(module, STDDEF_FN_SYMBOL.as_ptr() as *const c_char);
+			if symbol.is_null() {
+				return Err("Couldn't find STDDEF_FN in BYONDCORE".into());
+			}
+
+			stddef_fn = std::mem::transmute(symbol);
+		}
+	}
+
+	unsafe {
+		match CStr::from_ptr(stddef_fn(std::ptr::null())).to_str() {
+			Ok(str) => STDDEF = Some(str),
+			Err(e) => {
+				return Err(format!("Couldn't convert STDDEF from CStr: {}", e));
 			}
 		}
 	}
