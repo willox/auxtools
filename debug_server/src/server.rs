@@ -384,7 +384,10 @@ impl Server {
 	fn get_args(&mut self, frame_index: u32) -> Vec<Variable> {
 		match self.get_stack_frame(frame_index) {
 			Some(frame) => {
-				let mut vars = vec![];
+				let mut vars = vec![
+					self.value_to_variable("src".to_owned(), &frame.src),
+					self.value_to_variable("usr".to_owned(), &frame.usr),
+				];
 
 				for (name, local) in &frame.args {
 					let name = match name {
@@ -412,8 +415,6 @@ impl Server {
 			Some(frame) => {
 				let mut vars = vec![
 					self.value_to_variable(".".to_owned(), &frame.dot),
-					self.value_to_variable("src".to_owned(), &frame.src),
-					self.value_to_variable("usr".to_owned(), &frame.usr),
 				];
 
 				for (name, local) in &frame.locals {
