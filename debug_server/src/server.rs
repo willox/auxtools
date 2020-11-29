@@ -730,6 +730,10 @@ impl Server {
 				self.send_or_disconnect(Response::StdDef(stddef));
 			}
 
+			Request::Disassemble(proc) => {
+				self.send_or_disconnect(Response::Disassemble(format!("Dummy dism for {:?}", proc)));
+			}
+
 			// The following requests are special cases and handled outside of this function
 			Request::Configured | Request::Continue { .. } => {
 				self.send_or_disconnect(Response::Ack);

@@ -11,6 +11,7 @@ pub enum Request {
 	Disconnect,
 	Configured,
 	StdDef,
+	Disassemble(ProcRef),
 	BreakpointSet {
 		instruction: InstructionRef,
 	},
@@ -51,6 +52,7 @@ pub enum Request {
 pub enum Response {
 	Ack,
 	StdDef(Option<String>),
+	Disassemble(String),
 	BreakpointSet {
 		result: BreakpointSetResult,
 	},
