@@ -720,6 +720,11 @@ impl Server {
 				return true;
 			}
 
+			Request::StdDef => {
+				let stddef = crate::stddef::get_stddef().map(|x| x.to_string());
+				self.send_or_disconnect(Response::StdDef(stddef));
+			}
+
 			// The following requests are special cases and handled outside of this function
 			Request::Configured | Request::Continue { .. } => {
 				self.send_or_disconnect(Response::Ack);
