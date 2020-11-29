@@ -2,8 +2,8 @@ use std::{cell::UnsafeCell, ffi::c_void};
 
 use crate::server_types::{BreakpointReason, ContinueKind};
 use crate::DEBUG_SERVER;
-use detour::RawDetour;
 use auxtools::*;
+use detour::RawDetour;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::sync::Mutex;

@@ -1,7 +1,7 @@
 mod instruction_hooking;
-mod stddef;
 mod server;
 mod server_types;
+mod stddef;
 
 use std::{
 	cell::UnsafeCell,
@@ -33,36 +33,35 @@ fn get_default_port() -> u16 {
 	}
 }
 
-
 #[hook("/proc/enable_debugging")]
 fn enable_debugging(mode: Value, port: Value) {
-/*
-	use std::fs::File;
-	use std::io::Write;
-	
-	let mut file = File::create("E:/bytecode.txt").unwrap();
+	/*
+		use std::fs::File;
+		use std::io::Write;
 
-	let mut proc_id: u32 = 0;
-	loop {
-		let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));
-		//let proc = Proc::find("/proc/test");
-		if proc.is_none() {
-			break;
-		}
-		let proc = proc.unwrap();
-		let (dism, err) = proc.disassemble();
-		writeln!(&mut file, "Dism for {:?}", proc).unwrap();
-		for x in &dism {
-			writeln!(&mut file, "\t{}-{}: {:?}", x.0, x.1, x.2).unwrap();
-		}
+		let mut file = File::create("E:/bytecode.txt").unwrap();
 
-		if let Some(err) = err {
-			writeln!(&mut file, "\n\tError: {:?}", err).unwrap();
+		let mut proc_id: u32 = 0;
+		loop {
+			let proc = Proc::from_id(raw_types::procs::ProcId(proc_id));
+			//let proc = Proc::find("/proc/test");
+			if proc.is_none() {
+				break;
+			}
+			let proc = proc.unwrap();
+			let (dism, err) = proc.disassemble();
+			writeln!(&mut file, "Dism for {:?}", proc).unwrap();
+			for x in &dism {
+				writeln!(&mut file, "\t{}-{}: {:?}", x.0, x.1, x.2).unwrap();
+			}
+
+			if let Some(err) = err {
+				writeln!(&mut file, "\n\tError: {:?}", err).unwrap();
+			}
+			writeln!(&mut file, "").unwrap();
+			proc_id += 1;
 		}
-		writeln!(&mut file, "").unwrap();
-		proc_id += 1;
-	}
-*/
+	*/
 
 	let mode = mode.as_string().unwrap_or_else(|_| get_default_mode());
 	let port = port

@@ -15,18 +15,18 @@ mod list;
 mod proc;
 pub mod raw_types;
 mod runtime;
+pub mod sigscan;
 mod string;
 mod value;
-pub mod sigscan;
 
 use init::{get_init_level, set_init_level, InitLevel};
 
+pub use auxtools_impl::{hook, init, runtime_handler, shutdown};
 pub use context::DMContext;
 pub use disassembler::{
 	opcodes::{OpCode, DEBUG_BREAK_OPCODE, DEBUG_BREAK_OPERAND},
 	Instruction,
 };
-pub use auxtools_impl::{hook, init, runtime_handler, shutdown};
 pub use hooks::{CompileTimeHook, RuntimeHook};
 pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
 pub use list::List;
@@ -103,10 +103,10 @@ macro_rules! find_function {
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name) {
 			unsafe {
 				$name = std::mem::transmute(ptr as *const c_void);
-			}
+				}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-		}
+			}
 	};
 }
 
@@ -120,7 +120,7 @@ macro_rules! find_function_by_call {
 				}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-		}
+			}
 	};
 }
 
