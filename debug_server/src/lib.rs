@@ -85,7 +85,7 @@ fn enable_debugging(mode: Value, port: Value) {
 		"BLOCK" => {
 			let mut server = server::Server::listen(&addr)
 				.map_err(|e| runtime!("Couldn't create debug server: {}", e))?;
-			server.wait_for_connection(); // might never return 😳
+			server.process_until_configured(); // might never return 😳
 			server
 		}
 

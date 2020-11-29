@@ -118,13 +118,16 @@ impl Server {
 			server_thread.run(cloned_stream);
 		});
 
-		Ok(Server {
+		let mut server = Server {
 			requests: requests_receiver,
 			stream: ServerStream::Connected(stream),
 			_thread: thread,
 			should_catch_runtimes: true,
 			state: None,
-		})
+		};
+
+		server.process_until_configured();
+		return Ok(server);
 	}
 
 	pub fn listen(addr: &SocketAddr) -> std::io::Result<Server> {
@@ -712,13 +715,14 @@ impl Server {
 				});
 			}
 
-			Request::Continue { .. } => {
-				self.send_or_disconnect(Response::Ack);
-			}
-
 			Request::Pause => {
 				self.send_or_disconnect(Response::Ack);
 				return true;
+			}
+
+			// The following requests are special cases and handled outside of this function
+			Request::Configured | Request::Continue { .. } => {
+				self.send_or_disconnect(Response::Ack);
 			}
 		}
 
@@ -740,7 +744,7 @@ impl Server {
 		}
 	}
 
-	pub fn wait_for_connection(&mut self) {
+	fn wait_for_connection(&mut self) {
 		match &self.stream {
 			ServerStream::Waiting(receiver) => {
 				if let Ok(stream) = receiver.recv() {
@@ -816,6 +820,20 @@ impl Server {
 		}
 
 		should_pause
+	}
+
+	/// Block while processing all received requests normally until the debug client is configured
+	pub fn process_until_configured(&mut self) {
+		self.wait_for_connection();
+
+		while let Ok(request) = self.requests.recv() {
+			if let Request::Configured = request {
+				self.send_or_disconnect(Response::Ack);
+				break;
+			}
+
+			self.handle_request(request);
+		}
 	}
 
 	fn send_or_disconnect(&mut self, response: Response) {
