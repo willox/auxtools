@@ -731,7 +731,26 @@ impl Server {
 			}
 
 			Request::Disassemble(proc) => {
-				self.send_or_disconnect(Response::Disassemble(format!("Dummy dism for {:?}", proc)));
+				self.send_or_disconnect(Response::Disassemble(format!(
+					"Dummy dism for {:?}",
+					proc
+				)));
+			}
+
+			Request::CurrentInstruction { frame_id } => {
+				let response = match self.get_stack_frame(frame_id) {
+					Some(frame) => Some(InstructionRef {
+						proc: ProcRef {
+							path: frame.proc.path.to_owned(),
+							override_id: frame.proc.override_id(),
+						},
+						offset: frame.offset as u32,
+					}),
+
+					None => None,
+				};
+
+				self.send_or_disconnect(Response::CurrentInstruction(response));
 			}
 
 			// The following requests are special cases and handled outside of this function
