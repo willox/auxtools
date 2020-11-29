@@ -413,9 +413,7 @@ impl Server {
 	fn get_locals(&mut self, frame_index: u32) -> Vec<Variable> {
 		match self.get_stack_frame(frame_index) {
 			Some(frame) => {
-				let mut vars = vec![
-					self.value_to_variable(".".to_owned(), &frame.dot),
-				];
+				let mut vars = vec![self.value_to_variable(".".to_owned(), &frame.dot)];
 
 				for (name, local) in &frame.locals {
 					vars.push(self.value_to_variable(String::from(name), &local));
