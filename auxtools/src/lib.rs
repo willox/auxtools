@@ -25,7 +25,7 @@ pub use auxtools_impl::{hook, init, runtime_handler, shutdown};
 pub use context::DMContext;
 pub use disassembler::{
 	opcodes::{OpCode, DEBUG_BREAK_OPCODE, DEBUG_BREAK_OPERAND},
-	Instruction,
+	DisassembleResult, Instruction,
 };
 pub use hooks::{CompileTimeHook, RuntimeHook};
 pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};

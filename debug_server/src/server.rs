@@ -153,7 +153,7 @@ impl Server {
 			Some(proc) => {
 				// We're ignoring disassemble errors because any bytecode in the result is still valid
 				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
-				let (dism, _) = proc.disassemble();
+				let dism = proc.disassemble().instructions;
 				let mut current_line_number = None;
 				let mut reached_offset = false;
 
@@ -190,7 +190,7 @@ impl Server {
 			Some(proc) => {
 				// We're ignoring disassemble errors because any bytecode in the result is still valid
 				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
-				let (dism, _) = proc.disassemble();
+				let dism = proc.disassemble().instructions;
 				let mut offset = None;
 				let mut at_offset = false;
 
@@ -691,6 +691,44 @@ impl Server {
 		self.send_or_disconnect(response);
 	}
 
+	fn handle_disassemble(&mut self, proc: ProcRef) {
+		let response = match auxtools::Proc::find_override(proc.path, proc.override_id) {
+			Some(proc) => {
+				let dism = proc.disassemble();
+				use std::fmt::Write;
+				let mut buf = String::new();
+
+				writeln!(&mut buf, "Dism for {:?}", proc).unwrap();
+				for x in &dism.instructions {
+					let mut raw_lines = vec![];
+
+					for raw in dism.raw[x.0 as usize..=x.1 as usize].chunks(3) {
+						let mut line = String::new();
+						for int in raw {
+							write!(&mut line, " {:0>8X}", int).unwrap();
+						}
+						raw_lines.push(line);
+					}
+					writeln!(&mut buf, "{:0>4X}:{:28} {:?}", x.0, raw_lines[0], x.2).unwrap();
+
+					for line in &raw_lines[1..] {
+						writeln!(&mut buf, "     {}", line).unwrap();
+					}
+				}
+
+				if let Some(err) = dism.error {
+					writeln!(&mut buf, "\n\tError: {:?}", err).unwrap();
+				}
+
+				buf
+			}
+
+			None => "Proc not found".to_owned(),
+		};
+
+		self.send_or_disconnect(Response::Disassemble(response));
+	}
+
 	// returns true if we need to break
 	fn handle_request(&mut self, request: Request) -> bool {
 		match request {
@@ -701,6 +739,7 @@ impl Server {
 			Request::Stacks => self.handle_stacks(),
 			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
 			Request::Variables { vars } => self.handle_variables(vars),
+			Request::Disassemble(proc) => self.handle_disassemble(proc),
 
 			Request::StackFrames {
 				stack_id,
@@ -728,13 +767,6 @@ impl Server {
 			Request::StdDef => {
 				let stddef = crate::stddef::get_stddef().map(|x| x.to_string());
 				self.send_or_disconnect(Response::StdDef(stddef));
-			}
-
-			Request::Disassemble(proc) => {
-				self.send_or_disconnect(Response::Disassemble(format!(
-					"Dummy dism for {:?}",
-					proc
-				)));
 			}
 
 			Request::CurrentInstruction { frame_id } => {

@@ -384,7 +384,7 @@ pub enum InstructionHookError {
 }
 
 pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookError> {
-	let dism = proc.disassemble().0;
+	let dism = proc.disassemble().instructions;
 
 	let instruction = dism.iter().find(|x| x.0 == offset);
 
@@ -432,7 +432,7 @@ pub enum InstructionUnhookError {
 }
 
 pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnhookError> {
-	let dism = proc.disassemble().0;
+	let dism = proc.disassemble().instructions;
 
 	let instruction = dism.iter().find(|x| x.0 == offset);
 

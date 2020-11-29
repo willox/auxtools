@@ -1,3 +1,5 @@
+use crate::DisassembleResult;
+
 use super::disassembler;
 use super::raw_types;
 use super::raw_types::misc;
@@ -115,12 +117,7 @@ impl Proc {
 		((*misc).bytecode.bytecode, (*misc).bytecode.count as usize)
 	}
 
-	pub fn disassemble(
-		&self,
-	) -> (
-		Vec<(u32, u32, disassembler::Instruction)>,
-		Option<disassembler::DisassembleError>,
-	) {
+	pub fn disassemble(&self) -> DisassembleResult {
 		disassembler::disassemble(self)
 	}
 

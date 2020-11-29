@@ -685,7 +685,13 @@ where
 	}
 }
 
-pub fn disassemble(proc: &Proc) -> (Vec<(u32, u32, Instruction)>, Option<DisassembleError>) {
+pub struct DisassembleResult {
+	pub instructions: Vec<(u32, u32, Instruction)>,
+	pub error: Option<DisassembleError>,
+	pub raw: Vec<u32>,
+}
+
+pub fn disassemble(proc: &Proc) -> DisassembleResult {
 	let bytecode = unsafe {
 		let (ptr, count) = proc.bytecode();
 		std::slice::from_raw_parts(ptr, count)
@@ -702,14 +708,20 @@ pub fn disassemble(proc: &Proc) -> (Vec<(u32, u32, Instruction)>, Option<Disasse
 			}
 			Err(e) => {
 				if e != Finished {
-					return (ret, Some(e));
+					return DisassembleResult {
+						instructions: ret,
+						error: Some(e),
+						raw: bytecode.to_vec(),
+					};
 				}
 				break;
 			}
 		}
 	}
 
-	// TODO: Error
-
-	(ret, None)
+	DisassembleResult {
+		instructions: ret,
+		error: None,
+		raw: bytecode.to_vec(),
+	}
 }
