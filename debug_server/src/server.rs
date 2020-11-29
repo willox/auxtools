@@ -389,12 +389,16 @@ impl Server {
 					self.value_to_variable("usr".to_owned(), &frame.usr),
 				];
 
-				for (name, local) in &frame.args {
+				let mut unnamed_count = 0;
+				for (name, value) in &frame.args {
 					let name = match name {
 						Some(name) => String::from(name),
-						None => "<unknown>".to_owned(),
+						None => {
+							unnamed_count += 1;
+							format!("undefined argument #{}", unnamed_count)
+						}
 					};
-					vars.push(self.value_to_variable(name, &local));
+					vars.push(self.value_to_variable(name, value));
 				}
 
 				vars
