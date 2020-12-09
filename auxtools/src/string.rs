@@ -49,6 +49,15 @@ impl StringRef {
 	pub fn get_id(&self) -> raw_types::strings::StringId {
 		unsafe { self.value.value.data.string }
 	}
+
+	pub fn data(&self) -> &[u8] {
+		unsafe {
+			let id = self.value.value.data.string;
+			let mut entry: *mut raw_types::strings::StringEntry = std::ptr::null_mut();
+			assert_eq!(raw_types::funcs::get_string_table_entry(&mut entry, id), 1);
+			CStr::from_ptr((*entry).data).to_bytes()
+		}
+	}
 }
 
 impl Clone for StringRef {

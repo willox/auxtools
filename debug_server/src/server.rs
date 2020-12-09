@@ -674,32 +674,7 @@ impl Server {
 		let response = match auxtools::Proc::find_override(proc.path, proc.override_id) {
 			Some(proc) => {
 				let dism = proc.disassemble();
-				use std::fmt::Write;
-				let mut buf = String::new();
-
-				writeln!(&mut buf, "Dism for {:?}", proc).unwrap();
-				for x in &dism.instructions {
-					let mut raw_lines = vec![];
-
-					for raw in dism.raw[x.0 as usize..=x.1 as usize].chunks(3) {
-						let mut line = String::new();
-						for int in raw {
-							write!(&mut line, " {:0>8X}", int).unwrap();
-						}
-						raw_lines.push(line);
-					}
-					writeln!(&mut buf, "{:0>4X}:{:28} {:?}", x.0, raw_lines[0], x.2).unwrap();
-
-					for line in &raw_lines[1..] {
-						writeln!(&mut buf, "     {}", line).unwrap();
-					}
-				}
-
-				if let Some(err) = dism.error {
-					writeln!(&mut buf, "\n\tError: {:?}", err).unwrap();
-				}
-
-				buf
+				format!("Dism for {:?}\n{}", proc, dism)
 			}
 
 			None => "Proc not found".to_owned(),

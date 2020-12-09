@@ -281,11 +281,11 @@ where
 			OpCode::IterPush => Instruction::IterPush,
 			OpCode::IterPop => Instruction::IterPop,
 			OpCode::Format => Instruction::Format(
-				self.disassemble_string_operand()?,
+				self.disassemble_format_operand()?,
 				self.disassemble_param_count_operand()?,
 			),
 			OpCode::OutputFormat => Instruction::OutputFormat(
-				self.disassemble_string_operand()?,
+				self.disassemble_format_operand()?,
 				self.disassemble_param_count_operand()?,
 			),
 			OpCode::JsonEncode => Instruction::JsonEncode,
@@ -683,12 +683,46 @@ where
 
 		Ok(str)
 	}
+
+	fn disassemble_format_operand(&mut self) -> Result<FormatString, DisassembleError> {
+		Ok(FormatString(self.disassemble_string_operand()?))
+	}
 }
 
 pub struct DisassembleResult {
 	pub instructions: Vec<(u32, u32, Instruction)>,
 	pub error: Option<DisassembleError>,
 	pub raw: Vec<u32>,
+}
+
+impl std::fmt::Display for DisassembleResult {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		use std::fmt::Write;
+		let mut buf = String::new();
+
+		for x in &self.instructions {
+			let mut raw_lines = vec![];
+
+			for raw in self.raw[x.0 as usize..=x.1 as usize].chunks(3) {
+				let mut line = String::new();
+				for int in raw {
+					write!(&mut line, " {:0>8X}", int).unwrap();
+				}
+				raw_lines.push(line);
+			}
+			writeln!(&mut buf, "{:0>4X}:{:28} {:?}", x.0, raw_lines[0], x.2).unwrap();
+
+			for line in &raw_lines[1..] {
+				writeln!(&mut buf, "     {}", line).unwrap();
+			}
+		}
+
+		if let Some(err) = &self.error {
+			writeln!(&mut buf, "\n\tError: {:?}", err).unwrap();
+		}
+
+		write!(f, "{}", buf)
+	}
 }
 
 pub fn disassemble(proc: &Proc) -> DisassembleResult {
