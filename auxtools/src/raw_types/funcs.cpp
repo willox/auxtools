@@ -138,13 +138,13 @@ extern "C" uint8_t get_proc_array_entry(void **out, uint32_t id)
 	}
 }
 
-extern "C" uint8_t get_string_id(uint32_t *out, const char *data, uint8_t a, uint8_t b, uint8_t c)
+extern "C" uint8_t get_string_id(uint32_t *out, const char *data)
 {
 	RuntimeContext ctx(true);
 
 	BYOND_TRY
 	{
-		*out = get_string_id_byond(data, a, b, c);
+		*out = get_string_id_byond(data, 1, 0, 1);
 		return 1;
 	}
 	BYOND_CATCH

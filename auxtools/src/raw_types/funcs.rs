@@ -67,9 +67,6 @@ extern "C" {
 	pub fn get_string_id(
 		out: *mut strings::StringId,
 		string: *const c_char,
-		a: u8,
-		b: u8,
-		c: u8,
 	) -> u8;
 	pub fn get_variable(
 		out: *mut values::Value,
