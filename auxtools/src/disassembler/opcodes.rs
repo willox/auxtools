@@ -363,31 +363,42 @@ pub static DEBUG_BREAK_OPERAND: u32 = 0x1338;
 #[non_exhaustive]
 #[allow(dead_code)]
 pub enum AccessModifier {
-	Usr = 0xFFCD, // 65485
-	Src = 0xFFCE, // 65486
+	Usr = 0xFFCD,
+	Src = 0xFFCE,
 	Args = 0xFFCF,
 	Dot = 0xFFD0,
+	UnkFFD1 = 0xFFD1,
+	UnkFFD2 = 0xFFD2,
+	UnkFFD3 = 0xFFD3,
+	UnkFFD4 = 0xFFD4,
+	UnkFFD5 = 0xFFD5,
+	UnkFFD6 = 0xFFD6,
+	UnkFFD7 = 0xFFD7,
 	Cache = 0xFFD8,
-	Arg = 0xFFD9,    // 65497
-	Local = 0xFFDA,  // 65498
-	Global = 0xFFDB, // 65499
-	Field = 0xFFDC,  // 65500
+	Arg = 0xFFD9,
+	Local = 0xFFDA,
+	Global = 0xFFDB,
+	Field = 0xFFDC,
 	SrcProc2 = 0xFFDD,
 	SrcProc = 0xFFDE,
 	Proc = 0xFFDF, // 65503
 	Proc2 = 0xFFE0,
-	// TODO: What are these?
-	// 0xFFE1
-	// 0xFFE2
+	UnkFFE1 = 0xFFE1,
+	UnkFFE2 = 0xFFE2,
 	Cache2 = 0xFFE3,
 	Cache3 = 0xFFE4,
 	World = 0xFFE5,
 	Null = 0xFFE6,
 	Initial = 0xFFE7, // 65511
+	UnkFFE8 = 0xFFE8,
+	UnkFFE9 = 0xFFE9,
+	UnkFFEA = 0xFFEA,
+	UnkFFEB = 0xFFEB,
+	UnkFFEC = 0xFFEC,
 }
 
 impl AccessModifier {
 	pub fn in_range(value: u32) -> bool {
-		value >= (Self::Usr as u32) && value <= (Self::Initial as u32)
+		value >= (Self::Usr as u32) && value <= (Self::UnkFFEC as u32)
 	}
 }
