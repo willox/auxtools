@@ -294,7 +294,7 @@ impl Value {
 			let mut id = raw_types::strings::StringId(0);
 
 			assert_eq!(
-				raw_types::funcs::get_string_id(&mut id, string.as_ptr(), 1, 0, 1),
+				raw_types::funcs::get_string_id(&mut id, string.as_ptr()),
 				1
 			);
 
