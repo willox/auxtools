@@ -556,44 +556,23 @@ impl Server {
 	}
 
 	fn handle_scopes(&mut self, frame_id: u32) {
-		let response = match self.get_stack_frame(frame_id) {
-			Some(frame) => {
-				let state = self.state.as_ref().unwrap();
-				let mut arguments = None;
+		let state = self.state.as_ref().unwrap();
 
-				if !frame.args.is_empty() {
-					arguments = Some(Variables::Arguments { frame: frame_id });
-				}
+		let arguments = Variables::Arguments { frame: frame_id };
+		let locals = Variables::Locals { frame: frame_id };
 
-				// Never empty because we're putting ./src/usr in here
-				let locals = Some(Variables::Locals { frame: frame_id });
-
-				let globals_value = Value::globals();
-				let globals = unsafe {
-					Variables::ObjectVars {
-						tag: globals_value.value.tag as u8,
-						data: globals_value.value.data.id,
-					}
-				};
-
-				Response::Scopes {
-					arguments: arguments.map(|x| state.get_ref(x)),
-					locals: locals.map(|x| state.get_ref(x)),
-					globals: Some(state.get_ref(globals)),
-				}
+		let globals_value = Value::globals();
+		let globals = unsafe {
+			Variables::ObjectVars {
+				tag: globals_value.value.tag as u8,
+				data: globals_value.value.data.id,
 			}
+		};
 
-			None => {
-				self.notify(format!(
-					"Debug server received Scopes request for invalid frame_id ({})",
-					frame_id
-				));
-				Response::Scopes {
-					arguments: None,
-					locals: None,
-					globals: None,
-				}
-			}
+		let response = Response::Scopes {
+			arguments: Some(state.get_ref(arguments)),
+			locals: Some(state.get_ref(locals)),
+			globals: Some(state.get_ref(globals)),
 		};
 
 		self.send_or_disconnect(response);
