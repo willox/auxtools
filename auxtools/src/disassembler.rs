@@ -400,7 +400,7 @@ where
 			OpCode::PushInt => Instruction::PushInt(self.disassemble_i32_operand()?),
 			OpCode::Ret => Instruction::Ret,
 			OpCode::CallGlob => Instruction::CallGlob(self.disassemble_callglob_operands()?),
-			OpCode::Jz => Instruction::Jz(self.disassemble_u32_operand()?),
+			OpCode::Jz => Instruction::Jz(self.disassemble_loc_operand()?),
 			OpCode::Test => Instruction::Test,
 			OpCode::Del => Instruction::Del,
 			OpCode::Link => Instruction::Link,

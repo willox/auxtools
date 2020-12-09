@@ -63,8 +63,13 @@ pub enum IsInOperand {
 #[derive(Debug)]
 pub struct ParamCount(pub u32);
 
-#[derive(Debug)]
 pub struct Loc(pub u32);
+
+impl std::fmt::Debug for Loc {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{:0>4X}", self.0)
+	}
+}
 
 #[derive(Debug)]
 pub enum Instruction {
@@ -85,7 +90,7 @@ pub enum Instruction {
 	Not,
 	Jmp(Loc),
 	Jnz(),
-	Jz(u32),
+	Jz(Loc),
 	Ret,
 	IsLoc,
 	IsMob,
