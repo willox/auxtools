@@ -181,7 +181,7 @@ extern "C" fn call_proc_by_id_hook(
 				}
 				Err(e) => {
 					// TODO: Some info about the hook would be useful (as the hook is never part of byond's stack, the runtime won't show it.)
-					Proc::find("/proc/stack_trace")
+					Proc::find("/proc/auxtools_stack_trace")
 						.unwrap()
 						.call(&[&Value::from_string(e.message.as_str())])
 						.unwrap();
