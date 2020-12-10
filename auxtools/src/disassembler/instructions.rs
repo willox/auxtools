@@ -71,84 +71,14 @@ impl std::fmt::Debug for Loc {
 	}
 }
 
-pub struct FormatString(pub StringRef);
-
-impl std::fmt::Debug for FormatString {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let mut format = vec![];
-
-		let mut iter = self.0.data().into_iter();
-
-		loop {
-			let byte = match iter.next() {
-				Some(x) => *x,
-				None => break,
-			};
-
-			if byte == 0xFF {
-				// NOTE: Output whitespace isn't perfect
-				format.extend_from_slice(match iter.next() {
-					None => break,
-					Some(1) | Some(2) | Some(3) => b"[..]",
-					Some(5) => b"[..]\\th",
-					Some(6) => b"\\a ",
-					Some(7) => b"\\A ",
-					Some(8) => b"\\the ",
-					Some(9) => b"\\The ",
-					Some(10) => b"\\he ",
-					Some(11) => b"\\He ",
-					Some(12) => b"\\his ",
-					Some(13) => b"\\His ",
-					Some(14) => b"\\hers ",
-					Some(15) => b"\\Hers ",
-					Some(16) => b"\\him ",
-					Some(17) => b"\\himself ",
-					Some(20) => b"\\s ",
-					Some(21) => b"\\proper ",
-					Some(22) => b"\\improper ",
-					Some(25) => b"\\underline ",
-					Some(29) => b"\\font ",
-					Some(30) => b"\\color ",
-					Some(31) => b"\\red ",
-					Some(32) => b"\\green ",
-					Some(33) => b"\\blue ",
-					Some(34) => b"\\black ",
-					Some(35) => b"\\white ",
-					Some(36) => b"\\yellow ",
-					Some(37) => b"\\cyan ",
-					Some(38) => b"\\magenta ",
-					Some(39) => b"\\beep ",
-					Some(40) => b"\\link",
-					Some(42) => b"\\ref[..]",
-					Some(43) => b"\\icon[..]",
-					Some(44) => b"\\roman[..]",
-					Some(45) => b"\\Roman[..]",
-					Some(_) => b"\\unknown ",
-				});
-				continue;
-			}
-
-			// Escape \[] chars
-			if byte == b'\\' || byte == b'[' || byte == b']' {
-				format.push(b'\\');
-			}
-
-			format.push(byte);
-		}
-
-		write!(f, "Original: {:?}", self.0.data()).unwrap();
-		write!(f, "Parsed: {}", String::from_utf8_lossy(&format))
-	}
-}
-
 #[derive(Debug)]
 pub enum Instruction {
 	End(),
 	New(ParamCount),
 	// TODO: Pretty format the string
-	Format(FormatString, ParamCount),
+	Format(StringRef, ParamCount),
 	Output,
-	OutputFormat(FormatString, ParamCount),
+	OutputFormat(StringRef, ParamCount),
 	Read,
 	Stat,
 	Link,

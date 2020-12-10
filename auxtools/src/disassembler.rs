@@ -281,11 +281,11 @@ where
 			OpCode::IterPush => Instruction::IterPush,
 			OpCode::IterPop => Instruction::IterPop,
 			OpCode::Format => Instruction::Format(
-				self.disassemble_format_operand()?,
+				self.disassemble_string_operand()?,
 				self.disassemble_param_count_operand()?,
 			),
 			OpCode::OutputFormat => Instruction::OutputFormat(
-				self.disassemble_format_operand()?,
+				self.disassemble_string_operand()?,
 				self.disassemble_param_count_operand()?,
 			),
 			OpCode::JsonEncode => Instruction::JsonEncode,
@@ -682,10 +682,6 @@ where
 		let str = unsafe { StringRef::from_id(raw_types::strings::StringId(*operand)) };
 
 		Ok(str)
-	}
-
-	fn disassemble_format_operand(&mut self) -> Result<FormatString, DisassembleError> {
-		Ok(FormatString(self.disassemble_string_operand()?))
 	}
 }
 

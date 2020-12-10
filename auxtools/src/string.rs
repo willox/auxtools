@@ -66,10 +66,94 @@ impl Clone for StringRef {
 	}
 }
 
+impl fmt::Display for StringRef {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "{:?}", self)
+	}
+}
+
 impl fmt::Debug for StringRef {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		let data: String = self.clone().into();
-		write!(f, "{}", data)
+		let mut format = vec![];
+
+		let mut iter = self.data().into_iter();
+
+		loop {
+			let byte = match iter.next() {
+				Some(x) => *x,
+				None => break,
+			};
+
+			if byte == 0xFF {
+				// NOTE: Doesn't hold state for formatting, so some strings relying on are a little off
+				format.extend_from_slice(match iter.next() {
+					None => break,
+					Some(1) | Some(2) | Some(3) | Some(4) => b"[]",
+					Some(5) => b"[]\\th",
+					Some(6) => b"\\a",
+					Some(7) => b"\\A",
+					Some(8) => b"\\the",
+					Some(9) => b"\\The",
+					Some(10) => b"\\he",
+					Some(11) => b"\\He",
+					Some(12) => b"\\his",
+					Some(13) => b"\\His",
+					Some(14) => b"\\hers",
+					Some(15) => b"\\Hers",
+					Some(16) => b"\\him ",
+					Some(17) => b"\\himself",
+					Some(18) => b"\\... ",
+					Some(19) => b"\\n",
+					Some(20) => b"\\s ",
+					Some(21) => b"\\proper ",
+					Some(22) => b"\\improper ",
+					Some(23) => b"\\bold ",
+					Some(24) => b"\\italic ",
+					Some(25) => b"\\underline ",
+					Some(26) => b"\\strike ",
+					Some(27) => b"\\font",
+					Some(28) => b"\\color",
+					Some(29) => b"\\font",
+					Some(30) => b"\\color",
+					Some(31) => b"\\red ",
+					Some(32) => b"\\green ",
+					Some(33) => b"\\blue ",
+					Some(34) => b"\\black ",
+					Some(35) => b"\\white ",
+					Some(36) => b"\\yellow ",
+					Some(37) => b"\\cyan ",
+					Some(38) => b"\\magenta ",
+					Some(39) => b"\\beep ",
+					Some(40) => b"\\link",
+					Some(41) => b" \\link",
+					Some(42) => b"\\ref[]",
+					Some(43) => b"\\icon[]",
+					Some(44) => b"\\roman[]",
+					Some(45) => b"\\Roman[]",
+					Some(_) => b"[UNKNONWN FORMAT SPECIFIER]",
+				});
+				continue;
+			}
+
+			if byte == b'\n' {
+				format.extend_from_slice(b"\\n");
+				continue;
+			}
+
+			if byte == b'\r' {
+				format.extend_from_slice(b"\\r");
+				continue;
+			}
+
+			// Escape \[]"" chars
+			if byte == b'\\' || byte == b'[' || byte == b']' || byte == b'"' {
+				format.push(b'\\');
+			}
+
+			format.push(byte);
+		}
+
+		write!(f, "\"{}\"", String::from_utf8_lossy(&format))
 	}
 }
 
