@@ -1,4 +1,4 @@
-use super::instruction_hooking::{hook_instruction, unhook_instruction};
+use super::instruction_hooking::{hook_instruction, unhook_instruction, get_hooked_offsets};
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::thread;
@@ -673,7 +673,19 @@ impl Server {
 	fn handle_disassemble(&mut self, proc: ProcRef) {
 		let response = match auxtools::Proc::find_override(proc.path, proc.override_id) {
 			Some(proc) => {
+				// Make sure to temporarily remove all breakpoints in this proc
+				let breaks = get_hooked_offsets(&proc);
+
+				for offset in &breaks {
+					unhook_instruction(&proc, *offset).unwrap();
+				}
+
 				let dism = proc.disassemble();
+
+				for offset in &breaks {
+					hook_instruction(&proc, *offset).unwrap();
+				}
+
 				format!("Dism for {:?}\n{}", proc, dism)
 			}
 
