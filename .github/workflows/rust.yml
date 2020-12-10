@@ -63,7 +63,7 @@ jobs:
     - name: Build
       run: cargo build --release --verbose
 
-    -uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v2
       if: matrix.os == 'windows-latest'
       with:
 	    name: debug-server-windows
