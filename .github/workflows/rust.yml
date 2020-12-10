@@ -68,8 +68,8 @@ jobs:
       with:
         name: debug-server-windows
         path: |
-        target/i686-pc-windows-msvc/release/debug_server.dll
-        target/i686-pc-windows-msvc/release/debug_server.pdb
+          target/i686-pc-windows-msvc/release/debug_server.dll
+          target/i686-pc-windows-msvc/release/debug_server.pdb
 
     - name: Run tests
       run: cargo test --verbose
