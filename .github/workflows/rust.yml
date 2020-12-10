@@ -61,7 +61,7 @@ jobs:
         override: true
 
     - name: Build
-      run: cargo build --release --verbose
+      run: cargo build --target=${{matrix.TARGET}} --release --verbose
 
     - uses: actions/upload-artifact@v2
       if: matrix.os == 'windows-latest'
@@ -72,4 +72,4 @@ jobs:
           target/i686-pc-windows-msvc/release/debug_server.pdb
 
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --target=${{matrix.TARGET}} --verbose
