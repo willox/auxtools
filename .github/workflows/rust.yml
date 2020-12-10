@@ -61,7 +61,15 @@ jobs:
         override: true
 
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --release --verbose
+
+    -uses: actions/upload-artifact@v2
+      if: matrix.os == 'windows-latest'
+      with:
+	    name: debug-server-windows
+		path: |
+		  target/i686-pc-windows-msvc/release/debug_server.dll
+		  target/i686-pc-windows-msvc/release/debug_server.pdb
 
     - name: Run tests
       run: cargo test --verbose
