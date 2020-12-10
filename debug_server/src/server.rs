@@ -1,4 +1,4 @@
-use super::instruction_hooking::{hook_instruction, unhook_instruction, get_hooked_offsets};
+use super::instruction_hooking::{get_hooked_offsets, hook_instruction, unhook_instruction};
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::thread;

@@ -471,7 +471,13 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 pub fn get_hooked_offsets(proc: &Proc) -> Vec<u32> {
 	let dism = proc.disassemble().instructions;
 	dism.iter()
-		.filter(|x| if let Instruction::DebugBreak = x.2 { true } else { false } )
+		.filter(|x| {
+			if let Instruction::DebugBreak = x.2 {
+				true
+			} else {
+				false
+			}
+		})
 		.map(|x| x.0)
 		.collect()
 }

@@ -293,10 +293,7 @@ impl Value {
 		unsafe {
 			let mut id = raw_types::strings::StringId(0);
 
-			assert_eq!(
-				raw_types::funcs::get_string_id(&mut id, string.as_ptr()),
-				1
-			);
+			assert_eq!(raw_types::funcs::get_string_id(&mut id, string.as_ptr()), 1);
 
 			Value::new(
 				raw_types::values::ValueTag::String,
