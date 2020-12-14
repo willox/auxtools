@@ -1,3 +1,5 @@
 /target
 /.vscode
 *.o
+*.int
+*.lk
