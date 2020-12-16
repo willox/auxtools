@@ -10,6 +10,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "auxtest"
+version = "0.1.0"
+dependencies = [
+ "auxtools",
+ "auxtools-impl",
+]
+
+[[package]]
 name = "auxtools"
 version = "0.1.0"
 dependencies = [

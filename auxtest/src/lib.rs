@@ -51,7 +51,7 @@ fn test_strings() {
 
 		let value_b = Value::new(
 			values::ValueTag::String,
-			values::ValueData { string: string_a },
+			values::ValueData { string: string_b },
 		);
 
 		if (*string_a_entry).ref_count != 1 {
@@ -62,7 +62,7 @@ fn test_strings() {
 			return Err(runtime!("test_string: string_a's reference count != 1 after Value::new"));
 		}
 
-		let concatenated = Proc::find("concat_strings").unwrap().call(&[&value_a, &value_b])?;
+		let concatenated = Proc::find("/proc/concat_strings").unwrap().call(&[&value_a, &value_b])?;
 
 		// Returned value should be equal to string_a_contents .. string_b_contents
 		// and have a ref count of 1
