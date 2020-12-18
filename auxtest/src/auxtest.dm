@@ -6,7 +6,10 @@
 /proc/auxtools_stack_trace(msg)
 	CRASH(msg)
 
-/proc/test_strings()
+/proc/auxtest_out()
+	CRASH()
+
+/proc/auxtest_strings()
 	CRASH()
 
 /proc/concat_strings(a, b)
@@ -17,8 +20,8 @@
 	var/init_res = call(auxtest, "auxtools_init")()
 	world.log << "auxtools_init = [init_res]"
 	ASSERT(init_res == "SUCCESS")
-	world.log << "[test_strings() ? "TEST SUCCESS" : "TEST FAILED"]"
-	world.Reboot()
+	auxtest_out("[auxtest_strings() ? "TEST SUCCESS" : "TEST FAILED"]")
+	shutdown()
 
 /proc/end()
 	var/auxtest = auxtools_test_dll()

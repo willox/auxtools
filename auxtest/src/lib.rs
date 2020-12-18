@@ -1,7 +1,15 @@
 use auxtools::*;
 use std::ffi::CString;
 
-#[hook("/proc/test_strings")]
+#[hook("/proc/auxtest_out")]
+fn out(msg: Value) {
+	use std::io::{self, Write};
+
+	io::stdout().write_all(b"Fuck").unwrap();
+	Ok(Value::null())
+}
+
+#[hook("/proc/auxtest_strings")]
 fn test_strings() {
 	use raw_types::funcs;
 	use raw_types::values;
@@ -97,5 +105,64 @@ fn test_strings() {
 		}
 
 		Ok(Value::from(true))
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::path::PathBuf;
+	use std::process::Command;
+	use std::net::TcpListener;
+
+	fn find_dm() -> PathBuf {
+		let mut path = PathBuf::from(std::env::var_os("BYOND_PATH").unwrap());
+		path.push("bin\\dm.exe");
+		assert!(path.is_file());
+		path
+	}
+
+	fn find_dreamdaemon() -> PathBuf {
+		let mut path = PathBuf::from(std::env::var_os("BYOND_PATH").unwrap());
+		path.push("bin\\dreamdaemon.exe");
+		assert!(path.is_file());
+		path
+	}
+
+	#[test]
+	fn run() {
+		let dll = test_cdylib::build_current_project();
+
+		println!("{:?}", dll);
+
+		let res = Command::new(find_dm())
+			.arg("auxtest.dme")
+			.status()
+			.unwrap();
+		assert!(res.success());
+
+		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+		let port = listener.local_addr().unwrap().port();
+
+		let output = Command::new(find_dreamdaemon())
+			.env("AUXTEST_PORT", port.to_string())
+			.env("AUXTEST_DLL", dll)
+			.arg("auxtest.dmb")
+			.arg("-trusted")
+			.arg("-close")
+			.output()
+			.unwrap()
+			.stderr;
+		println!("{:?}", output);
+
+		panic!("fak");
+/*
+		match listener.accept() {
+			Ok((socket, _)) => {
+
+			},
+
+			Err(e) => panic!(e)
+		}
+*/
 	}
 }
