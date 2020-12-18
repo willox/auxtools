@@ -144,7 +144,7 @@ extern "C" uint8_t get_string_id(uint32_t *out, const char *data)
 
 	BYOND_TRY
 	{
-		*out = get_string_id_byond(data, 1, 0, 1);
+		*out = get_string_id_byond(data, 0, 0, 1);
 		return 1;
 	}
 	BYOND_CATCH
