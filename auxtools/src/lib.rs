@@ -5,6 +5,7 @@
 //#[cfg(not(target_pointer_width = "32"))]
 //compile_error!("Auxtools must be compiled for a 32-bit target");
 
+mod version;
 mod byond_ffi;
 mod context;
 pub mod debug;
@@ -179,6 +180,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 	if get_init_level() == InitLevel::Full {
 		did_full = true;
+		version::init();
 
 		with_scanner! { byondcore,
 			get_string_id,
