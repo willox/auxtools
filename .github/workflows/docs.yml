@@ -30,6 +30,7 @@ jobs:
       run: cargo doc --no-deps
 
     - name: Deploy 🚀
+      if: ${{ github.event_name == 'push' }} # Only deploy if we actually push to a branch
       uses: JamesIves/github-pages-deploy-action@3.7.1
       with:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
