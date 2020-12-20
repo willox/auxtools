@@ -36,16 +36,20 @@ pub fn init() -> Result<(), String> {
 				return Err("Couldn't get module handle for BYONDCORE".into());
 			}
 
-			let symbol =
-				libloaderapi::GetProcAddress(module, GET_BYOND_VERSION_SYMBOL.as_ptr() as *const c_char);
+			let symbol = libloaderapi::GetProcAddress(
+				module,
+				GET_BYOND_VERSION_SYMBOL.as_ptr() as *const c_char,
+			);
 			if symbol.is_null() {
 				return Err("Couldn't find get_byond_version in BYONDCORE".into());
 			}
 
 			get_byond_version = std::mem::transmute(symbol);
 
-			let symbol =
-				libloaderapi::GetProcAddress(module, GET_BYOND_BUILD_SYMBOL.as_ptr() as *const c_char);
+			let symbol = libloaderapi::GetProcAddress(
+				module,
+				GET_BYOND_BUILD_SYMBOL.as_ptr() as *const c_char,
+			);
 			if symbol.is_null() {
 				return Err("Couldn't find get_byond_build in BYONDCORE".into());
 			}

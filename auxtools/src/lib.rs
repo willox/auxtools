@@ -5,7 +5,6 @@
 //#[cfg(not(target_pointer_width = "32"))]
 //compile_error!("Auxtools must be compiled for a 32-bit target");
 
-mod version;
 mod byond_ffi;
 mod context;
 pub mod debug;
@@ -19,6 +18,7 @@ mod runtime;
 pub mod sigscan;
 mod string;
 mod value;
+mod version;
 
 use init::{get_init_level, set_init_level, InitLevel};
 
