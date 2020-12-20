@@ -314,10 +314,26 @@ impl Server {
 		})?;
 
 		let mut variables = vec![];
+		let mut type_position = None; //For tracking the index of the 'type' var
+
 		for i in 1..=vars.len() {
 			let name = vars.get(i)?.as_string()?;
 			let value = value.get(name.as_str())?;
+			if name.eq("type") {
+				type_position = Some(variables.len()+1); //Not added yet
+			}
 			variables.push(self.value_to_variable(name, &value));
+		}
+
+		match type_position {
+			Some(position) => { // If found, we want the 'type' variable to be at the top of our resulting vector
+				let type_var = variables.remove(position);
+				variables.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+				variables.insert(0, type_var);
+			}
+			None => {
+				variables.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+			}
 		}
 
 		Ok(variables)
@@ -419,28 +435,12 @@ impl Server {
 			Some(frame) => {
 				let mut vars = vec![self.value_to_variable(".".to_owned(), &frame.dot)];
 
-				let mut type_position = None;
-
 				for (name, local) in &frame.locals {
-					let created_var = self.value_to_variable(String::from(name), &local);
-
-					if created_var.name.eq("type") {
-						type_position = Some(vars.len()+1); //We haven't added it yet
-					}
-
-					vars.push(created_var);
+					vars.push(self.value_to_variable(String::from(name), &local));
 				}
 
-				match type_position {
-					Some(position) => { // If found, we want the 'type' variable to be at the top of our resulting vector
-						let type_var = vars.remove(position);
-						vars.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-						vars.insert(0, type_var);
-					}
-					None => {
-						vars.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-					}
-				}
+				vars.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
 				vars
 			}
 
