@@ -326,7 +326,8 @@ impl Server {
 		}
 
 		match type_position {
-			Some(position) => { // If found, we want the 'type' variable to be at the top of our resulting vector
+			Some(position) => {
+				// If found, we want the 'type' variable to be at the top of our resulting vector
 				let type_var = variables.remove(position);
 				variables.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 				variables.insert(0, type_var);
