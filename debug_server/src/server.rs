@@ -320,7 +320,7 @@ impl Server {
 			let name = vars.get(i)?.as_string()?;
 			let value = value.get(name.as_str())?;
 			if name.eq("type") {
-				type_position = Some(variables.len()+1); //Not added yet
+				type_position = Some(variables.len()); //Not added yet
 			}
 			variables.push(self.value_to_variable(name, &value));
 		}
