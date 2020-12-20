@@ -92,6 +92,6 @@ extern "C" {
 	pub fn append_to_list(list: values::Value, value: values::Value) -> u8;
 	pub fn remove_from_list(list: values::Value, value: values::Value) -> u8;
 	pub fn get_length(out: *mut u32, value: values::Value) -> u8;
-	pub fn get_misc_by_id(out: *mut *mut (), index: misc::MiscId) -> u8;
+	pub fn get_misc_by_id(out: *mut *mut c_void, index: misc::MiscId) -> u8;
 	pub fn to_string(out: *mut strings::StringId, value: values::Value) -> u8;
 }

@@ -3,7 +3,6 @@ use crate::DisassembleResult;
 use super::disassembler;
 use super::raw_types;
 use super::raw_types::misc;
-use super::raw_types::misc::AsMiscId;
 use super::raw_types::procs::{ProcEntry, ProcId};
 use super::runtime;
 use super::string::StringRef;
