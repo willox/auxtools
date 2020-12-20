@@ -401,8 +401,6 @@ impl Server {
 					vars.push(self.value_to_variable(name, value));
 				}
 
-				vars.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-
 				vars
 			}
 
