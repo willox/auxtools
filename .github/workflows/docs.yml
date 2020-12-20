@@ -3,10 +3,11 @@ name: Generate Docs
 on:
   push:
     branches: [ master ]
+  pull_request:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
     - name: Checkout
       uses: actions/checkout@v2
@@ -21,12 +22,16 @@ jobs:
         override: true
 
     - name: Install Dependencies
-      run: sudo apt install build-essential g++-multilib
+      run: |
+        sudo dpkg --add-architecture i386
+        sudo apt-get update
+        sudo apt install build-essential g++-multilib libc6-i386 libstdc++6:i386
 
     - name: Build Docs
       run: cargo doc --no-deps
 
     - name: Deploy 🚀
+      if: ${{ github.event_name == 'push' }} # Only deploy if we actually push to a branch
       uses: JamesIves/github-pages-deploy-action@3.7.1
       with:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
