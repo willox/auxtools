@@ -1,5 +1,5 @@
 use super::*;
-use std::ffi::{CStr, CString};
+use std::ffi::{CString};
 use std::os::raw::c_char;
 
 pub static mut BYOND_VERSION_MAJOR: u32 = 0;
