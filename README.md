@@ -4,6 +4,8 @@ auxtools is a Rust-based successor to the [extools](https://github.com/MCHSL/ext
 
 Currently, it implements some of the features such as the debug server, but is planned to supplant most functionality (maptick, etc.).
 
+Code Documentation: https://auxtools.willox.dev
+
 ## Features
 Debug Server - Working with SpaceManiac's [SpacemanDMM](https://github.com/SpaceManiac/SpacemanDMM), Auxtools interfaces with the debugger frontend to provide debugger information and management of breakpoints.
 
