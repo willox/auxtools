@@ -314,30 +314,24 @@ impl Server {
 		})?;
 
 		let mut variables = vec![];
-		let mut type_position = None; //For tracking the index of the 'type' var
+		let mut top_variables = vec![]; // These fields get displayed on top of all others
 
 		for i in 1..=vars.len() {
 			let name = vars.get(i)?.as_string()?;
 			let value = value.get(name.as_str())?;
-			if name.eq("type") {
-				type_position = Some(variables.len()); //Not added yet
-			}
-			variables.push(self.value_to_variable(name, &value));
-		}
-
-		match type_position {
-			Some(position) => {
-				// If found, we want the 'type' variable to be at the top of our resulting vector
-				let type_var = variables.remove(position);
-				variables.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-				variables.insert(0, type_var);
-			}
-			None => {
-				variables.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+			let variable = self.value_to_variable(name, &value);
+			if variable.name == "type" {
+				top_variables.push(variable);
+			} else {
+				variables.push(variable);
 			}
 		}
 
-		Ok(variables)
+		//top_variables.sort_by_key(|a| a.name.to_lowercase());
+		variables.sort_by_key(|a| a.name.to_lowercase());
+		top_variables.append(&mut variables);
+
+		Ok(top_variables)
 	}
 
 	fn get_stack(&self, stack_id: u32) -> Option<&Vec<debug::StackFrame>> {
@@ -440,7 +434,7 @@ impl Server {
 					vars.push(self.value_to_variable(String::from(name), &local));
 				}
 
-				vars.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+				vars.sort_by_key(|a| a.name.to_lowercase());
 
 				vars
 			}
