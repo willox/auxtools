@@ -1,6 +1,6 @@
 # auxtools
 
-auxtools is a Rust-based successor to the [Extools](https://github.com/MCHSL/extools) project.
+auxtools is a Rust-based successor to the [extools](https://github.com/MCHSL/extools) project.
 
 Currently, it implements some of the features such as the debug server, but is planned to supplant most functionality (maptick, etc.).
 
@@ -19,9 +19,8 @@ The [Rust] compiler:
 
    * Ubuntu: `sudo apt-get install gcc-multilib`
    * Windows (MSVC): [Build Tools for Visual Studio 2017][msvc]
-   * Windows (GNU): No action required
 
-1. Use [the Rust installer], or another Rust installation method,
+1. Use [the Rust installer](https://rustup.rs), or another Rust installation method,
    or run the following:
 
     ```sh
@@ -30,7 +29,7 @@ The [Rust] compiler:
     ./rustup-init.sh
     ```
 
-1. Set the default compiler to **32-bit**:
+1. Add the **32-bit** compilation target:
 
     ```sh
     # Clone the `auxtools` repository to a directory of your choice
@@ -50,7 +49,7 @@ System libraries:
     ```sh
     sudo dpkg --add-architecture i386
     sudo apt-get update
-    sudo apt-get install zlib1g-dev:i386 libssl-dev:i386 pkg-config:i386
+    sudo apt-get install build-essential g++-multilib libc6-i386 libstdc++6:i386
     ```
 
 * Other Linux distributions install the appropriate **32-bit development** and **32-bit runtime** packages.
@@ -75,9 +74,9 @@ cargo build --release --target i686-pc-windows-msvc
 ```
 
 [Rust]: https://rust-lang.org
-[Cargo]: https://doc.rust-lang.org/cargo/
-[rustup]: https://rustup.rs/
-[msvc]: https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=15
+[Cargo]: https://doc.rust-lang.org/cargo
+[rustup]: https://rustup.rs
+[msvc]: https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools
 
 ## License
 
