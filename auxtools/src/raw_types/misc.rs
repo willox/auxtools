@@ -1,5 +1,7 @@
-use crate::version;
+use std::ffi::c_void;
+
 use super::strings;
+use crate::version;
 
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -121,12 +123,9 @@ impl Parameters_V2 {
 }
 
 pub fn get_bytecode(id: BytecodeId) -> (*mut u32, usize) {
-	let mut misc: *mut () = std::ptr::null_mut();
+	let mut misc: *mut c_void = std::ptr::null_mut();
 	unsafe {
-		assert_eq!(
-			super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()),
-			1
-		);
+		assert_eq!(super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()), 1);
 	}
 
 	let (major, minor) = version::get();
@@ -142,12 +141,9 @@ pub fn get_bytecode(id: BytecodeId) -> (*mut u32, usize) {
 }
 
 pub fn get_locals(id: LocalsId) -> (*const strings::VariableId, usize) {
-	let mut misc: *mut () = std::ptr::null_mut();
+	let mut misc: *mut c_void = std::ptr::null_mut();
 	unsafe {
-		assert_eq!(
-			super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()),
-			1
-		);
+		assert_eq!(super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()), 1);
 	}
 
 	let (major, minor) = version::get();
@@ -163,12 +159,9 @@ pub fn get_locals(id: LocalsId) -> (*const strings::VariableId, usize) {
 }
 
 pub fn get_parameters(id: ParametersId) -> (*const ParametersData, usize) {
-	let mut misc: *mut () = std::ptr::null_mut();
+	let mut misc: *mut c_void = std::ptr::null_mut();
 	unsafe {
-		assert_eq!(
-			super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()),
-			1
-		);
+		assert_eq!(super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()), 1);
 	}
 
 	let (major, minor) = version::get();
