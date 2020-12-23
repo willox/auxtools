@@ -314,13 +314,24 @@ impl Server {
 		})?;
 
 		let mut variables = vec![];
+		let mut top_variables = vec![]; // These fields get displayed on top of all others
+
 		for i in 1..=vars.len() {
 			let name = vars.get(i)?.as_string()?;
 			let value = value.get(name.as_str())?;
-			variables.push(self.value_to_variable(name, &value));
+			let variable = self.value_to_variable(name, &value);
+			if variable.name == "type" {
+				top_variables.push(variable);
+			} else {
+				variables.push(variable);
+			}
 		}
 
-		Ok(variables)
+		//top_variables.sort_by_key(|a| a.name.to_lowercase());
+		variables.sort_by_key(|a| a.name.to_lowercase());
+		top_variables.append(&mut variables);
+
+		Ok(top_variables)
 	}
 
 	fn get_stack(&self, stack_id: u32) -> Option<&Vec<debug::StackFrame>> {
