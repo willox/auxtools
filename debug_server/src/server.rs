@@ -151,34 +151,7 @@ impl Server {
 	fn get_line_number(&self, proc: ProcRef, offset: u32) -> Option<u32> {
 		match auxtools::Proc::find_override(proc.path, proc.override_id) {
 			Some(proc) => {
-				// We're ignoring disassemble errors because any bytecode in the result is still valid
-				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
-				let dism = proc.disassemble().instructions;
-				let mut current_line_number = None;
-				let mut reached_offset = false;
-
-				for (instruction_offset, _, instruction) in dism {
-					// If we're in the middle of executing an operand (like call), the offset might be between two instructions
-					if instruction_offset > offset {
-						reached_offset = true;
-						break;
-					}
-
-					if let Instruction::DbgLine(line) = instruction {
-						current_line_number = Some(line);
-					}
-
-					if instruction_offset == offset {
-						reached_offset = true;
-						break;
-					}
-				}
-
-				if reached_offset {
-					return current_line_number;
-				} else {
-					return None;
-				}
+				proc.line_number(offset)
 			}
 
 			None => None,

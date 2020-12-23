@@ -26,3 +26,9 @@ libc = "0.2"
 [dependencies.detour]
 version = "0.7"
 default-features = false
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

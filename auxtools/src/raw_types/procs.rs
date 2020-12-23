@@ -3,7 +3,7 @@ use super::strings;
 use super::values;
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ProcId(pub u32);
 
 #[repr(C)]

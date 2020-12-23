@@ -1,7 +1,7 @@
 use std::{cell::UnsafeCell, ffi::c_void};
 
 use crate::server_types::{BreakpointReason, ContinueKind};
-use crate::DEBUG_SERVER;
+use crate::{DEBUG_SERVER, PROFILER};
 use auxtools::*;
 use detour::RawDetour;
 use lazy_static::lazy_static;
@@ -256,6 +256,12 @@ extern "C" fn handle_instruction(
 		if let Some((src, dst)) = &*deferred {
 			std::ptr::copy_nonoverlapping(src.as_ptr(), *dst, src.len());
 			*deferred = None;
+		}
+	}
+
+	unsafe {
+		if let Some(profiler) = &mut *PROFILER.get() {
+			profiler.poll(ctx);
 		}
 	}
 

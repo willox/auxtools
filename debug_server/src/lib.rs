@@ -1,4 +1,5 @@
 mod instruction_hooking;
+mod profiler;
 mod server;
 mod server_types;
 mod stddef;
@@ -11,11 +12,31 @@ use std::{
 use auxtools::*;
 
 pub static mut DEBUG_SERVER: UnsafeCell<Option<server::Server>> = UnsafeCell::new(None);
+pub static mut PROFILER: UnsafeCell<Option<profiler::Profiler>> = UnsafeCell::new(None);
+
+#[hook("/proc/profile_begin")]
+fn profile_begin() {
+	unsafe {
+		*PROFILER.get() = Some(profiler::Profiler::new());
+	}
+	Ok(Value::from(true))
+}
+
+#[hook("/proc/profile_end")]
+fn profile_end() {
+	unsafe {
+		if let Some(mut profiler) = (*PROFILER.get()).take() {
+			profiler.finish();
+		}
+	}
+	Ok(Value::from(true))
+}
 
 #[shutdown]
 fn debugger_shutdown() {
 	unsafe {
 		*DEBUG_SERVER.get() = None;
+		*PROFILER.get() = None;
 	}
 }
 
