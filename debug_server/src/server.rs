@@ -434,8 +434,6 @@ impl Server {
 					vars.push(self.value_to_variable(String::from(name), &local));
 				}
 
-				vars.sort_by_key(|a| a.name.to_lowercase());
-
 				vars
 			}
 
