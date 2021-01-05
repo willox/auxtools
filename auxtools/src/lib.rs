@@ -200,7 +200,8 @@ byond_ffi_fn! { auxtools_init(_input) {
 			create_list,
 			to_string,
 			suspended_procs,
-			suspended_procs_buffer
+			suspended_procs_buffer,
+			send_maps
 		}
 
 		with_scanner_by_call! { byondcore,
@@ -210,8 +211,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 			inc_ref_count,
 			get_list_by_id,
 			get_misc_by_id,
-			runtime,
-			send_maps
+			runtime
 		}
 
 		let mut current_execution_context = std::ptr::null_mut();
