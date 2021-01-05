@@ -70,6 +70,7 @@ extern "C" {
 	DEFINE_byond(get_length, uint32_t, (Value));
 	DEFINE_byond(get_misc_by_id, void *, (uint32_t));
 	DEFINE_byond(to_string, uint32_t, (Value));
+	DEFINE_byond(send_maps, void, (void));
 }
 
 extern "C" uint8_t call_proc_by_id(
@@ -371,6 +372,20 @@ extern "C" uint8_t to_string(uint32_t *out, Value value)
 	{
 		clean(value);
 		*out = to_string_byond(value);
+		return 1;
+	}
+	BYOND_CATCH
+	{
+		return 0;
+	}
+}
+
+extern "C" uint8_t send_maps()
+{
+	RuntimeContext ctx(true);
+	BYOND_TRY
+	{
+		send_maps_byond();
 		return 1;
 	}
 	BYOND_CATCH

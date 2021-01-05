@@ -34,6 +34,8 @@ extern "C" {
 	static mut call_proc_by_id_original: *const c_void;
 
 	static mut runtime_original: *const c_void;
+
+	static mut send_maps_original: *const c_void;
 	fn runtime_hook(error: *const c_char);
 
 	fn call_proc_by_id_hook_trampoline(
@@ -47,6 +49,8 @@ extern "C" {
 		unk_1: u32,
 		unk_2: u32,
 	) -> raw_types::values::Value;
+
+	fn map_tick_hook() -> f32;
 }
 
 pub enum HookFailure {
@@ -88,6 +92,16 @@ pub fn init() -> Result<(), String> {
 		call_hook.enable().unwrap();
 		call_proc_by_id_original = std::mem::transmute(call_hook.trampoline());
 		std::mem::forget(call_hook);
+
+		let tick_hook = RawDetour::new(
+			raw_types::funcs::send_maps_byond as *const (),
+			map_tick_hook as *const (),
+		)
+		.unwrap();
+
+		tick_hook.enable().unwrap();
+		send_maps_original = std::mem::transmute(tick_hook.trampoline());
+		std::mem::forget(tick_hook);
 	}
 	Ok(())
 }
@@ -199,4 +213,9 @@ extern "C" fn call_proc_by_id_hook(
 		}
 		None => 0,
 	}
+}
+
+#[no_mangle]
+extern "C" fn set_maptick_time(time: f32) {
+	Value::globals().set("internal_tick_usage", time);
 }

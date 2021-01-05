@@ -1,10 +1,11 @@
 #include <stdint.h>
 #include "hooks.h"
+#include <chrono>
 
 // The type of the func defined in Byond
 using Runtime_Ptr = void(*)(char *pError);
 using CallProcById_Ptr = Value(LINUX_REGPARM3 *)(Value, uint32_t, uint32_t, uint32_t, Value, Value*, uint32_t, uint32_t, uint32_t);
-
+using SendMaps_Ptr = void(*)(void);
 // The type of the hook defined in hooks.rs
 using CallProcById_Hook_Ptr = Value(*)(Value, uint32_t, uint32_t, uint32_t, Value, Value*, uint32_t, uint32_t, uint32_t);
 
@@ -15,6 +16,7 @@ extern "C" {
 	// The original function - set by rust after hooking
 	Runtime_Ptr runtime_original = nullptr;
 	CallProcById_Ptr call_proc_by_id_original = nullptr;
+	SendMaps_Ptr send_maps_original = nullptr;
 }
 
 // If the top of this stack is true, we replace byond's runtime exceptions with our own
@@ -71,4 +73,14 @@ extern "C" Value LINUX_REGPARM3 call_proc_by_id_hook_trampoline(
 		return call_proc_by_id_original(usr, proc_type, proc_id, unk_0, src, args, args_count, unk_1, unk_2);
 	}
 	//return call_proc_by_id_hook(usr, proc_type, proc_id, unk_0, src, args, args_count, unk_1, unk_2);
+}
+
+extern "C" void set_maptick_time(float time);
+
+extern "C" void map_tick_hook()
+{
+	auto start = std::chrono::high_resolution_clock::now();
+	send_maps_original();
+	auto end = std::chrono::high_resolution_clock::now();
+	set_maptick_time(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 100000.0f);
 }
