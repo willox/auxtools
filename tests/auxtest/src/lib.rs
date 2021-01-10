@@ -1,19 +1,29 @@
 use auxtools::*;
 use std::ffi::CString;
 
+static mut COUNTER: u32 = 0;
+
+#[hook("/proc/auxtest_inc_counter")]
+fn inc_counter() {
+	Ok(Value::from(unsafe {
+		COUNTER += 1;
+		COUNTER
+	}))
+}
+
 #[hook("/proc/auxtest_out")]
 fn out(msg: Value) {
 	use std::io::{self, Write};
 
-	io::stdout().write_all(b"Fuck").unwrap();
+	writeln!(io::stderr(), "{}", msg.as_string()?).unwrap();
 	Ok(Value::null())
 }
 
 #[hook("/proc/auxtest_strings")]
 fn test_strings() {
 	use raw_types::funcs;
-	use raw_types::values;
 	use raw_types::strings;
+	use raw_types::values;
 
 	unsafe {
 		let string_a_contents = CString::new("relatively unique testing string").unwrap();
@@ -63,19 +73,27 @@ fn test_strings() {
 		);
 
 		if (*string_a_entry).ref_count != 1 {
-			return Err(runtime!("test_string: string_a's reference count != 1 after Value::new"));
+			return Err(runtime!(
+				"test_string: string_a's reference count != 1 after Value::new"
+			));
 		}
 
 		if (*string_b_entry).ref_count != 1 {
-			return Err(runtime!("test_string: string_a's reference count != 1 after Value::new"));
+			return Err(runtime!(
+				"test_string: string_a's reference count != 1 after Value::new"
+			));
 		}
 
-		let concatenated = Proc::find("/proc/concat_strings").unwrap().call(&[&value_a, &value_b])?;
+		let concatenated = Proc::find("/proc/concat_strings")
+			.unwrap()
+			.call(&[&value_a, &value_b])?;
 
 		// Returned value should be equal to string_a_contents .. string_b_contents
 		// and have a ref count of 1
 		if concatenated.value.tag != values::ValueTag::String {
-			return Err(runtime!("test_string: concat_strings did not return a string"));
+			return Err(runtime!(
+				"test_string: concat_strings did not return a string"
+			));
 		}
 
 		let mut concatenated_entry: *mut strings::StringEntry = std::ptr::null_mut();
@@ -85,10 +103,16 @@ fn test_strings() {
 		);
 
 		if (*concatenated_entry).ref_count != 1 {
-			return Err(runtime!("test_string: concatenated's reference count != 1 after concat_strings()"));
+			return Err(runtime!(
+				"test_string: concatenated's reference count != 1 after concat_strings()"
+			));
 		}
 
-		let expected_concat = format!("{}{}", string_a_contents.to_str().unwrap(), string_b_contents.to_str().unwrap());
+		let expected_concat = format!(
+			"{}{}",
+			string_a_contents.to_str().unwrap(),
+			string_b_contents.to_str().unwrap()
+		);
 		let actual_concat = concatenated.as_string()?;
 
 		if actual_concat != expected_concat {
@@ -97,72 +121,17 @@ fn test_strings() {
 
 		// The strings should still have a reference count of 1 after concat_strings has used them
 		if (*string_a_entry).ref_count != 1 {
-			return Err(runtime!("test_string: string_a's reference count != 1 after concat_strings"));
+			return Err(runtime!(
+				"test_string: string_a's reference count != 1 after concat_strings"
+			));
 		}
 
 		if (*string_b_entry).ref_count != 1 {
-			return Err(runtime!("test_string: string_a's reference count != 1 after concat_strings"));
+			return Err(runtime!(
+				"test_string: string_a's reference count != 1 after concat_strings"
+			));
 		}
 
 		Ok(Value::from(true))
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use std::path::PathBuf;
-	use std::process::Command;
-	use std::net::TcpListener;
-
-	fn find_dm() -> PathBuf {
-		let mut path = PathBuf::from(std::env::var_os("BYOND_PATH").unwrap());
-		path.push("bin\\dm.exe");
-		assert!(path.is_file());
-		path
-	}
-
-	fn find_dreamdaemon() -> PathBuf {
-		let mut path = PathBuf::from(std::env::var_os("BYOND_PATH").unwrap());
-		path.push("bin\\dreamdaemon.exe");
-		assert!(path.is_file());
-		path
-	}
-
-	#[test]
-	fn run() {
-		let dll = test_cdylib::build_current_project();
-
-		println!("{:?}", dll);
-
-		let res = Command::new(find_dm())
-			.arg("auxtest.dme")
-			.status()
-			.unwrap();
-		assert!(res.success());
-
-		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-		let port = listener.local_addr().unwrap().port();
-
-		let output = Command::new(find_dreamdaemon())
-			.env("AUXTEST_PORT", port.to_string())
-			.env("AUXTEST_DLL", dll)
-			.arg("auxtest.dmb")
-			.arg("-trusted")
-			.arg("-close")
-			.output()
-			.unwrap()
-			.stderr;
-		println!("{:?}", output);
-
-		panic!("fak");
-/*
-		match listener.accept() {
-			Ok((socket, _)) => {
-
-			},
-
-			Err(e) => panic!(e)
-		}
-*/
 	}
 }

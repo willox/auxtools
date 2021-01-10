@@ -9,8 +9,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-auxtools = { path = "../auxtools" }
-auxtools-impl = { path = "../auxtools-impl" }
+auxtools = { path = "../../auxtools" }
 
 [dev-dependencies]
 test-cdylib = "1.1.0"

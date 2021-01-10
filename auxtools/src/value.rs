@@ -247,6 +247,7 @@ impl Value {
 		Err(runtime!("External proc call failed"))
 	}
 
+	// TODO: Really bad - not the same as as_string
 	pub fn to_string(&self) -> ConversionResult<String> {
 		match self.value.tag {
 			raw_types::values::ValueTag::Null

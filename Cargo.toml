@@ -1,9 +1,10 @@
 [workspace]
 members = [
-	"auxtest",
 	"auxtools",
 	"auxtools-impl",
 	"debug_server",
+	"tests/auxtest",
+	"tests/test_runner",
 ]
 
 [profile.release]

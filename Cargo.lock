@@ -14,7 +14,6 @@ name = "auxtest"
 version = "0.1.0"
 dependencies = [
  "auxtools",
- "auxtools-impl",
  "test-cdylib",
 ]
 
@@ -418,6 +417,13 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "test_runner"
+version = "0.1.0"
+dependencies = [
+ "auxtest",
 ]
 
 [[package]]
