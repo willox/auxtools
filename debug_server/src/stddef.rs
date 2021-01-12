@@ -21,12 +21,8 @@ fn stddef_init(_: &DMContext) -> Result<(), String> {
 
 		unsafe {
 			let mut module = std::ptr::null_mut();
-			if libloaderapi::GetModuleHandleExA(
-				0,
-				CString::new(BYONDCORE).unwrap().as_ptr(),
-				&mut module,
-			) == 0
-			{
+			let core_str = CString::new(BYONDCORE).unwrap();
+			if libloaderapi::GetModuleHandleExA(0, core_str.as_ptr(), &mut module) == 0 {
 				return Err("Couldn't get module handle for BYONDCORE".into());
 			}
 

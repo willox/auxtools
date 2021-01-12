@@ -18,6 +18,7 @@ mod runtime;
 pub mod sigscan;
 mod string;
 mod value;
+mod version;
 
 use init::{get_init_level, set_init_level, InitLevel};
 
@@ -179,6 +180,9 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 	if get_init_level() == InitLevel::Full {
 		did_full = true;
+		if let Err(e) = version::init() {
+			return Some(format!("FAILED ({})", e));
+		}
 
 		with_scanner! { byondcore,
 			get_string_id,

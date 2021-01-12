@@ -3,7 +3,6 @@ use crate::DisassembleResult;
 use super::disassembler;
 use super::raw_types;
 use super::raw_types::misc;
-use super::raw_types::misc::AsMiscId;
 use super::raw_types::procs::{ProcEntry, ProcId};
 use super::runtime;
 use super::string::StringRef;
@@ -76,15 +75,8 @@ impl Proc {
 	}
 
 	pub fn parameter_names(&self) -> Vec<StringRef> {
-		let mut misc: *mut misc::Misc = std::ptr::null_mut();
 		unsafe {
-			assert_eq!(
-				raw_types::funcs::get_misc_by_id(&mut misc, (*self.entry).parameters.as_misc_id()),
-				1
-			);
-
-			let count = (*misc).parameters.count();
-			let data = (*misc).parameters.data;
+			let (data, count) = misc::get_parameters((*self.entry).parameters);
 			(0..count)
 				.map(|i| StringRef::from_variable_id((*data.add(i as usize)).name))
 				.collect()
@@ -92,15 +84,8 @@ impl Proc {
 	}
 
 	pub fn local_names(&self) -> Vec<StringRef> {
-		let mut misc: *mut misc::Misc = std::ptr::null_mut();
 		unsafe {
-			assert_eq!(
-				raw_types::funcs::get_misc_by_id(&mut misc, (*self.entry).locals.as_misc_id()),
-				1
-			);
-
-			let count = (*misc).locals.count;
-			let names = (*misc).locals.names;
+			let (names, count) = misc::get_locals((*self.entry).locals);
 			(0..count)
 				.map(|i| StringRef::from_variable_id(*names.add(i as usize)))
 				.collect()
@@ -108,13 +93,7 @@ impl Proc {
 	}
 
 	pub unsafe fn bytecode(&self) -> (*mut u32, usize) {
-		let mut misc: *mut misc::Misc = std::ptr::null_mut();
-		assert_eq!(
-			raw_types::funcs::get_misc_by_id(&mut misc, (*self.entry).bytecode.as_misc_id()),
-			1
-		);
-
-		((*misc).bytecode.bytecode, (*misc).bytecode.count as usize)
+		misc::get_bytecode((*self.entry).bytecode)
 	}
 
 	pub fn disassemble(&self) -> DisassembleResult {

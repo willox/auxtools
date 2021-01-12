@@ -11,7 +11,6 @@ use std::os::raw::c_char;
 pub static mut CURRENT_EXECUTION_CONTEXT: *mut *mut procs::ExecutionContext = std::ptr::null_mut();
 pub static mut SUSPENDED_PROCS_BUFFER: *mut procs::SuspendedProcsBuffer = std::ptr::null_mut();
 pub static mut SUSPENDED_PROCS: *mut procs::SuspendedProcs = std::ptr::null_mut();
-// pub static mut SUSPENDED_PROCS: *mut procs::SuspendedProcs = std::ptr::null_mut();
 pub static mut VARIABLE_NAMES: *const strings::StringId = std::ptr::null();
 
 // Function pointers exported by C++ but set by Rust
@@ -93,6 +92,6 @@ extern "C" {
 	pub fn append_to_list(list: values::Value, value: values::Value) -> u8;
 	pub fn remove_from_list(list: values::Value, value: values::Value) -> u8;
 	pub fn get_length(out: *mut u32, value: values::Value) -> u8;
-	pub fn get_misc_by_id(out: *mut *mut misc::Misc, index: misc::MiscId) -> u8;
+	pub fn get_misc_by_id(out: *mut *mut c_void, index: misc::MiscId) -> u8;
 	pub fn to_string(out: *mut strings::StringId, value: values::Value) -> u8;
 }
