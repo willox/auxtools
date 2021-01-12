@@ -60,5 +60,18 @@ fn main() {
 		.unwrap()
 		.stderr;
 
-	println!("{:?}", std::str::from_utf8(&output));
+	let res = std::str::from_utf8(&output).unwrap();
+
+	// Check for any messages matching "FAILED: <msg>"
+	let errors = res.lines().filter(|x| x.starts_with("FAILED: "))
+		.collect::<Vec<&str>>();
+
+	if !errors.is_empty() {
+		panic!("TESTS FAILED\n{}", errors.join("\n"));
+	}
+
+	// Now make sure we have only one message matching "SUCCESS: <msg>"
+	let successes = res.lines().filter(|x| x.starts_with("SUCCESS: "))
+		.collect::<Vec<&str>>();
+	assert_eq!(successes.len(), 1);
 }
