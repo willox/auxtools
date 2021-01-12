@@ -1,50 +1,59 @@
-use std::path::PathBuf;
+mod paths;
+
 use std::process::Command;
 
-fn find_dm() -> PathBuf {
-	let mut path = PathBuf::from(std::env::var_os("BYOND_PATH").unwrap());
-	path.push("bin\\dm.exe");
-	assert!(path.is_file(), "couldn't find dreammaker");
-	path
+trait ByondCommand {
+	fn with_byond_paths(&mut self) -> &mut Self;
 }
 
-fn find_dreamdaemon() -> PathBuf {
-	let mut path = PathBuf::from(std::env::var_os("BYOND_PATH").unwrap());
-	path.push("bin\\dreamdaemon.exe");
-	assert!(path.is_file(), "couldn't find dreamdaemon");
-	path
+#[cfg(unix)]
+impl ByondCommand for Command {
+	// TODO: This doesn't read very nice
+	fn with_byond_paths(&mut self) -> &mut Command {
+		let byond_system = paths::find_byond();
+		let byond_bin = paths::find_byond_bin();
+
+		let path = format!(
+			"{}:{}",
+			byond_bin.as_os_str().to_str().unwrap(),
+			std::env::var_os("PATH").unwrap().to_str().unwrap()
+		);
+
+		let ld_library_path = format!(
+			"{}:{}",
+			byond_bin.as_os_str().to_str().unwrap(),
+			std::env::var_os("LD_LIBRARY_PATH")
+				.unwrap()
+				.to_str()
+				.unwrap()
+		);
+
+		self.env("BYOND_SYSTEM", byond_system)
+			.env("PATH", path)
+			.env("LD_LIBRARY_PATH", ld_library_path)
+	}
 }
 
-fn find_dll() -> PathBuf {
-	let mut path = std::env::current_exe().unwrap();
-	path.pop();
-	path.push("auxtest.dll");
-	assert!(path.is_file(), "couldn't find auxtest");
-	path
-}
-
-fn find_dme() -> PathBuf {
-	let mut path = std::env::current_dir().unwrap();
-	path.push("tests\\auxtest_host\\auxtest_host.dme");
-	assert!(path.is_file(), "couldn't find auxtest_host.dme");
-	path
-}
-
-fn find_dmb() -> PathBuf {
-	let mut path = std::env::current_dir().unwrap();
-	path.push("tests\\auxtest_host\\auxtest_host.dmb");
-	assert!(path.is_file(), "couldn't find auxtest_host.dmb");
-	path
+#[cfg(windows)]
+impl ByondCommand for Command {
+	fn with_byond_paths(&mut self) -> &mut Command {
+		self
+	}
 }
 
 fn main() {
-	let res = Command::new(find_dm()).arg(find_dme()).status().unwrap();
+	let res = Command::new(paths::find_dm())
+		.with_byond_paths()
+		.arg(paths::find_dme())
+		.status()
+		.unwrap();
 	assert!(res.success(), "dreamdaemon build failed");
 
-	// Here we depend on BYOND not fucking with stderr so we can hijack it for our own communication
-	let output = Command::new(find_dreamdaemon())
-		.env("AUXTEST_DLL", find_dll())
-		.arg(find_dmb())
+	// Here we depend on BYOND not fucking with stderr too much so we can hijack it for our own communication
+	let output = Command::new(paths::find_dreamdaemon())
+		.with_byond_paths()
+		.env("AUXTEST_DLL", paths::find_dll())
+		.arg(paths::find_dmb())
 		.arg("-trusted")
 		.arg("-close")
 		.output()
