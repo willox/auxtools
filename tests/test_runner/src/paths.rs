@@ -6,6 +6,7 @@ pub fn find_byond() -> PathBuf {
 	path
 }
 
+#[allow(dead_code)]
 pub fn find_byond_bin() -> PathBuf {
 	let mut path = find_byond();
 	path.push("bin");
