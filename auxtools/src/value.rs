@@ -118,7 +118,7 @@ impl Value {
 		}
 	}
 
-	fn get_by_id(&self, name_id: raw_types::strings::StringId) -> DMResult {
+	pub fn get_by_id(&self, name_id: raw_types::strings::StringId) -> DMResult {
 		let mut val = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
@@ -134,7 +134,7 @@ impl Value {
 		}
 	}
 
-	fn set_by_id(
+	pub fn set_by_id(
 		&self,
 		name_id: raw_types::strings::StringId,
 		new_value: raw_types::values::Value,
