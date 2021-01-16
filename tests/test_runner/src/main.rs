@@ -63,7 +63,9 @@ fn main() {
 	let res = std::str::from_utf8(&output).unwrap();
 
 	// Check for any messages matching "FAILED: <msg>"
-	let errors = res.lines().filter(|x| x.starts_with("FAILED: "))
+	let errors = res
+		.lines()
+		.filter(|x| x.starts_with("FAILED: "))
 		.collect::<Vec<&str>>();
 
 	if !errors.is_empty() {
@@ -71,7 +73,9 @@ fn main() {
 	}
 
 	// Now make sure we have only one message matching "SUCCESS: <msg>"
-	let successes = res.lines().filter(|x| x.starts_with("SUCCESS: "))
+	let successes = res
+		.lines()
+		.filter(|x| x.starts_with("SUCCESS: "))
 		.collect::<Vec<&str>>();
 	assert_eq!(successes.len(), 1);
 }

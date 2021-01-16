@@ -4,6 +4,7 @@ members = [
 	"auxtools-impl",
 	"debug_server",
 	"tests/auxtest",
+	"tests/byond_get",
 	"tests/test_runner",
 ]
 
