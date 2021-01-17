@@ -37,8 +37,12 @@ fn main() {
 	let minor = matches.value_of("minor").unwrap();
 	let destination = matches.value_of_os("destination").unwrap();
 
-	let major = major.parse::<u32>().expect("major version must be an integer");
-	let minor = minor.parse::<u32>().expect("minor version must be an integer");
+	let major = major
+		.parse::<u32>()
+		.expect("major version must be an integer");
+	let minor = minor
+		.parse::<u32>()
+		.expect("minor version must be an integer");
 	let destination = Path::new(destination);
 
 	if destination.exists() {
@@ -59,7 +63,11 @@ fn main() {
 			continue;
 		}
 
-		let local_path = file.enclosed_name().unwrap().strip_prefix("byond/").unwrap();
+		let local_path = file
+			.enclosed_name()
+			.unwrap()
+			.strip_prefix("byond/")
+			.unwrap();
 
 		let mut path = destination.to_path_buf();
 		path.push(local_path);
