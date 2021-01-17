@@ -9,6 +9,8 @@ use std::{
 	thread::JoinHandle,
 };
 
+use clap::{App, AppSettings, Arg};
+
 use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
 use auxtools::*;
@@ -98,6 +100,7 @@ pub struct Server {
 	_thread: JoinHandle<()>,
 	should_catch_runtimes: bool,
 	state: Option<State>,
+	app: App<'static, 'static>,
 }
 
 struct ServerThread {
@@ -105,6 +108,38 @@ struct ServerThread {
 }
 
 impl Server {
+	pub fn setup_app() -> App<'static, 'static> {
+		App::new("Auxtools Debug Server")
+			.version(clap::crate_version!())
+			.settings(&[
+				AppSettings::SubcommandRequired,
+			])
+			.global_settings(&[
+				AppSettings::NoBinaryName,
+				AppSettings::ColorNever,
+				AppSettings::DisableVersion,
+				AppSettings::VersionlessSubcommands,
+				AppSettings::DisableHelpFlags,
+			])
+			.usage("#<SUBCOMMAND>")
+			.subcommand(
+				App::new("disassemble")
+					.alias("dis")
+					.about("Disassembles a proc and displays its bytecode in an assembly-like format")
+					.after_help("If no parameters are provided, the proc executing in the currently debugged stack frame will be disassembled")
+					.arg(
+						Arg::with_name("proc")
+							.help("Path of the proc to disassemble (e.g. /proc/do_stuff)")
+							.takes_value(true),
+					)
+					.arg(
+						Arg::with_name("id")
+							.help("Id of the proc to disassemble (for when multiple procs are defined with the same path)")
+							.takes_value(true),
+					)
+		)
+	}
+
 	pub fn connect(addr: &SocketAddr) -> std::io::Result<Server> {
 		let stream = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))?;
 		let (requests_sender, requests_receiver) = mpsc::channel();
@@ -124,6 +159,7 @@ impl Server {
 			_thread: thread,
 			should_catch_runtimes: true,
 			state: None,
+			app: Self::setup_app(),
 		};
 
 		server.process_until_configured();
@@ -145,6 +181,7 @@ impl Server {
 			_thread: thread,
 			should_catch_runtimes: true,
 			state: None,
+			app: Self::setup_app(),
 		})
 	}
 
@@ -681,8 +718,47 @@ impl Server {
 		self.send_or_disconnect(response);
 	}
 
-	fn handle_disassemble(&mut self, proc: ProcRef) {
-		let response = match auxtools::Proc::find_override(proc.path, proc.override_id) {
+	fn handle_eval(&mut self, frame_id: Option<u32>, command: String) {
+		// How many matches variables can you spot?
+		let response = match self
+			.app
+			.get_matches_from_safe_borrow(command.split_ascii_whitespace())
+		{
+			Ok(matches) => {
+				match matches.subcommand() {
+					("disassemble", Some(matches)) => {
+						if let Some(proc) = matches.value_of("proc") {
+							// Default id to 0 in the worst way possible
+							let id = matches
+								.value_of("id")
+								.and_then(|x| x.parse::<u32>().ok())
+								.unwrap_or(0);
+
+							self.handle_disassemble(proc, id)
+						} else if let Some(frame_id) = frame_id {
+							if let Some(frame) = self.get_stack_frame(frame_id) {
+								let proc = frame.proc.path.clone();
+								let id = frame.proc.override_id();
+								self.handle_disassemble(&proc, id)
+							} else {
+								"couldn't find stack frame (is execution not paused?)".to_owned()
+							}
+						} else {
+							"no execution frame selected".to_owned()
+						}
+					}
+
+					_ => "unknown command".to_owned(),
+				}
+			}
+			Err(e) => e.message,
+		};
+
+		self.send_or_disconnect(Response::Eval(response))
+	}
+
+	fn handle_disassemble(&mut self, path: &str, id: u32) -> String {
+		let response = match auxtools::Proc::find_override(path, id) {
 			Some(proc) => {
 				// Make sure to temporarily remove all breakpoints in this proc
 				let breaks = get_hooked_offsets(&proc);
@@ -703,7 +779,7 @@ impl Server {
 			None => "Proc not found".to_owned(),
 		};
 
-		self.send_or_disconnect(Response::Disassemble(response));
+		return response;
 	}
 
 	// returns true if we need to break
@@ -716,7 +792,7 @@ impl Server {
 			Request::Stacks => self.handle_stacks(),
 			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
 			Request::Variables { vars } => self.handle_variables(vars),
-			Request::Disassemble(proc) => self.handle_disassemble(proc),
+			Request::Eval { frame_id, command } => self.handle_eval(frame_id, command),
 
 			Request::StackFrames {
 				stack_id,
