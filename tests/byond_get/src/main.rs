@@ -77,5 +77,7 @@ fn main() {
 		println!("Extracting {} bytes to {:?}", file.size(), path);
 		let mut out = fs::File::create(&path).unwrap();
 		std::io::copy(&mut file, &mut out).unwrap();
+
+		// TODO: posix perms
 	}
 }
