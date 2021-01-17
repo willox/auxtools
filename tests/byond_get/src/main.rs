@@ -1,3 +1,5 @@
+use std::{fs, path::Path};
+
 use clap::{App, AppSettings, Arg};
 
 fn get_zip_url(major: u32, minor: u32) -> reqwest::Url {
@@ -31,13 +33,19 @@ fn main() {
 		)
 		.get_matches();
 
-	let version = matches.value_of("version");
-	let destination = matches.value_of("destionation");
+	let major = matches.value_of("major").unwrap();
+	let minor = matches.value_of("minor").unwrap();
+	let destination = matches.value_of_os("destination").unwrap();
 
-	println!("{:?} {:?}", version, destination);
-	return;
+	let major = major.parse::<u32>().expect("major version must be an integer");
+	let minor = minor.parse::<u32>().expect("minor version must be an integer");
+	let destination = Path::new(destination);
 
-	let resp = reqwest::blocking::get(get_zip_url(513, 1491))
+	if destination.exists() {
+		panic!("path {:?} already exists", destination);
+	}
+
+	let resp = reqwest::blocking::get(get_zip_url(major, minor))
 		.unwrap()
 		.bytes()
 		.unwrap();
@@ -45,9 +53,21 @@ fn main() {
 	let mut archive = zip::ZipArchive::new(stream).unwrap();
 
 	for i in 0..archive.len() {
-		let file = archive.by_index(i).unwrap();
-		println!("{:?}", file.enclosed_name());
-	}
+		let mut file = archive.by_index(i).unwrap();
 
-	//println!("{:?}", resp);
+		if file.is_dir() {
+			continue;
+		}
+
+		let local_path = file.enclosed_name().unwrap().strip_prefix("byond/").unwrap();
+
+		let mut path = destination.to_path_buf();
+		path.push(local_path);
+
+		std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+		println!("Extracting {} bytes to {:?}", file.size(), path);
+		let mut out = fs::File::create(&path).unwrap();
+		std::io::copy(&mut file, &mut out).unwrap();
+	}
 }
