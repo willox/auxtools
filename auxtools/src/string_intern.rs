@@ -8,7 +8,7 @@ macro_rules! byond_string {
 	($s:literal) => {
 		unsafe {
 			static mut store: auxtools::InternedString =
-				auxtools::InternedString($s, UnsafeCell::new(None));
+				auxtools::InternedString($s, std::cell::UnsafeCell::new(None));
 			auxtools::inventory::submit!(unsafe { &store });
 			let x = &*store.1.get();
 			x.clone().unwrap()
