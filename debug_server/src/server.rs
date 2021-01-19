@@ -161,7 +161,7 @@ impl Server {
 			stream: ServerStream::Connected(stream),
 			_thread: thread,
 			should_catch_runtimes: true,
-			should_show_vm_stack: false,
+			should_show_vm_stack: true,
 			app: Self::setup_app(),
 		};
 
@@ -183,7 +183,7 @@ impl Server {
 			stream: ServerStream::Waiting(connection_receiver),
 			_thread: thread,
 			should_catch_runtimes: true,
-			should_show_vm_stack: false,
+			should_show_vm_stack: true,
 			app: Self::setup_app(),
 		})
 	}
@@ -193,7 +193,7 @@ impl Server {
 			Some(proc) => {
 				// We're ignoring disassemble errors because any bytecode in the result is still valid
 				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
-				let dism = proc.disassemble().instructions;
+				let dism = proc.disassemble(None).instructions;
 				let mut current_line_number = None;
 				let mut reached_offset = false;
 
@@ -230,7 +230,7 @@ impl Server {
 			Some(proc) => {
 				// We're ignoring disassemble errors because any bytecode in the result is still valid
 				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
-				let dism = proc.disassemble().instructions;
+				let dism = proc.disassemble(None).instructions;
 				let mut offset = None;
 				let mut at_offset = false;
 
@@ -776,12 +776,12 @@ impl Server {
 								.and_then(|x| x.parse::<u32>().ok())
 								.unwrap_or(0);
 
-							self.handle_disassemble(proc, id)
+							self.handle_disassemble(proc, id, None)
 						} else if let Some(frame_id) = frame_id {
 							if let Some(frame) = self.get_stack_frame(state.unwrap(), frame_id) {
 								let proc = frame.proc.path.clone();
 								let id = frame.proc.override_id();
-								self.handle_disassemble(&proc, id)
+								self.handle_disassemble(&proc, id, Some(frame.offset))
 							} else {
 								"couldn't find stack frame (is execution not paused?)".to_owned()
 							}
@@ -812,7 +812,7 @@ impl Server {
 		));
 	}
 
-	fn handle_disassemble(&mut self, path: &str, id: u32) -> String {
+	fn handle_disassemble(&mut self, path: &str, id: u32, current_offset: Option<u32>) -> String {
 		let response = match auxtools::Proc::find_override(path, id) {
 			Some(proc) => {
 				// Make sure to temporarily remove all breakpoints in this proc
@@ -822,7 +822,7 @@ impl Server {
 					unhook_instruction(&proc, *offset).unwrap();
 				}
 
-				let dism = proc.disassemble();
+				let dism = proc.disassemble(current_offset);
 
 				for offset in &breaks {
 					hook_instruction(&proc, *offset).unwrap();

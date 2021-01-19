@@ -689,6 +689,7 @@ pub struct DisassembleResult {
 	pub instructions: Vec<(u32, u32, Instruction)>,
 	pub error: Option<DisassembleError>,
 	pub raw: Vec<u32>,
+	pub current_offset: Option<u32>,
 }
 
 impl std::fmt::Display for DisassembleResult {
@@ -706,10 +707,16 @@ impl std::fmt::Display for DisassembleResult {
 				}
 				raw_lines.push(line);
 			}
-			writeln!(&mut buf, "{:0>4X}:{:28} {:?}", x.0, raw_lines[0], x.2).unwrap();
+
+			let prefix = match self.current_offset {
+				Some(offset) if offset == x.0 => ">",
+				_ => " ",
+			};
+
+			writeln!(&mut buf, "{} {:0>4X}:{:28} {:?}", prefix, x.0, raw_lines[0], x.2).unwrap();
 
 			for line in &raw_lines[1..] {
-				writeln!(&mut buf, "     {}", line).unwrap();
+				writeln!(&mut buf, "       {}", line).unwrap();
 			}
 		}
 
@@ -721,7 +728,7 @@ impl std::fmt::Display for DisassembleResult {
 	}
 }
 
-pub fn disassemble(proc: &Proc) -> DisassembleResult {
+pub fn disassemble(proc: &Proc, current_offset: Option<u32>) -> DisassembleResult {
 	let bytecode = unsafe {
 		let (ptr, count) = proc.bytecode();
 		std::slice::from_raw_parts(ptr, count)
@@ -742,6 +749,7 @@ pub fn disassemble(proc: &Proc) -> DisassembleResult {
 						instructions: ret,
 						error: Some(e),
 						raw: bytecode.to_vec(),
+						current_offset,
 					};
 				}
 				break;
@@ -753,5 +761,6 @@ pub fn disassemble(proc: &Proc) -> DisassembleResult {
 		instructions: ret,
 		error: None,
 		raw: bytecode.to_vec(),
+		current_offset,
 	}
 }

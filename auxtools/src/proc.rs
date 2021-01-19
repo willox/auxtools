@@ -96,8 +96,8 @@ impl Proc {
 		misc::get_bytecode((*self.entry).bytecode)
 	}
 
-	pub fn disassemble(&self) -> DisassembleResult {
-		disassembler::disassemble(self)
+	pub fn disassemble(&self, current_offset: Option<u32>) -> DisassembleResult {
+		disassembler::disassemble(self, current_offset)
 	}
 
 	/// Calls a global proc with the given arguments.

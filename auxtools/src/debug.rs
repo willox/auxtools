@@ -6,7 +6,7 @@ use crate::Value;
 
 pub struct StackFrame {
 	pub proc: Proc,
-	pub offset: u16,
+	pub offset: u32,
 	pub usr: Value,
 	pub src: Value,
 	pub dot: Value,
@@ -29,7 +29,7 @@ impl StackFrame {
 		let instance = (*context).proc_instance;
 
 		let proc = Proc::from_id((*instance).proc).unwrap();
-		let offset = (*context).bytecode_offset;
+		let offset = (*context).bytecode_offset as u32;
 		let param_names = proc.parameter_names();
 		let local_names = proc.local_names();
 
