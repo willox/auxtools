@@ -764,7 +764,10 @@ impl Server {
 			return;
 		}
 
-		self.send_or_disconnect(Response::Eval("Auxtools can't currently evaluate DM. To see available commands, use `#help`".to_owned()));
+		self.send_or_disconnect(Response::Eval(
+			"Auxtools can't currently evaluate DM. To see available commands, use `#help`"
+				.to_owned(),
+		));
 	}
 
 	fn handle_disassemble(&mut self, path: &str, id: u32) -> String {
