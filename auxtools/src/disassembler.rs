@@ -709,11 +709,16 @@ impl std::fmt::Display for DisassembleResult {
 			}
 
 			let prefix = match self.current_offset {
-				Some(offset) if offset == x.0 => ">",
+				Some(offset) if offset >= x.0 && offset <= x.1 => ">",
 				_ => " ",
 			};
 
-			writeln!(&mut buf, "{} {:0>4X}:{:28} {:?}", prefix, x.0, raw_lines[0], x.2).unwrap();
+			writeln!(
+				&mut buf,
+				"{} {:0>4X}:{:28} {:?}",
+				prefix, x.0, raw_lines[0], x.2
+			)
+			.unwrap();
 
 			for line in &raw_lines[1..] {
 				writeln!(&mut buf, "       {}", line).unwrap();
