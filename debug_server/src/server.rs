@@ -718,8 +718,8 @@ impl Server {
 		self.send_or_disconnect(response);
 	}
 
-	fn handle_eval(&mut self, frame_id: Option<u32>, command: String) {
-		// How many matches variables can you spot?
+	fn handle_command(&mut self, frame_id: Option<u32>, command: &str) -> String {
+		// How many matches variables can you spot? It could be better...
 		let response = match self
 			.app
 			.get_matches_from_safe_borrow(command.split_ascii_whitespace())
@@ -754,7 +754,17 @@ impl Server {
 			Err(e) => e.message,
 		};
 
-		self.send_or_disconnect(Response::Eval(response))
+		response
+	}
+
+	fn handle_eval(&mut self, frame_id: Option<u32>, command: &str) {
+		if command.starts_with('#') {
+			let response = self.handle_command(frame_id, &command[1..]);
+			self.send_or_disconnect(Response::Eval(response));
+			return;
+		}
+
+		self.send_or_disconnect(Response::Eval("Auxtools can't currently evaluate DM. To see available commands, use `#help`".to_owned()));
 	}
 
 	fn handle_disassemble(&mut self, path: &str, id: u32) -> String {
@@ -792,7 +802,7 @@ impl Server {
 			Request::Stacks => self.handle_stacks(),
 			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
 			Request::Variables { vars } => self.handle_variables(vars),
-			Request::Eval { frame_id, command } => self.handle_eval(frame_id, command),
+			Request::Eval { frame_id, command } => self.handle_eval(frame_id, &command),
 
 			Request::StackFrames {
 				stack_id,
