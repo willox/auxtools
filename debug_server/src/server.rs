@@ -37,6 +37,9 @@ enum Variables {
 		value_tag: u8,
 		value_data: u32,
 	},
+	Stack {
+		frame: u32,
+	},
 }
 
 struct State {
@@ -99,7 +102,7 @@ pub struct Server {
 	stream: ServerStream,
 	_thread: JoinHandle<()>,
 	should_catch_runtimes: bool,
-	state: Option<State>,
+	should_show_vm_stack: bool,
 	app: App<'static, 'static>,
 }
 
@@ -158,7 +161,7 @@ impl Server {
 			stream: ServerStream::Connected(stream),
 			_thread: thread,
 			should_catch_runtimes: true,
-			state: None,
+			should_show_vm_stack: false,
 			app: Self::setup_app(),
 		};
 
@@ -180,7 +183,7 @@ impl Server {
 			stream: ServerStream::Waiting(connection_receiver),
 			_thread: thread,
 			should_catch_runtimes: true,
-			state: None,
+			should_show_vm_stack: false,
 			app: Self::setup_app(),
 		})
 	}
@@ -261,9 +264,8 @@ impl Server {
 		value.get("vars").is_ok()
 	}
 
-	fn value_to_variable(&self, name: String, value: &Value) -> Variable {
+	fn value_to_variable(&self, state: &State, name: String, value: &Value) -> Variable {
 		let mut variables = None;
-		let state = self.state.as_ref().unwrap();
 
 		if List::is_list(value) {
 			variables = Some(state.get_ref(Variables::ListContents {
@@ -304,8 +306,11 @@ impl Server {
 		}
 	}
 
-	fn list_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
-		let state = self.state.as_ref().unwrap();
+	fn list_to_variables(
+		&mut self,
+		state: &State,
+		value: &Value,
+	) -> Result<Vec<Variable>, Runtime> {
 		let list = List::from_value(value)?;
 		let len = list.len();
 
@@ -334,13 +339,17 @@ impl Server {
 			}
 
 			// non-assoc entry
-			variables.push(self.value_to_variable(format!("[{}]", i), &key));
+			variables.push(self.value_to_variable(state, format!("[{}]", i), &key));
 		}
 
 		return Ok(variables);
 	}
 
-	fn object_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
+	fn object_to_variables(
+		&mut self,
+		state: &State,
+		value: &Value,
+	) -> Result<Vec<Variable>, Runtime> {
 		// Grab `value.vars`. We have a little hack for globals which use a special type.
 		let vars = List::from_value(&unsafe {
 			if value.value.tag == ValueTag::World && value.value.data.id == 1 {
@@ -356,7 +365,7 @@ impl Server {
 		for i in 1..=vars.len() {
 			let name = vars.get(i)?.as_string()?;
 			let value = value.get(name.as_str())?;
-			let variable = self.value_to_variable(name, &value);
+			let variable = self.value_to_variable(state, name, &value);
 			if variable.name == "type" {
 				top_variables.push(variable);
 			} else {
@@ -371,12 +380,10 @@ impl Server {
 		Ok(top_variables)
 	}
 
-	fn get_stack(&self, stack_id: u32) -> Option<&Vec<debug::StackFrame>> {
+	fn get_stack<'a>(&self, state: &'a State, stack_id: u32) -> Option<&'a Vec<debug::StackFrame>> {
 		let stack_id = stack_id as usize;
-		let stacks = match &self.state {
-			Some(state) => &state.stacks,
-			None => return None,
-		};
+
+		let stacks = &state.stacks;
 
 		if stack_id == 0 {
 			return Some(&stacks.active);
@@ -385,12 +392,9 @@ impl Server {
 		stacks.suspended.get(stack_id - 1)
 	}
 
-	fn get_stack_base_frame_id(&self, stack_id: u32) -> u32 {
+	fn get_stack_base_frame_id(&self, state: &State, stack_id: u32) -> u32 {
 		let stack_id = stack_id as usize;
-		let stacks = match &self.state {
-			Some(state) => &state.stacks,
-			None => return 0,
-		};
+		let stacks = &state.stacks;
 
 		if stack_id == 0 {
 			return 0;
@@ -405,12 +409,13 @@ impl Server {
 		current_base as u32
 	}
 
-	fn get_stack_frame(&self, frame_index: u32) -> Option<&debug::StackFrame> {
+	fn get_stack_frame<'a>(
+		&self,
+		state: &'a State,
+		frame_index: u32,
+	) -> Option<&'a debug::StackFrame> {
 		let mut frame_index = frame_index as usize;
-		let stacks = match &self.state {
-			Some(state) => &state.stacks,
-			None => return None,
-		};
+		let stacks = &state.stacks;
 
 		if frame_index < stacks.active.len() {
 			return Some(&stacks.active[frame_index]);
@@ -429,12 +434,12 @@ impl Server {
 		None
 	}
 
-	fn get_args(&mut self, frame_index: u32) -> Vec<Variable> {
-		match self.get_stack_frame(frame_index) {
+	fn get_args(&mut self, state: &State, frame_index: u32) -> Vec<Variable> {
+		match self.get_stack_frame(state, frame_index) {
 			Some(frame) => {
 				let mut vars = vec![
-					self.value_to_variable("src".to_owned(), &frame.src),
-					self.value_to_variable("usr".to_owned(), &frame.usr),
+					self.value_to_variable(state, "src".to_owned(), &frame.src),
+					self.value_to_variable(state, "usr".to_owned(), &frame.usr),
 				];
 
 				let mut unnamed_count = 0;
@@ -446,7 +451,7 @@ impl Server {
 							format!("undefined argument #{}", unnamed_count)
 						}
 					};
-					vars.push(self.value_to_variable(name, value));
+					vars.push(self.value_to_variable(state, name, value));
 				}
 
 				vars
@@ -462,13 +467,22 @@ impl Server {
 		}
 	}
 
-	fn get_locals(&mut self, frame_index: u32) -> Vec<Variable> {
-		match self.get_stack_frame(frame_index) {
+	fn get_locals(&mut self, state: &State, frame_index: u32) -> Vec<Variable> {
+		match self.get_stack_frame(state, frame_index) {
 			Some(frame) => {
-				let mut vars = vec![self.value_to_variable(".".to_owned(), &frame.dot)];
+				let mut vars = vec![self.value_to_variable(state, ".".to_owned(), &frame.dot)];
 
 				for (name, local) in &frame.locals {
-					vars.push(self.value_to_variable(String::from(name), &local));
+					vars.push(self.value_to_variable(state, String::from(name), &local));
+				}
+
+				if self.should_show_vm_stack {
+					let stack_ref = state.get_ref(Variables::Stack { frame: frame_index });
+					vars.push(Variable {
+						name: "VM Stack".into(),
+						value: "".into(),
+						variables: Some(stack_ref),
+					});
 				}
 
 				vars
@@ -477,6 +491,25 @@ impl Server {
 			None => {
 				self.notify(format!(
 					"tried to read locals from invalid frame id: {}",
+					frame_index
+				));
+				vec![]
+			}
+		}
+	}
+
+	fn get_vm_stack(&mut self, state: &State, frame_index: u32) -> Vec<Variable> {
+		match self.get_stack_frame(state, frame_index) {
+			Some(frame) => frame
+				.stack
+				.iter()
+				.enumerate()
+				.map(|(i, v)| self.value_to_variable(state, format!("[{}]", i), v))
+				.collect(),
+
+			None => {
+				self.notify(format!(
+					"tried to read vm stack from invalid frame id: {}",
 					frame_index
 				));
 				vec![]
@@ -528,8 +561,8 @@ impl Server {
 		}
 	}
 
-	fn handle_stacks(&mut self) {
-		let stacks = match &self.state {
+	fn handle_stacks(&mut self, state: Option<&State>) {
+		let stacks = match state {
 			Some(state) => {
 				let mut ret = vec![];
 				ret.push(Stack {
@@ -553,10 +586,16 @@ impl Server {
 		self.send_or_disconnect(Response::Stacks { stacks });
 	}
 
-	fn handle_stack_frames(&mut self, stack_id: u32, start_frame: Option<u32>, count: Option<u32>) {
-		let response = match self.get_stack(stack_id) {
+	fn handle_stack_frames(
+		&mut self,
+		state: &State,
+		stack_id: u32,
+		start_frame: Option<u32>,
+		count: Option<u32>,
+	) {
+		let response = match self.get_stack(state, stack_id) {
 			Some(stack) => {
-				let frame_base = self.get_stack_base_frame_id(stack_id);
+				let frame_base = self.get_stack_base_frame_id(state, stack_id);
 				let start_frame = start_frame.unwrap_or(0);
 				let end_frame = start_frame + count.unwrap_or(stack.len() as u32);
 
@@ -603,9 +642,7 @@ impl Server {
 		self.send_or_disconnect(response);
 	}
 
-	fn handle_scopes(&mut self, frame_id: u32) {
-		let state = self.state.as_ref().unwrap();
-
+	fn handle_scopes(&mut self, state: &State, frame_id: u32) {
 		let arguments = Variables::Arguments { frame: frame_id };
 		let locals = Variables::Locals { frame: frame_id };
 
@@ -626,99 +663,104 @@ impl Server {
 		self.send_or_disconnect(response);
 	}
 
-	fn handle_variables(&mut self, vars: VariablesRef) {
-		let response =
-			match &self.state {
-				Some(state) => {
-					match state.get_variables(vars) {
-						Some(vars) => match vars {
-							Variables::Arguments { frame } => Response::Variables {
-								vars: self.get_args(frame),
-							},
-							Variables::Locals { frame } => Response::Variables {
-								vars: self.get_locals(frame),
-							},
-							Variables::ObjectVars { tag, data } => {
-								let value = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(tag),
-										data: ValueData { id: data },
-									})
-								};
+	fn handle_variables(&mut self, state: &State, vars: VariablesRef) {
+		let response = match state.get_variables(vars) {
+			Some(vars) => match vars {
+				Variables::Arguments { frame } => Response::Variables {
+					vars: self.get_args(state, frame),
+				},
+				Variables::Locals { frame } => Response::Variables {
+					vars: self.get_locals(state, frame),
+				},
+				Variables::ObjectVars { tag, data } => {
+					let value = unsafe {
+						Value::from_raw(raw_types::values::Value {
+							tag: std::mem::transmute(tag),
+							data: ValueData { id: data },
+						})
+					};
 
-								match self.object_to_variables(&value) {
-									Ok(vars) => Response::Variables { vars },
+					match self.object_to_variables(state, &value) {
+						Ok(vars) => Response::Variables { vars },
 
-									Err(e) => {
-										self.notify(format!("runtime occured while processing Variables request: {:?}", e));
-										Response::Variables { vars: vec![] }
-									}
-								}
-							}
-							Variables::ListContents { tag, data } => {
-								let value = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(tag),
-										data: ValueData { id: data },
-									})
-								};
+						Err(e) => {
+							self.notify(format!(
+								"runtime occured while processing Variables request: {:?}",
+								e
+							));
+							Response::Variables { vars: vec![] }
+						}
+					}
+				}
+				Variables::ListContents { tag, data } => {
+					let value = unsafe {
+						Value::from_raw(raw_types::values::Value {
+							tag: std::mem::transmute(tag),
+							data: ValueData { id: data },
+						})
+					};
 
-								match self.list_to_variables(&value) {
-									Ok(vars) => Response::Variables { vars },
+					match self.list_to_variables(state, &value) {
+						Ok(vars) => Response::Variables { vars },
 
-									Err(e) => {
-										self.notify(format!("runtime occured while processing Variables request: {:?}", e));
-										Response::Variables { vars: vec![] }
-									}
-								}
-							}
-
-							Variables::ListPair {
-								key_tag,
-								key_data,
-								value_tag,
-								value_data,
-							} => {
-								let key = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(key_tag),
-										data: ValueData { id: key_data },
-									})
-								};
-
-								let value = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(value_tag),
-										data: ValueData { id: value_data },
-									})
-								};
-
-								Response::Variables {
-									vars: vec![
-										self.value_to_variable("key".to_owned(), &key),
-										self.value_to_variable("value".to_owned(), &value),
-									],
-								}
-							}
-						},
-
-						None => {
-							self.notify("received unknown VariableRef in Variables request");
+						Err(e) => {
+							self.notify(format!(
+								"runtime occured while processing Variables request: {:?}",
+								e
+							));
 							Response::Variables { vars: vec![] }
 						}
 					}
 				}
 
-				None => {
-					self.notify("recevied Variables request while not paused");
-					Response::Variables { vars: vec![] }
+				Variables::ListPair {
+					key_tag,
+					key_data,
+					value_tag,
+					value_data,
+				} => {
+					let key = unsafe {
+						Value::from_raw(raw_types::values::Value {
+							tag: std::mem::transmute(key_tag),
+							data: ValueData { id: key_data },
+						})
+					};
+
+					let value = unsafe {
+						Value::from_raw(raw_types::values::Value {
+							tag: std::mem::transmute(value_tag),
+							data: ValueData { id: value_data },
+						})
+					};
+
+					Response::Variables {
+						vars: vec![
+							self.value_to_variable(state, "key".to_owned(), &key),
+							self.value_to_variable(state, "value".to_owned(), &value),
+						],
+					}
 				}
-			};
+
+				Variables::Stack { frame } => Response::Variables {
+					vars: self.get_vm_stack(state, frame),
+				},
+			},
+
+			None => {
+				self.notify("received unknown VariableRef in Variables request");
+				Response::Variables { vars: vec![] }
+			}
+		};
 
 		self.send_or_disconnect(response);
 	}
 
-	fn handle_command(&mut self, frame_id: Option<u32>, command: &str) -> String {
+	fn handle_command(
+		&mut self,
+		state: Option<&State>,
+		frame_id: Option<u32>,
+		command: &str,
+	) -> String {
 		// How many matches variables can you spot? It could be better...
 		let response = match self
 			.app
@@ -736,7 +778,7 @@ impl Server {
 
 							self.handle_disassemble(proc, id)
 						} else if let Some(frame_id) = frame_id {
-							if let Some(frame) = self.get_stack_frame(frame_id) {
+							if let Some(frame) = self.get_stack_frame(state.unwrap(), frame_id) {
 								let proc = frame.proc.path.clone();
 								let id = frame.proc.override_id();
 								self.handle_disassemble(&proc, id)
@@ -757,9 +799,9 @@ impl Server {
 		response
 	}
 
-	fn handle_eval(&mut self, frame_id: Option<u32>, command: &str) {
+	fn handle_eval(&mut self, state: Option<&State>, frame_id: Option<u32>, command: &str) {
 		if command.starts_with('#') {
-			let response = self.handle_command(frame_id, &command[1..]);
+			let response = self.handle_command(state, frame_id, &command[1..]);
 			self.send_or_disconnect(Response::Eval(response));
 			return;
 		}
@@ -796,22 +838,22 @@ impl Server {
 	}
 
 	// returns true if we need to break
-	fn handle_request(&mut self, request: Request) -> bool {
+	fn handle_request(&mut self, state: Option<&State>, request: Request) -> bool {
 		match request {
 			Request::Disconnect => unreachable!(),
 			Request::CatchRuntimes { should_catch } => self.should_catch_runtimes = should_catch,
 			Request::BreakpointSet { instruction } => self.handle_breakpoint_set(instruction),
 			Request::BreakpointUnset { instruction } => self.handle_breakpoint_unset(instruction),
-			Request::Stacks => self.handle_stacks(),
-			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
-			Request::Variables { vars } => self.handle_variables(vars),
-			Request::Eval { frame_id, command } => self.handle_eval(frame_id, &command),
+			Request::Stacks => self.handle_stacks(state),
+			Request::Scopes { frame_id } => self.handle_scopes(state.unwrap(), frame_id),
+			Request::Variables { vars } => self.handle_variables(state.unwrap(), vars),
+			Request::Eval { frame_id, command } => self.handle_eval(state, frame_id, &command),
 
 			Request::StackFrames {
 				stack_id,
 				start_frame,
 				count,
-			} => self.handle_stack_frames(stack_id, start_frame, count),
+			} => self.handle_stack_frames(state.unwrap(), stack_id, start_frame, count),
 
 			Request::LineNumber { proc, offset } => {
 				self.send_or_disconnect(Response::LineNumber {
@@ -836,7 +878,7 @@ impl Server {
 			}
 
 			Request::CurrentInstruction { frame_id } => {
-				let response = match self.get_stack_frame(frame_id) {
+				let response = match self.get_stack_frame(state.unwrap(), frame_id) {
 					Some(frame) => Some(InstructionRef {
 						proc: ProcRef {
 							path: frame.proc.path.to_owned(),
@@ -916,7 +958,7 @@ impl Server {
 
 		self.notify(format!("Pausing execution (reason: {:?})", reason));
 
-		self.state = Some(State::new());
+		let state = State::new();
 
 		self.send_or_disconnect(Response::BreakpointHit { reason });
 
@@ -924,16 +966,13 @@ impl Server {
 			// Hijack and handle any Continue requests
 			if let Request::Continue { kind } = request {
 				self.send_or_disconnect(Response::Ack);
-				self.state = None;
 				return kind;
 			}
 
 			// if we get a pause request here we can ignore it
-			self.handle_request(request);
+			self.handle_request(Some(&state), request);
 		}
 
-		// Client disappeared?
-		self.state = None;
 		ContinueKind::Continue
 	}
 
@@ -947,7 +986,7 @@ impl Server {
 		let mut should_pause = false;
 
 		while let Ok(request) = self.requests.try_recv() {
-			should_pause = should_pause || self.handle_request(request);
+			should_pause = should_pause || self.handle_request(None, request);
 		}
 
 		should_pause
@@ -963,7 +1002,7 @@ impl Server {
 				break;
 			}
 
-			self.handle_request(request);
+			self.handle_request(None, request);
 		}
 	}
 

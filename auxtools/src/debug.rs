@@ -12,6 +12,7 @@ pub struct StackFrame {
 	pub dot: Value,
 	pub args: Vec<(Option<StringRef>, Value)>,
 	pub locals: Vec<(StringRef, Value)>,
+	pub stack: Vec<Value>,
 	pub file_name: Option<StringRef>,
 	pub line_number: Option<u32>,
 	// pub time_to_resume: Option<u32>,
@@ -64,6 +65,11 @@ impl StackFrame {
 			line_number = Some((*context).line);
 		}
 
+		// The VM Stack
+		let stack = (0..(*context).stack_size)
+			.map(|i| Value::from_raw(*((*context).stack.add(i as usize))))
+			.collect();
+
 		// TODO: When set this? For all sleepers?
 		// let time_to_resume = None;
 
@@ -75,6 +81,7 @@ impl StackFrame {
 			dot,
 			args,
 			locals,
+			stack,
 			file_name,
 			line_number,
 			// time_to_resume,
