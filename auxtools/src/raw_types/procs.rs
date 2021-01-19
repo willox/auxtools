@@ -46,7 +46,7 @@ pub struct ExecutionContext {
 	pub bytecode_offset: u16,
 	test_flag: u8,
 	unk_0: u8,
-	cached_datum: values::Value,
+	pub cached_datum: values::Value,
 	unk_1: [u8; 0x10],
 	pub dot: values::Value,
 	pub locals: *mut values::Value,

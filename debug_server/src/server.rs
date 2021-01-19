@@ -37,6 +37,9 @@ enum Variables {
 		value_tag: u8,
 		value_data: u32,
 	},
+	Internals {
+		frame: u32,
+	},
 	Stack {
 		frame: u32,
 	},
@@ -102,7 +105,7 @@ pub struct Server {
 	stream: ServerStream,
 	_thread: JoinHandle<()>,
 	should_catch_runtimes: bool,
-	should_show_vm_stack: bool,
+	should_show_internals: bool,
 	app: App<'static, 'static>,
 }
 
@@ -161,7 +164,7 @@ impl Server {
 			stream: ServerStream::Connected(stream),
 			_thread: thread,
 			should_catch_runtimes: true,
-			should_show_vm_stack: true,
+			should_show_internals: true,
 			app: Self::setup_app(),
 		};
 
@@ -183,7 +186,7 @@ impl Server {
 			stream: ServerStream::Waiting(connection_receiver),
 			_thread: thread,
 			should_catch_runtimes: true,
-			should_show_vm_stack: true,
+			should_show_internals: true,
 			app: Self::setup_app(),
 		})
 	}
@@ -454,6 +457,15 @@ impl Server {
 					vars.push(self.value_to_variable(state, name, value));
 				}
 
+				if self.should_show_internals {
+					let stack_ref = state.get_ref(Variables::Internals { frame: frame_index });
+					vars.push(Variable {
+						name: "BYOND Internals".into(),
+						value: "".into(),
+						variables: Some(stack_ref),
+					});
+				}
+
 				vars
 			}
 
@@ -474,15 +486,6 @@ impl Server {
 
 				for (name, local) in &frame.locals {
 					vars.push(self.value_to_variable(state, String::from(name), &local));
-				}
-
-				if self.should_show_vm_stack {
-					let stack_ref = state.get_ref(Variables::Stack { frame: frame_index });
-					vars.push(Variable {
-						name: "VM Stack".into(),
-						value: "".into(),
-						variables: Some(stack_ref),
-					});
 				}
 
 				vars
@@ -737,6 +740,23 @@ impl Server {
 						vars: vec![
 							self.value_to_variable(state, "key".to_owned(), &key),
 							self.value_to_variable(state, "value".to_owned(), &value),
+						],
+					}
+				}
+
+				Variables::Internals { frame } => {
+					let stack_ref = state.get_ref(Variables::Stack { frame });
+
+					let stack_data = self.get_stack_frame(state, frame).unwrap();
+
+					Response::Variables {
+						vars: vec![
+							Variable {
+								name: "Stack".into(),
+								value: "".into(),
+								variables: Some(stack_ref),
+							},
+							self.value_to_variable(state, "Cache".into(), &stack_data.cache),
 						],
 					}
 				}
