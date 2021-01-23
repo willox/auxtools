@@ -17,6 +17,7 @@ pub mod raw_types;
 mod runtime;
 pub mod sigscan;
 mod string;
+mod string_intern;
 mod value;
 mod version;
 
@@ -35,6 +36,7 @@ pub use proc::Proc;
 pub use runtime::{ConversionResult, DMResult, Runtime};
 use std::ffi::c_void;
 pub use string::StringRef;
+pub use string_intern::InternedString;
 pub use value::Value;
 
 /// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
@@ -304,6 +306,10 @@ byond_ffi_fn! { auxtools_init(_input) {
 		set_init_level(InitLevel::None);
 	}
 
+	if did_partial {
+		string_intern::setup_interned_strings();
+	}
+
 	// Run user-defined initializers
 	let ctx = DMContext {};
 	if did_full {
@@ -323,6 +329,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 byond_ffi_fn! { auxtools_shutdown(_input) {
 	init::run_partial_shutdown();
+	string_intern::destroy_interned_strings();
 
 	hooks::clear_hooks();
 	proc::clear_procs();
