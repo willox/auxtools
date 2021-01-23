@@ -53,7 +53,7 @@ struct RestoreJmpBuf {
 
 extern "C" {
 	DEFINE_byond_REGPARM3(call_proc_by_id, Value, (Value, uint32_t, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
-	DEFINE_byond_REGPARM3(call_datum_proc_by_name, Value, (Value, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
+	DEFINE_byond(call_datum_proc_by_name, Value, (Value, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
 	DEFINE_byond(get_proc_array_entry, void *, (uint32_t));
 	DEFINE_byond_REGPARM3(get_string_id, uint32_t, (const char *, uint8_t, uint8_t, uint8_t));
 	DEFINE_byond(get_variable, Value, (Value, uint32_t));
@@ -103,7 +103,7 @@ extern "C" uint8_t call_datum_proc_by_name(
 	uint32_t proc_type,
 	uint32_t proc_name,
 	Value src,
-	const Value *args,
+	Value *args,
 	uint8_t args_count,
 	uint32_t unk_0,
 	uint32_t unk_1)
@@ -114,6 +114,9 @@ extern "C" uint8_t call_datum_proc_by_name(
 	{
 		clean(usr);
 		clean(src);
+		for (int i = 0; i < args_count; i++) {
+			clean(args[i]);
+		}
 		*out = call_datum_proc_by_name_byond(usr, proc_type, proc_name, src, args, args_count, unk_0, unk_1);
 		return 1;
 	}

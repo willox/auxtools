@@ -225,7 +225,7 @@ impl Value {
 			}
 
 			let procname = String::from(procname.as_ref()).replace("_", " ");
-			let args: Vec<_> = args.iter().map(|e| e.as_ref().into_raw_value()).collect();
+			let mut args: Vec<_> = args.iter().map(|e| e.as_ref().into_raw_value()).collect();
 			let name_ref = string::StringRef::new(&procname);
 
 			if raw_types::funcs::call_datum_proc_by_name(
@@ -234,7 +234,7 @@ impl Value {
 				2,
 				name_ref.value.value.data.string,
 				self.value,
-				args.as_ptr(),
+				args.as_mut_ptr(),
 				args.len(),
 				0,
 				0,

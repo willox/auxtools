@@ -57,7 +57,7 @@ extern "C" {
 		proc_type: u32,
 		proc_name: strings::StringId,
 		src: values::Value,
-		args: *const values::Value,
+		args: *mut values::Value,
 		args_count_l: usize,
 		unk_0: u32,
 		unk_1: u32,
