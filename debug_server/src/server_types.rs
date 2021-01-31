@@ -125,6 +125,7 @@ pub enum ContinueKind {
 	StepOver { stack_id: u32 },
 	StepInto { stack_id: u32 },
 	StepOut { stack_id: u32 },
+	StepOne,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

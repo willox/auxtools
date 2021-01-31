@@ -44,6 +44,7 @@ pub enum ValueTag {
 	ImageVars = 0x42,
 	WorldVars = 0x51,
 	GlobalVars = 0x52,
+	WorldContents = 0x1A,
 
 	Datum = 0x21,
 	SaveFile = 0x23,

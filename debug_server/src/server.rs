@@ -1,5 +1,5 @@
 use super::instruction_hooking::{get_hooked_offsets, hook_instruction, unhook_instruction};
-use std::io::{Read, Write};
+use std::{io::{Read, Write}};
 use std::sync::mpsc;
 use std::thread;
 use std::{cell::RefCell, error::Error};
@@ -14,6 +14,42 @@ use clap::{App, AppSettings, Arg};
 use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
 use auxtools::*;
+
+struct AssembleEnv;
+impl dmasm::assembler::AssembleEnv for AssembleEnv {
+    fn get_string_index(&mut self, string: &str) -> u32 {
+		let string = StringRef::new(string);
+		let id = string.get_id();
+		std::mem::forget(string);
+		id.0
+    }
+}
+
+struct DisassembleEnv;
+impl dmasm::disassembler::DisassembleEnv for DisassembleEnv {
+	fn get_string(&mut self, index: u32) -> Option<String> {
+		unsafe {
+			Some(StringRef::from_id(raw_types::strings::StringId(index)).into())
+		}
+	}
+
+	fn get_variable_name(&mut self, index: u32) -> Option<String> {
+		unsafe {
+			Some(StringRef::from_variable_id(raw_types::strings::VariableId(index)).into())
+		}
+	}
+
+    fn get_proc_name(&mut self, index: u32) -> Option<String> {
+		Proc::from_id(raw_types::procs::ProcId(index)).map(|x| x.path)
+	}
+
+	fn value_to_string(&mut self, tag: u32, data: u32) -> Option<String> {
+		unsafe {
+			let value = Value::new(std::mem::transmute(tag as u8), std::mem::transmute(data));
+			value.to_string().ok()
+		}
+	}
+}
 
 #[derive(Clone, Hash, Eq, PartialEq)]
 enum Variables {
@@ -129,11 +165,35 @@ impl Server {
 			])
 			.usage("#<SUBCOMMAND>")
 			.subcommand(
+				App::new("assemble")
+					.alias("asm")
+					.about("Assembles the input DMASM and replaces a proc's bytecode with the result")
+					.after_help("The assembly should be supplied starting on the next line of input")
+					.arg(
+						Arg::with_name("proc")
+							.help("Path of the proc to replace (e.g. /proc/do_stuff)")
+							.required(true)
+							.takes_value(true),
+					)
+					.arg(
+						Arg::with_name("id")
+							.help("Id of the proc to replace (for when multiple procs are defined with the same path)")
+							.takes_value(true),
+					)
+			)
+			.subcommand(
 				App::new("disassemble")
 					.alias("dis")
+					.alias("dism")
 					.about("Disassembles a proc and displays its bytecode in an assembly-like format")
 					.after_help("If no parameters are provided, the proc executing in the currently debugged stack frame will be disassembled")
 					.arg(
+						Arg::from_usage("--raw")
+							.help("Output the assembly without displaying any debug information")
+							.takes_value(false)
+					)
+					.arg(
+
 						Arg::with_name("proc")
 							.help("Path of the proc to disassemble (e.g. /proc/do_stuff)")
 							.takes_value(true),
@@ -143,7 +203,11 @@ impl Server {
 							.help("Id of the proc to disassemble (for when multiple procs are defined with the same path)")
 							.takes_value(true),
 					)
-		)
+			)
+			.subcommand(
+				App::new("next")
+					.about("Step into the next instruction")
+			)
 	}
 
 	pub fn connect(addr: &SocketAddr) -> std::io::Result<Server> {
@@ -780,15 +844,40 @@ impl Server {
 		state: Option<&State>,
 		frame_id: Option<u32>,
 		command: &str,
-	) -> String {
+	) -> (Option<ContinueKind>, String) {
+
+		let actual_command = match command.find('\n') {
+			Some(end) => &command[..end],
+			None => command,
+		};
+
 		// How many matches variables can you spot? It could be better...
-		let response = match self
+		let (kind, response) = match self
 			.app
-			.get_matches_from_safe_borrow(command.split_ascii_whitespace())
+			.get_matches_from_safe_borrow(actual_command.split_ascii_whitespace())
 		{
 			Ok(matches) => {
 				match matches.subcommand() {
+					("assemble", Some(matches)) => {
+						let proc = matches.value_of("proc").unwrap();
+
+						let id = matches
+							.value_of("id")
+							.and_then(|x| x.parse::<u32>().ok())
+							.unwrap_or(0);
+
+						match command.find('\n') {
+							Some(start) => {
+								(None, self.handle_assemble(proc, id, &command[start..]))
+							}
+
+							None => (None, "no assembly provided".to_owned())
+						}
+					}
+
 					("disassemble", Some(matches)) => {
+						let raw = matches.is_present("raw");
+
 						if let Some(proc) = matches.value_of("proc") {
 							// Default id to 0 in the worst way possible
 							let id = matches
@@ -796,59 +885,98 @@ impl Server {
 								.and_then(|x| x.parse::<u32>().ok())
 								.unwrap_or(0);
 
-							self.handle_disassemble(proc, id, None)
+							(None, self.handle_disassemble(proc, id, None, raw))
 						} else if let Some(frame_id) = frame_id {
 							if let Some(frame) = self.get_stack_frame(state.unwrap(), frame_id) {
 								let proc = frame.proc.path.clone();
 								let id = frame.proc.override_id();
-								self.handle_disassemble(&proc, id, Some(frame.offset))
+								(None, self.handle_disassemble(&proc, id, Some(frame.offset), raw))
 							} else {
-								"couldn't find stack frame (is execution not paused?)".to_owned()
+								(None, "couldn't find stack frame (is execution not paused?)".to_owned())
 							}
 						} else {
-							"no execution frame selected".to_owned()
+							(None, "no execution frame selected".to_owned())
 						}
 					}
 
-					_ => "unknown command".to_owned(),
+					("next", Some(_)) => (Some(ContinueKind::StepOne), "stepping".to_owned()),
+
+					_ => (None, "unknown command".to_owned()),
 				}
 			}
-			Err(e) => e.message,
+			Err(e) => (None, e.message),
 		};
 
-		response
+		(kind, response)
 	}
 
-	fn handle_eval(&mut self, state: Option<&State>, frame_id: Option<u32>, command: &str) {
+	fn handle_eval(&mut self, state: Option<&State>, frame_id: Option<u32>, command: &str) -> Option<ContinueKind> {
 		if command.starts_with('#') {
-			let response = self.handle_command(state, frame_id, &command[1..]);
+			let (kind, response) = self.handle_command(state, frame_id, &command[1..]);
 			self.send_or_disconnect(Response::Eval(response));
-			return;
+			return kind;
 		}
 
 		self.send_or_disconnect(Response::Eval(
 			"Auxtools can't currently evaluate DM. To see available commands, use `#help`"
 				.to_owned(),
 		));
+		return None;
 	}
 
-	fn handle_disassemble(&mut self, path: &str, id: u32, current_offset: Option<u32>) -> String {
+	fn handle_assemble(&mut self, path: &str, id: u32, asm: &str) -> String {
+		let mut env = AssembleEnv;
+
+		let bytecode = match dmasm::parser::parse(asm) {
+			Ok(nodes) => dmasm::assembler::assemble(&nodes, &mut env),
+			Err(e) => return format!("Assembly failed: {:?}", e),
+		};
+
+		let proc = match auxtools::Proc::find_override(path, id) {
+			Some(proc) => proc,
+			None => return "Couldn't find proc".to_owned(),
+		};
+
+		unsafe {
+			proc.set_bytecode(&bytecode);
+		}
+
+		return format!("Assembled {} bytes", bytecode.len() * 4);
+	}
+
+	fn handle_disassemble(&mut self, path: &str, id: u32, current_offset: Option<u32>, raw: bool) -> String {
 		let response = match auxtools::Proc::find_override(path, id) {
 			Some(proc) => {
-				// Make sure to temporarily remove all breakpoints in this proc
-				let breaks = get_hooked_offsets(&proc);
+				unsafe {
+					// Make sure to temporarily remove all breakpoints in this proc
+					let breaks = get_hooked_offsets(&proc);
 
-				for offset in &breaks {
-					unhook_instruction(&proc, *offset).unwrap();
+					for offset in &breaks {
+						unhook_instruction(&proc, *offset).unwrap();
+					}
+
+					let (bytecode, len) = proc.bytecode();
+					let bytecode = std::slice::from_raw_parts(bytecode, len);
+
+					let mut env = DisassembleEnv;
+					let (nodes, err) = dmasm::disassembler::disassemble(bytecode, &mut env);
+
+					let mut dism = if raw {
+						dmasm::format(&nodes)
+					} else {
+						dmasm::format_disassembly(&nodes, current_offset)
+					};
+
+					if let Some(e) = err {
+						dism += &format!("\nERROR: {:?}, bytes: {:X?}", e, bytecode);
+					}
+
+					for offset in &breaks {
+						hook_instruction(&proc, *offset).unwrap();
+					}
+
+					dism
 				}
-
-				let dism = proc.disassemble(current_offset);
-
-				for offset in &breaks {
-					hook_instruction(&proc, *offset).unwrap();
-				}
-
-				format!("Dism for {:?}\n{}", proc, dism)
 			}
 
 			None => "Proc not found".to_owned(),
@@ -867,7 +995,9 @@ impl Server {
 			Request::Stacks => self.handle_stacks(state),
 			Request::Scopes { frame_id } => self.handle_scopes(state.unwrap(), frame_id),
 			Request::Variables { vars } => self.handle_variables(state.unwrap(), vars),
-			Request::Eval { frame_id, command } => self.handle_eval(state, frame_id, &command),
+			Request::Eval { frame_id, command } => {
+				self.handle_eval(state, frame_id, &command);
+			},
 
 			Request::StackFrames {
 				stack_id,
@@ -987,6 +1117,13 @@ impl Server {
 			if let Request::Continue { kind } = request {
 				self.send_or_disconnect(Response::Ack);
 				return kind;
+			}
+
+			if let Request::Eval { frame_id, command } = &request {
+				if let Some(kind) = self.handle_eval(Some(&state), frame_id.to_owned(), &command) {
+					return kind;
+				}
+				continue;
 			}
 
 			// if we get a pause request here we can ignore it

@@ -193,6 +193,9 @@ fn handle_breakpoint(
 				}
 			}
 		}
+		ContinueKind::StepOne => {
+			DebuggerAction::BreakOnNext
+		}
 	}
 }
 

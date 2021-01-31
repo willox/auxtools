@@ -150,7 +150,8 @@ impl List {
 			| ValueTag::AreaUnderlays
 			| ValueTag::ImageVars
 			| ValueTag::WorldVars
-			| ValueTag::GlobalVars => true,
+			| ValueTag::GlobalVars
+			| ValueTag::WorldContents => true,
 			_ => false,
 		}
 	}
