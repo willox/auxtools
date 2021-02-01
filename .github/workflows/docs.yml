@@ -36,7 +36,9 @@ jobs:
       run: |
         sudo dpkg --add-architecture i386
         sudo apt-get update
-        sudo apt install build-essential g++-multilib libc6-i386 libstdc++6:i386
+        sudo apt install libc6-i386
+        sudo apt install libstdc++6:i386
+        sudo apt install build-essential g++-multilib
 
     - name: Build Docs
       run: cargo doc --no-deps
