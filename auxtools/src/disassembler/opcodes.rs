@@ -350,6 +350,12 @@ pub enum OpCode {
 	SplitTextChar = 0x157,
 	Text2NumRadix = 0x158,
 	Num2TextRadix = 0x159,
+	// 0x160
+	// 0x161
+	// 0x162
+	// 0x163
+	// 0x164
+	// 0x165
 
 	// This is a faux opcode
 	DebugBreak = 0x1337,
