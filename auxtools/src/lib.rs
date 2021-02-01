@@ -81,7 +81,8 @@ signatures! {
 	get_variable => "55 89 E5 81 EC C8 00 00 00 8B 55 ?? 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ??",
 	get_string_table_entry => "55 89 E5 83 EC 18 8B 45 ?? 39 05 ?? ?? ?? ?? 76 ?? 8B 15 ?? ?? ?? ?? 8B 04 ??",
 	call_datum_proc_by_name => "55 89 E5 57 56 53 83 EC 5C 8B 55 ?? 0F B6 45 ?? 8B 4D ?? 8B 5D ?? 89 14 24 8B 55 ?? 88 45 ?? 0F B6 F8 8B 75 ?? 8D 45 ?? 89 44 24 ?? 89 F8 89 4C 24 ?? 31 C9 C6 45 ?? 00 C7 44 24 ?? 01 00 00 00",
-	dec_ref_count => "E8 ?? ?? ?? ?? 8B 4D ?? C7 44 24 ?? 00 00 00 00 C7 44 24 ?? 00 00 00 00 89 0C 24",
+	dec_ref_count_513 => "E8 ?? ?? ?? ?? 8B 4D ?? C7 44 24 ?? 00 00 00 00 C7 44 24 ?? 00 00 00 00 89 0C 24",
+	dec_ref_count_514 => "E8 ?? ?? ?? ?? C7 06 00 00 00 00 C7 46 ?? 00 00 00 00 A1 ?? ?? ?? ?? 0F B7 50 ??",
 	inc_ref_count => "E8 ?? ?? ?? ?? 8B 43 ?? 80 48 ?? 04 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC 5D",
 	get_list_by_id => "E8 ?? ?? ?? ?? 85 C0 89 C7 0F 84 ?? ?? ?? ?? 8B 40 ?? 89 3C 24 83 C0 01",
 	get_assoc_element => "55 89 E5 83 EC 68 89 4D ?? B9 7B 00 00 00 89 5D ?? 89 D3 89 75 ?? 89 C6",
@@ -202,11 +203,42 @@ byond_ffi_fn! { auxtools_init(_input) {
 		with_scanner_by_call! { byondcore,
 			call_proc_by_id,
 			get_proc_array_entry,
-			dec_ref_count,
 			inc_ref_count,
 			get_list_by_id,
 			get_misc_by_id,
 			runtime
+		}
+
+		#[cfg(windows)]
+		{
+			with_scanner_by_call! { byondcore,
+				dec_ref_count
+			}
+
+			unsafe {
+				raw_types::funcs::dec_ref_count_byond = dec_ref_count;
+			}
+		}
+
+		#[cfg(unix)]
+		{
+			if version::get().1 >= 1543 {
+				with_scanner_by_call! { byondcore,
+					dec_ref_count_514
+				}
+	
+				unsafe {
+					raw_types::funcs::dec_ref_count_byond = dec_ref_count_514;
+				}
+			} else {
+				with_scanner_by_call! { byondcore,
+					dec_ref_count_513
+				}
+	
+				unsafe {
+					raw_types::funcs::dec_ref_count_byond = dec_ref_count_513;
+				}
+			}
 		}
 
 		let mut to_string = std::ptr::null();
@@ -301,7 +333,6 @@ byond_ffi_fn! { auxtools_init(_input) {
 			raw_types::funcs::set_variable_byond = set_variable;
 			raw_types::funcs::get_string_table_entry_byond = get_string_table_entry;
 			raw_types::funcs::inc_ref_count_byond = inc_ref_count;
-			raw_types::funcs::dec_ref_count_byond = dec_ref_count;
 			raw_types::funcs::get_list_by_id_byond = get_list_by_id;
 			raw_types::funcs::get_assoc_element_byond = get_assoc_element;
 			raw_types::funcs::set_assoc_element_byond = set_assoc_element;
