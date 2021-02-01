@@ -54,7 +54,6 @@ signatures! {
 	get_string_id => "55 8B EC 8B 45 ?? 83 EC 1C 53 56 8B 35 ?? ?? ?? ?? 57 85 C0 75 ?? 68 ?? ?? ?? ??",
 	call_proc_by_id => "E8 ?? ?? ?? ?? 83 C4 2C 89 45 F4 89 55 F8 8B 45 F4 8B 55 F8 5F 5E 5B 8B E5 5D C3 CC 55 8B EC 83 EC 0C 53 8B 5D 10 8D 45 FF",
 	get_variable => "55 8B EC 8B 4D ?? 0F B6 C1 48 83 F8 ?? 0F 87 ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 ?? FF 75 ?? E8",
-	set_variable => "55 8B EC 8B 4D 08 0F B6 C1 48 57 8B 7D 10 83 F8 53 0F ?? ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 18 FF 75 14 57 FF 75 0C E8 ?? ?? ?? ?? 83 C4 10 5F 5D C3",
 	get_string_table_entry => "55 8B EC 8B 4D 08 3B 0D ?? ?? ?? ?? 73 10 A1",
 	call_datum_proc_by_name => "55 8B EC 83 EC 0C 53 8B 5D 10 8D 45 FF 56 8B 75 14 57 6A 01 50 FF 75 1C C6 45 FF 00 FF 75 18 6A 00 56",
 	dec_ref_count => "E8 ?? ?? ?? ?? 83 C4 0C 81 FF FF FF 00 00 74 ?? 85 FF 74 ?? 57 FF 75 ??",
@@ -67,7 +66,6 @@ signatures! {
 	remove_from_list => "55 8B EC 8B 4D 08 83 EC 0C 0F B6 C1 48 53 83 F8 53 0F 87 ?? ?? ?? ?? 0F B6 ?? ?? ?? ?? ?? 8B 55 10 FF 24 ?? ?? ?? ?? ?? 6A 0F FF 75 0C 51 E8 ?? ?? ?? ?? 50 E8 ?? ?? ?? ?? 83 C4 10 85 C0 0F 84 ?? ?? ?? ?? 8B 48 0C 8B 10 85 C9 0F 84 ?? ?? ?? ?? 8B 45 14 8B 5D 10",
 	get_length => "55 8B EC 8B 4D 08 83 EC 18 0F B6 C1 48 53 56 57 83 F8 53 0F 87 ?? ?? ?? ?? 0F B6 ?? ?? ?? ?? ?? FF 24 ?? ?? ?? ?? ?? FF 75 0C",
 	get_misc_by_id => "E8 ?? ?? ?? ?? 83 C4 04 85 C0 75 ?? FF 75 ?? E8 ?? ?? ?? ?? FF 30 68 ?? ?? ?? ?? E8 ?? ?? ?? ?? A1 ?? ?? ?? ??",
-	to_string => "55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC 10 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 5D ?? 0F B6 C3",
 	runtime => "E8 ?? ?? ?? ?? 83 C4 04 8B 85 ?? ?? ?? ?? 0F B6 C0 51 66 0F 6E C0 0F 5B C0",
 	suspended_procs => "A1 ?? ?? ?? ?? 8B D8 89 45 ?? 89 75 ?? 3B DA 73 ?? 8D 0C ?? D1 E9 8B 04 ??",
 	suspended_procs_buffer => "8B 35 ?? ?? ?? ?? 8B 80 ?? ?? ?? ?? 57 8B 3D ?? ?? ?? ?? 8B D7 89 45 ??"
@@ -81,10 +79,10 @@ signatures! {
 	get_string_id => "55 89 E5 57 56 89 CE 53 89 D3 83 EC 5C 8B 55 ?? 85 C0 88 55 ?? 0F 84 ?? ?? ?? ??",
 	call_proc_by_id => "E8 ?? ?? ?? ?? 8B 45 ?? 8B 55 ?? 89 45 ?? 89 55 ?? 8B 55 ?? 8B 4D ?? 8B 5D ??",
 	get_variable => "55 89 E5 81 EC C8 00 00 00 8B 55 ?? 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ??",
-	set_variable => "55 89 E5 81 EC A8 00 00 00 8B 55 ?? 8B 45 ?? 89 5D ?? 8B 5D ?? 89 7D ??",
 	get_string_table_entry => "55 89 E5 83 EC 18 8B 45 ?? 39 05 ?? ?? ?? ?? 76 ?? 8B 15 ?? ?? ?? ?? 8B 04 ??",
 	call_datum_proc_by_name => "55 89 E5 57 56 53 83 EC 5C 8B 55 ?? 0F B6 45 ?? 8B 4D ?? 8B 5D ?? 89 14 24 8B 55 ?? 88 45 ?? 0F B6 F8 8B 75 ?? 8D 45 ?? 89 44 24 ?? 89 F8 89 4C 24 ?? 31 C9 C6 45 ?? 00 C7 44 24 ?? 01 00 00 00",
-	dec_ref_count => "E8 ?? ?? ?? ?? 8B 4D ?? C7 44 24 ?? 00 00 00 00 C7 44 24 ?? 00 00 00 00 89 0C 24",
+	dec_ref_count_513 => "E8 ?? ?? ?? ?? 8B 4D ?? C7 44 24 ?? 00 00 00 00 C7 44 24 ?? 00 00 00 00 89 0C 24",
+	dec_ref_count_514 => "E8 ?? ?? ?? ?? C7 06 00 00 00 00 C7 46 ?? 00 00 00 00 A1 ?? ?? ?? ?? 0F B7 50 ??",
 	inc_ref_count => "E8 ?? ?? ?? ?? 8B 43 ?? 80 48 ?? 04 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC 5D",
 	get_list_by_id => "E8 ?? ?? ?? ?? 85 C0 89 C7 0F 84 ?? ?? ?? ?? 8B 40 ?? 89 3C 24 83 C0 01",
 	get_assoc_element => "55 89 E5 83 EC 68 89 4D ?? B9 7B 00 00 00 89 5D ?? 89 D3 89 75 ?? 89 C6",
@@ -94,7 +92,6 @@ signatures! {
 	remove_from_list => "55 89 E5 83 EC 48 3C 54 89 5D ?? 89 C3 89 75 ?? 8B 75 ?? 89 7D ?? 8B 7D ??",
 	get_length => "55 89 E5 57 56 53 83 EC 6C 8B 45 ?? 8B 5D ?? 3C 54 76 ?? 31 F6 8D 65 ??",
 	get_misc_by_id => "E8 ?? ?? ?? ?? 0F B7 55 ?? 03 1F 0F B7 4B ?? 89 8D ?? ?? ?? ?? 0F B7 5B ??",
-	to_string => "55 89 E5 83 EC 58 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ?? 89 7D ?? 80 FB 54",
 	runtime => "E8 ?? ?? ?? ?? 31 C0 8D B4 26 00 00 00 00 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC",
 	suspended_procs => "A3 ?? ?? ?? ?? 8D 14 ?? 73 ?? 8D 74 26 00 83 C0 01 8B 14 ?? 39 C3 89 54 ?? ??",
 	suspended_procs_buffer => "89 35 ?? ?? ?? ?? C7 04 24 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 45 ?? 83 C0 08"
@@ -186,10 +183,11 @@ byond_ffi_fn! { auxtools_init(_input) {
 			return Some(format!("FAILED ({})", e));
 		}
 
+
+
 		with_scanner! { byondcore,
 			get_string_id,
 			get_variable,
-			set_variable,
 			get_string_table_entry,
 			call_datum_proc_by_name,
 			get_assoc_element,
@@ -198,7 +196,6 @@ byond_ffi_fn! { auxtools_init(_input) {
 			remove_from_list,
 			get_length,
 			create_list,
-			to_string,
 			suspended_procs,
 			suspended_procs_buffer
 		}
@@ -206,11 +203,103 @@ byond_ffi_fn! { auxtools_init(_input) {
 		with_scanner_by_call! { byondcore,
 			call_proc_by_id,
 			get_proc_array_entry,
-			dec_ref_count,
 			inc_ref_count,
 			get_list_by_id,
 			get_misc_by_id,
 			runtime
+		}
+
+		#[cfg(windows)]
+		{
+			with_scanner_by_call! { byondcore,
+				dec_ref_count
+			}
+
+			unsafe {
+				raw_types::funcs::dec_ref_count_byond = dec_ref_count;
+			}
+		}
+
+		#[cfg(unix)]
+		{
+			if version::get().1 >= 1543 {
+				with_scanner_by_call! { byondcore,
+					dec_ref_count_514
+				}
+	
+				unsafe {
+					raw_types::funcs::dec_ref_count_byond = dec_ref_count_514;
+				}
+			} else {
+				with_scanner_by_call! { byondcore,
+					dec_ref_count_513
+				}
+	
+				unsafe {
+					raw_types::funcs::dec_ref_count_byond = dec_ref_count_513;
+				}
+			}
+		}
+
+		let mut to_string = std::ptr::null();
+		{
+			if cfg!(windows) {
+				let res =
+					if version::get().1 >= 1543 {
+						byondcore.find(signature!("55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC 14 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 4D ??"))
+					} else {
+						byondcore.find(signature!("55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC 10 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 5D ?? 0F B6 C3"))
+					};
+
+				if let Some(ptr) = res {
+					to_string = ptr as *const std::ffi::c_void;
+				}
+			}
+
+			if cfg!(unix) {
+				let res =
+					if version::get().1 >= 1543 {
+						byondcore.find(signature!("55 89 E5 83 EC 68 A1 ?? ?? ?? ?? 8B 15 ?? ?? ?? ?? 8B 0D ?? ?? ?? ?? 89 5D ??"))
+					} else {
+						byondcore.find(signature!("55 89 E5 83 EC 58 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ?? 89 7D ?? 80 FB 54"))
+					};
+
+				if let Some(ptr) = res {
+					to_string = ptr as *const std::ffi::c_void;
+				}
+			}
+
+			if to_string.is_null() {
+				return Some("FAILED (Couldn't find to_string)".to_owned());
+			}
+		}
+
+		let mut set_variable = std::ptr::null();
+		{
+			if cfg!(windows) {
+				let res = byondcore.find(signature!("55 8B EC 8B 4D 08 0F B6 C1 48 57 8B 7D 10 83 F8 53 0F ?? ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 18 FF 75 14 57 FF 75 0C E8 ?? ?? ?? ?? 83 C4 10 5F 5D C3"));
+
+				if let Some(ptr) = res {
+					set_variable = ptr as *const std::ffi::c_void;
+				}
+			}
+
+			if cfg!(unix) {
+				let res =
+					if version::get().1 >= 1543 {
+						byondcore.find(signature!("55 89 E5 81 EC A8 00 00 00 8B 55 ?? 89 5D ?? 8B 4D ?? 89 7D ?? 8B 5D ??"))
+					} else {
+						byondcore.find(signature!("55 89 E5 81 EC A8 00 00 00 8B 55 ?? 8B 45 ?? 89 5D ?? 8B 5D ?? 89 7D ??"))
+					};
+
+				if let Some(ptr) = res {
+					set_variable = ptr as *const std::ffi::c_void;
+				}
+			}
+
+			if set_variable.is_null() {
+				return Some("FAILED (Couldn't find set_variable)".to_owned());
+			}
 		}
 
 		let mut current_execution_context = std::ptr::null_mut();
@@ -244,7 +333,6 @@ byond_ffi_fn! { auxtools_init(_input) {
 			raw_types::funcs::set_variable_byond = set_variable;
 			raw_types::funcs::get_string_table_entry_byond = get_string_table_entry;
 			raw_types::funcs::inc_ref_count_byond = inc_ref_count;
-			raw_types::funcs::dec_ref_count_byond = dec_ref_count;
 			raw_types::funcs::get_list_by_id_byond = get_list_by_id;
 			raw_types::funcs::get_assoc_element_byond = get_assoc_element;
 			raw_types::funcs::set_assoc_element_byond = set_assoc_element;
@@ -282,9 +370,15 @@ byond_ffi_fn! { auxtools_init(_input) {
 			}
 
 			if cfg!(unix) {
-				if let Some(ptr) = byondcore.find(signature!("8B 35 ?? ?? ?? ?? 89 5D ?? 0F B7 08 89 75 ?? 66 C7 45 ?? 00 00 89 7D ??")) {
-					variable_names = unsafe { **((ptr.add(2)) as *mut *mut *mut raw_types::strings::StringId) };
-				}
+				if version::get().1 >= 1543 {
+					if let Some(ptr) = byondcore.find(signature!("A1 ?? ?? ?? ?? 8B 13 8B 39 8B 75 ?? 8B 14 ?? 89 7D ?? 8B 3C ?? 83 EE 02")) {
+						variable_names = unsafe { **((ptr.add(1)) as *mut *mut *mut raw_types::strings::StringId) };
+					}
+				} else {
+					if let Some(ptr) = byondcore.find(signature!("8B 35 ?? ?? ?? ?? 89 5D ?? 0F B7 08 89 75 ?? 66 C7 45 ?? 00 00 89 7D ??")) {
+						variable_names = unsafe { **((ptr.add(2)) as *mut *mut *mut raw_types::strings::StringId) };
+					}
+				};
 			}
 
 			if variable_names.is_null() {
