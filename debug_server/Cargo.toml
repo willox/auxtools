@@ -14,7 +14,7 @@ cc = "1.0"
 [dependencies]
 auxtools = { path = "../auxtools" }
 lazy_static = "1.4.0"
-serde = { version = "1.0.117", features = ["derive"] }
+serde = { version = "1.0.123", features = ["derive"] }
 bincode = "1.3.1"
 clap = "2.33.3"
 
