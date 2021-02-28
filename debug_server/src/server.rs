@@ -616,6 +616,17 @@ impl Server {
 	}
 
 	fn handle_scopes(&mut self, frame_id: u32) {
+		if self.state.is_none() {
+			let response = Response::Scopes {
+				arguments: None,
+				locals: None,
+				globals: None,
+			};
+
+			self.send_or_disconnect(response);
+			return;
+		}
+
 		let state = self.state.as_ref().unwrap();
 
 		let arguments = Variables::Arguments { frame: frame_id };
