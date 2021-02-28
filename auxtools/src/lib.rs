@@ -8,7 +8,6 @@
 mod byond_ffi;
 mod context;
 pub mod debug;
-mod disassembler;
 mod hooks;
 mod init;
 mod list;
@@ -25,10 +24,6 @@ use init::{get_init_level, set_init_level, InitLevel};
 
 pub use auxtools_impl::{hook, init, runtime_handler, shutdown};
 pub use context::DMContext;
-pub use disassembler::{
-	opcodes::{OpCode, DEBUG_BREAK_OPCODE, DEBUG_BREAK_OPERAND},
-	DisassembleResult, Instruction,
-};
 pub use hooks::{CompileTimeHook, RuntimeHook};
 pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
 pub use list::List;

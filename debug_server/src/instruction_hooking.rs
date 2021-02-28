@@ -9,6 +9,11 @@ use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+// Could move these to dmasm
+const OPCODE_DBGLINE: u32 = 0x85;
+const OPCODE_DEBUG_BREAK: u32 = 0x1337;
+const OPCODE_DEBUG_OPERAND: u32 = 0x1338;
+
 static mut EXECUTE_INSTRUCTION: *const c_void = std::ptr::null();
 
 extern "C" {
@@ -292,7 +297,7 @@ extern "C" fn handle_instruction(
 			// 1) The target context has disappeared - this means it has returned or runtimed
 			// 2) We're inside the target context and on a DbgLine instruction
 			DebuggerAction::StepOver { target } => {
-				if opcode == (OpCode::DbgLine as u32) && target.is((*ctx).proc_instance) {
+				if opcode == OPCODE_DBGLINE && target.is((*ctx).proc_instance) {
 					CURRENT_ACTION = DebuggerAction::BreakOnNext;
 				} else {
 					// If the context isn't in any stacks, it has just returned. Break!
@@ -312,7 +317,7 @@ extern "C" fn handle_instruction(
 			// 3) We're inside the parent context and on a DbgLine instruction
 			DebuggerAction::StepInto { parent } => {
 				if !is_generated_proc(ctx) {
-					let is_dbgline = opcode == (OpCode::DbgLine as u32);
+					let is_dbgline = opcode == OPCODE_DBGLINE;
 					let is_in_parent = parent.is((*ctx).proc_instance);
 
 					if is_dbgline && is_in_parent {
@@ -353,7 +358,7 @@ extern "C" fn handle_instruction(
 		}
 	}
 
-	if opcode == DEBUG_BREAK_OPCODE {
+	if opcode == OPCODE_DEBUG_BREAK {
 		// We don't want to break twice when stepping on to a breakpoint
 		if !did_breakpoint {
 			unsafe {
@@ -423,7 +428,7 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 		opcode = *opcode_ptr;
 	}
 
-	if opcode == DEBUG_BREAK_OPCODE {
+	if opcode == OPCODE_DEBUG_BREAK {
 		return Ok(());
 	}
 
@@ -434,9 +439,9 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 		);
 	}
 
-	bytecode[offset as usize] = DEBUG_BREAK_OPCODE;
+	bytecode[offset as usize] = OPCODE_DEBUG_BREAK;
 	for i in (offset + 1)..(offset + instruction_length as u32) {
-		bytecode[i as usize] = DEBUG_BREAK_OPERAND;
+		bytecode[i as usize] = OPCODE_DEBUG_OPERAND;
 	}
 	Ok(())
 }
