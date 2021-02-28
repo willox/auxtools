@@ -8,7 +8,6 @@
 mod byond_ffi;
 mod context;
 pub mod debug;
-mod disassembler;
 mod hooks;
 mod init;
 mod list;
@@ -25,10 +24,6 @@ use init::{get_init_level, set_init_level, InitLevel};
 
 pub use auxtools_impl::{hook, init, runtime_handler, shutdown};
 pub use context::DMContext;
-pub use disassembler::{
-	opcodes::{OpCode, DEBUG_BREAK_OPCODE, DEBUG_BREAK_OPERAND},
-	DisassembleResult, Instruction,
-};
 pub use hooks::{CompileTimeHook, RuntimeHook};
 pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
 pub use list::List;
@@ -103,10 +98,10 @@ macro_rules! find_function {
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name) {
 			unsafe {
 				$name = std::mem::transmute(ptr as *const c_void);
-				}
+			}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-			}
+		}
 	};
 }
 
@@ -117,10 +112,10 @@ macro_rules! find_function_by_call {
 			unsafe {
 				let offset = *(ptr.offset(1) as *const isize);
 				$name = ptr.offset(5).offset(offset) as *const () as *const std::ffi::c_void;
-				}
+			}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-			}
+		}
 	};
 }
 
@@ -226,7 +221,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 				with_scanner_by_call! { byondcore,
 					dec_ref_count_514
 				}
-	
+
 				unsafe {
 					raw_types::funcs::dec_ref_count_byond = dec_ref_count_514;
 				}
@@ -234,7 +229,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 				with_scanner_by_call! { byondcore,
 					dec_ref_count_513
 				}
-	
+
 				unsafe {
 					raw_types::funcs::dec_ref_count_byond = dec_ref_count_513;
 				}

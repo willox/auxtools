@@ -12,7 +12,7 @@ macro_rules! byond_string {
 			auxtools::inventory::submit!(unsafe { &store });
 			let x = &*store.1.get();
 			x.clone().unwrap()
-			}
+		}
 	};
 }
 
