@@ -10,6 +10,7 @@ use std::{
 };
 
 use clap::{App, AppSettings, Arg};
+use dmasm::disassembler::disassemble;
 
 use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
@@ -780,13 +781,28 @@ impl Server {
 					unhook_instruction(&proc, *offset).unwrap();
 				}
 
-				let dism = proc.disassemble();
+				let bytecode = unsafe {
+					let (ptr, count) = proc.bytecode();
+					std::slice::from_raw_parts(ptr, count)
+				};
+
+				let mut env = crate::DisassembleEnv;
+				let (nodes, error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+				let dism = dmasm::format_disassembly(&nodes, None);
 
 				for offset in &breaks {
 					hook_instruction(&proc, *offset).unwrap();
 				}
 
-				format!("Dism for {:?}\n{}", proc, dism)
+				match error {
+					Some(error) => {
+						format!("Dism for {:?}\n{}\n\tError: {:?}", proc, dism, error)
+					}
+
+					None => {
+						format!("Dism for {:?}\n{}", proc, dism)
+					}
+				}
 			}
 
 			None => "Proc not found".to_owned(),

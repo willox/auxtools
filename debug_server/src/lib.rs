@@ -1,7 +1,10 @@
+mod disassemble_env;
 mod instruction_hooking;
 mod server;
 mod server_types;
 mod stddef;
+
+pub(crate) use disassemble_env::DisassembleEnv;
 
 use std::{
 	cell::UnsafeCell,

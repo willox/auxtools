@@ -103,10 +103,10 @@ macro_rules! find_function {
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name) {
 			unsafe {
 				$name = std::mem::transmute(ptr as *const c_void);
-				}
+			}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-			}
+		}
 	};
 }
 
@@ -117,10 +117,10 @@ macro_rules! find_function_by_call {
 			unsafe {
 				let offset = *(ptr.offset(1) as *const isize);
 				$name = ptr.offset(5).offset(offset) as *const () as *const std::ffi::c_void;
-				}
+			}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-			}
+		}
 	};
 }
 
@@ -226,7 +226,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 				with_scanner_by_call! { byondcore,
 					dec_ref_count_514
 				}
-	
+
 				unsafe {
 					raw_types::funcs::dec_ref_count_byond = dec_ref_count_514;
 				}
@@ -234,7 +234,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 				with_scanner_by_call! { byondcore,
 					dec_ref_count_513
 				}
-	
+
 				unsafe {
 					raw_types::funcs::dec_ref_count_byond = dec_ref_count_513;
 				}

@@ -247,6 +247,28 @@ impl Value {
 		Err(runtime!("External proc call failed"))
 	}
 
+	// ugh
+	pub fn to_dmstring(&self) -> ConversionResult<string::StringRef> {
+		match self.value.tag {
+			raw_types::values::ValueTag::Null
+			| raw_types::values::ValueTag::Number
+			| raw_types::values::ValueTag::String => {
+				return Ok(string::StringRef::new(format!("{}", self.value).as_str()))
+			}
+
+			_ => {}
+		}
+
+		let mut id = raw_types::strings::StringId(0);
+
+		unsafe {
+			if raw_types::funcs::to_string(&mut id, self.value) != 1 {
+				return Err(runtime!("to_string failed on {:?}", self));
+			}
+			Ok(string::StringRef::from_id(id))
+		}
+	}
+
 	pub fn to_string(&self) -> ConversionResult<String> {
 		match self.value.tag {
 			raw_types::values::ValueTag::Null
