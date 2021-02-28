@@ -92,8 +92,13 @@ impl Proc {
 		}
 	}
 
-	pub unsafe fn bytecode(&self) -> (*mut u32, usize) {
+	pub unsafe fn bytecode_mut_ptr(&self) -> (*mut u32, usize) {
 		misc::get_bytecode((*self.entry).bytecode)
+	}
+
+	pub unsafe fn bytecode(&self) -> &[u32] {
+		let (ptr, count) = self.bytecode_mut_ptr();
+		std::slice::from_raw_parts(ptr, count)
 	}
 
 	pub fn disassemble(&self) -> DisassembleResult {

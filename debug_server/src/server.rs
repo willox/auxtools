@@ -10,7 +10,6 @@ use std::{
 };
 
 use clap::{App, AppSettings, Arg};
-use dmasm::disassembler::disassemble;
 
 use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
@@ -189,26 +188,31 @@ impl Server {
 	fn get_line_number(&self, proc: ProcRef, offset: u32) -> Option<u32> {
 		match auxtools::Proc::find_override(proc.path, proc.override_id) {
 			Some(proc) => {
-				// We're ignoring disassemble errors because any bytecode in the result is still valid
-				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
-				let dism = proc.disassemble().instructions;
 				let mut current_line_number = None;
 				let mut reached_offset = false;
 
-				for (instruction_offset, _, instruction) in dism {
-					// If we're in the middle of executing an operand (like call), the offset might be between two instructions
-					if instruction_offset > offset {
-						reached_offset = true;
-						break;
-					}
+				let bytecode = unsafe {
+					proc.bytecode()
+				};
 
-					if let Instruction::DbgLine(line) = instruction {
-						current_line_number = Some(line);
-					}
+				let mut env = crate::disassemble_env::DisassembleEnv;
+				let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
 
-					if instruction_offset == offset {
-						reached_offset = true;
-						break;
+				for node in nodes {
+					if let dmasm::Node::Instruction(ins, debug) = node {
+						if debug.offset > offset {
+							reached_offset = true;
+							break;
+						}
+
+						if let dmasm::Instruction::DbgLine(line) = ins {
+							current_line_number = Some(line);
+						}
+
+						if debug.offset == offset {
+							reached_offset = true;
+							break;
+						}
 					}
 				}
 
@@ -226,20 +230,27 @@ impl Server {
 	fn get_offset(&self, proc: ProcRef, line: u32) -> Option<u32> {
 		match auxtools::Proc::find_override(proc.path, proc.override_id) {
 			Some(proc) => {
-				// We're ignoring disassemble errors because any bytecode in the result is still valid
-				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
-				let dism = proc.disassemble().instructions;
 				let mut offset = None;
 				let mut at_offset = false;
 
-				for (instruction_offset, _, instruction) in dism {
-					if at_offset {
-						offset = Some(instruction_offset);
-						break;
-					}
-					if let Instruction::DbgLine(current_line) = instruction {
-						if current_line == line {
-							at_offset = true;
+				let bytecode = unsafe {
+					proc.bytecode()
+				};
+
+				let mut env = crate::disassemble_env::DisassembleEnv;
+				let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+
+				for node in nodes {
+					if let dmasm::Node::Instruction(ins, debug) = node {
+						if at_offset {
+							offset = Some(debug.offset);
+							break;
+						}
+
+						if let dmasm::Instruction::DbgLine(current_line) = ins {
+							if current_line == line {
+								at_offset = true;
+							}
 						}
 					}
 				}
@@ -782,8 +793,7 @@ impl Server {
 				}
 
 				let bytecode = unsafe {
-					let (ptr, count) = proc.bytecode();
-					std::slice::from_raw_parts(ptr, count)
+					proc.bytecode()
 				};
 
 				let mut env = crate::DisassembleEnv;

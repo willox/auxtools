@@ -723,8 +723,7 @@ impl std::fmt::Display for DisassembleResult {
 
 pub fn disassemble(proc: &Proc) -> DisassembleResult {
 	let bytecode = unsafe {
-		let (ptr, count) = proc.bytecode();
-		std::slice::from_raw_parts(ptr, count)
+		proc.bytecode()
 	};
 
 	let mut dism = Disassembler::new(bytecode.iter());

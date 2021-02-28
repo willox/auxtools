@@ -203,7 +203,7 @@ dependencies = [
 [[package]]
 name = "dmasm"
 version = "0.1.0"
-source = "git+https://github.com/willox/dmasm#5bfbd241936f070969a91b64f8c0602174e10348"
+source = "git+https://github.com/willox/dmasm#07fe21a24aa68201cc2c54a3346e589fed03d875"
 dependencies = [
  "bitflags",
  "nom",
