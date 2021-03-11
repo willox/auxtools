@@ -89,6 +89,10 @@ impl Proc {
 		}
 	}
 
+	pub unsafe fn set_bytecode(&self, bytecode: &[u32]) {
+		misc::set_bytecode((*self.entry).bytecode, bytecode);
+	}
+
 	pub unsafe fn bytecode_mut_ptr(&self) -> (*mut u32, usize) {
 		misc::get_bytecode((*self.entry).bytecode)
 	}

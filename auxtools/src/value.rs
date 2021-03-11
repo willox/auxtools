@@ -324,6 +324,22 @@ impl Value {
 		}
 	}
 
+	pub fn from_string_raw(data: &[u8]) -> Value {
+		// TODO: This should be done differently
+		let string = CString::new(data).unwrap();
+
+		unsafe {
+			let mut id = raw_types::strings::StringId(0);
+
+			assert_eq!(raw_types::funcs::get_string_id(&mut id, string.as_ptr()), 1);
+
+			Value::new(
+				raw_types::values::ValueTag::String,
+				raw_types::values::ValueData { string: id },
+			)
+		}
+	}
+
 	/// blah blah lifetime is not verified with this so use at your peril
 	pub unsafe fn from_raw(v: raw_types::values::Value) -> Self {
 		Value::new(v.tag, v.data)

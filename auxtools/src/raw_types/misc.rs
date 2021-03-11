@@ -122,6 +122,38 @@ impl Parameters_V2 {
 	}
 }
 
+pub fn set_bytecode(id: BytecodeId, new_bytecode: &[u32]) {
+	let (new_bytecode, new_bytecode_count) = {
+		let mut vec = new_bytecode.to_vec();
+		let len = vec.len() as u16;
+		let ptr = vec.as_mut_ptr();
+		std::mem::forget(vec);
+		(ptr, len)
+	};
+
+	let mut misc: *mut c_void = std::ptr::null_mut();
+	unsafe {
+		assert_eq!(super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()), 1);
+	}
+
+	let (major, minor) = version::get();
+
+	// Lame
+	if major > 513 || minor >= 1539 {
+		let misc = misc as *mut Misc_V2;
+		unsafe {
+			(*misc).bytecode.bytecode = new_bytecode;
+			(*misc).bytecode.count = new_bytecode_count;
+		}
+	}
+
+	let misc = misc as *mut Misc_V1;
+	unsafe {
+		(*misc).bytecode.bytecode = new_bytecode;
+		(*misc).bytecode.count = new_bytecode_count;
+	}
+}
+
 pub fn get_bytecode(id: BytecodeId) -> (*mut u32, usize) {
 	let mut misc: *mut c_void = std::ptr::null_mut();
 	unsafe {

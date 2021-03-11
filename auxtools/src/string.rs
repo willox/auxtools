@@ -15,6 +15,12 @@ impl StringRef {
 		}
 	}
 
+	pub fn from_raw(data: &[u8]) -> Self {
+		StringRef {
+			value: Value::from_string_raw(data),
+		}
+	}
+
 	pub fn from_value(value: Value) -> Option<Self> {
 		if value.value.tag != raw_types::values::ValueTag::String {
 			return None;
