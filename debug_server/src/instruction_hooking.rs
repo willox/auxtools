@@ -284,11 +284,13 @@ extern "C" fn handle_instruction(
 			DebuggerAction::None => {}
 
 			DebuggerAction::Pause => {
+				CURRENT_ACTION = DebuggerAction::None;
 				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Pause);
 				did_breakpoint = true;
 			}
 
 			DebuggerAction::BreakOnNext => {
+				CURRENT_ACTION = DebuggerAction::None;
 				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 				did_breakpoint = true;
 			}
@@ -305,6 +307,7 @@ extern "C" fn handle_instruction(
 					if !proc_instance_is_in_stack(ctx, target)
 						&& !proc_instance_is_suspended(target)
 					{
+						CURRENT_ACTION = DebuggerAction::None;
 						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 						did_breakpoint = true;
 					}
@@ -329,6 +332,7 @@ extern "C" fn handle_instruction(
 						// If the context isn't in any stacks, it has just returned. Break!
 						// TODO: Don't break if the context's stack is gone (returned to C)
 						if !in_stack && !is_suspended {
+							CURRENT_ACTION = DebuggerAction::None;
 							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 							did_breakpoint = true;
 						} else if in_stack && is_dbgline {
@@ -342,6 +346,7 @@ extern "C" fn handle_instruction(
 			DebuggerAction::StepOut { target } => {
 				if !is_generated_proc(ctx) {
 					if target.is((*ctx).proc_instance) {
+						CURRENT_ACTION = DebuggerAction::None;
 						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 						did_breakpoint = true;
 					} else {
@@ -362,6 +367,7 @@ extern "C" fn handle_instruction(
 		// We don't want to break twice when stepping on to a breakpoint
 		if !did_breakpoint {
 			unsafe {
+				CURRENT_ACTION = DebuggerAction::None;
 				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Breakpoint);
 			}
 		}

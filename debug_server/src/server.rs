@@ -1,5 +1,3 @@
-use crate::assemble_env::AssembleEnv;
-
 use super::instruction_hooking::{get_hooked_offsets, hook_instruction, unhook_instruction};
 use std::io::{Read, Write};
 use std::sync::mpsc;
@@ -789,14 +787,22 @@ impl Server {
 			return;
 		}
 
-		match dmasm::compiler::compile_expr(command, &[]) {
+		match dmasm::compiler::compile_expr(command, &["a", "b", "c"]) {
 			Ok(expr) => {
 				let expr: Vec<dmasm::Node> = expr
 					.into_iter()
 					.map(dmasm::Node::<Option<dmasm::CompileData>>::strip_debug_data)
 					.collect();
 
-				let assembly = dmasm::assembler::assemble(&expr, &mut crate::assemble_env::AssembleEnv);
+				let assembly = match dmasm::assembler::assemble(&expr, &mut crate::assemble_env::AssembleEnv) {
+					Ok(assembly) => assembly,
+					Err(err) => {
+						self.send_or_disconnect(Response::Eval(
+							format!("Assembly failed: {:#?}", err)
+						));
+						return;
+					}
+				};
 
 				let proc = Proc::find("/proc/auxtools_expr_stub").unwrap();
 				unsafe {
@@ -804,7 +810,7 @@ impl Server {
 				}
 
 				self.send_or_disconnect(Response::Eval(
-					format!("Result: {:#?}", proc.call(&[]))
+					format!("Result: {:#?}", proc.call(&[&Value::from_string("one"), &Value::from_string("two"), &Value::from_string("three")]))
 				));
 			}
 

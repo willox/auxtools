@@ -32,4 +32,10 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 			}
 		}
     }
+
+	fn get_proc_index(&mut self, path: &str) -> u32 {
+		// TODO: error handle
+		let proc = Proc::find(path).unwrap();
+		proc.id.0
+	}
 }

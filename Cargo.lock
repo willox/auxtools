@@ -246,7 +246,6 @@ dependencies = [
 [[package]]
 name = "dmasm"
 version = "0.1.0"
-source = "git+https://github.com/willox/dmasm?branch=compiler#471169b8596a95e3439fb885b538873baec5f579"
 dependencies = [
  "bitflags",
  "dreammaker",
