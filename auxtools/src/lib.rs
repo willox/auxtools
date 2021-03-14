@@ -28,6 +28,7 @@ pub use hooks::{CompileTimeHook, RuntimeHook};
 pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
 pub use list::List;
 pub use proc::Proc;
+pub use raw_types::variables::VariableNameIdTable;
 pub use runtime::{ConversionResult, DMResult, Runtime};
 use std::ffi::c_void;
 pub use string::StringRef;
@@ -360,18 +361,18 @@ byond_ffi_fn! { auxtools_init(_input) {
 		{
 			if cfg!(windows) {
 				if let Some(ptr) = byondcore.find(signature!("8B 1D ?? ?? ?? ?? 2B 0C ?? 8B 5D ?? 74 ?? 85 C9 79 ?? 0F B7 D0 EB ?? 83 C0 02")) {
-					variable_names = unsafe { *((ptr.add(2)) as *mut *mut raw_types::misc::VariableNameIdTable) };
+					variable_names = unsafe { *((ptr.add(2)) as *mut *mut VariableNameIdTable) };
 				}
 			}
 
 			if cfg!(unix) {
 				if version::get().1 >= 1543 {
 					if let Some(ptr) = byondcore.find(signature!("A1 ?? ?? ?? ?? 8B 13 8B 39 8B 75 ?? 8B 14 ?? 89 7D ?? 8B 3C ?? 83 EE 02")) {
-						variable_names = unsafe { *((ptr.add(1)) as *mut *mut raw_types::misc::VariableNameIdTable) };
+						variable_names = unsafe { *((ptr.add(1)) as *mut *mut VariableNameIdTable) };
 					}
 				} else {
 					if let Some(ptr) = byondcore.find(signature!("8B 35 ?? ?? ?? ?? 89 5D ?? 0F B7 08 89 75 ?? 66 C7 45 ?? 00 00 89 7D ??")) {
-						variable_names = unsafe { *((ptr.add(2)) as *mut *mut raw_types::misc::VariableNameIdTable) };
+						variable_names = unsafe { *((ptr.add(2)) as *mut *mut VariableNameIdTable) };
 					}
 				};
 			}
