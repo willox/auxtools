@@ -98,10 +98,10 @@ macro_rules! find_function {
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name) {
 			unsafe {
 				$name = std::mem::transmute(ptr as *const c_void);
-			}
+				}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-		}
+			}
 	};
 }
 
@@ -112,10 +112,10 @@ macro_rules! find_function_by_call {
 			unsafe {
 				let offset = *(ptr.offset(1) as *const isize);
 				$name = ptr.offset(5).offset(offset) as *const () as *const std::ffi::c_void;
-			}
+				}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-		}
+			}
 	};
 }
 
@@ -360,18 +360,18 @@ byond_ffi_fn! { auxtools_init(_input) {
 		{
 			if cfg!(windows) {
 				if let Some(ptr) = byondcore.find(signature!("8B 1D ?? ?? ?? ?? 2B 0C ?? 8B 5D ?? 74 ?? 85 C9 79 ?? 0F B7 D0 EB ?? 83 C0 02")) {
-					variable_names = unsafe { **((ptr.add(2)) as *mut *mut *mut raw_types::strings::StringId) };
+					variable_names = unsafe { *((ptr.add(2)) as *mut *mut raw_types::misc::VariableNameIdTable) };
 				}
 			}
 
 			if cfg!(unix) {
 				if version::get().1 >= 1543 {
 					if let Some(ptr) = byondcore.find(signature!("A1 ?? ?? ?? ?? 8B 13 8B 39 8B 75 ?? 8B 14 ?? 89 7D ?? 8B 3C ?? 83 EE 02")) {
-						variable_names = unsafe { **((ptr.add(1)) as *mut *mut *mut raw_types::strings::StringId) };
+						variable_names = unsafe { *((ptr.add(1)) as *mut *mut raw_types::misc::VariableNameIdTable) };
 					}
 				} else {
 					if let Some(ptr) = byondcore.find(signature!("8B 35 ?? ?? ?? ?? 89 5D ?? 0F B7 08 89 75 ?? 66 C7 45 ?? 00 00 89 7D ??")) {
-						variable_names = unsafe { **((ptr.add(2)) as *mut *mut *mut raw_types::strings::StringId) };
+						variable_names = unsafe { *((ptr.add(2)) as *mut *mut raw_types::misc::VariableNameIdTable) };
 					}
 				};
 			}
