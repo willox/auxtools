@@ -2,12 +2,12 @@
 #include "hooks.h"
 
 #ifdef USE_SJLJ
-jmp_buf* current_jmp;
+jmp_buf *current_jmp;
 #endif
 
 //
 // BYOND likes to use C++ exceptions for some stuff (like runtimes) - Rust can't catch them and code will just unroll back to before our hooks
-// We use these wrappers to hackily handle that and let Rust know an exception happened instead of letting it propogate
+// We use these wrappers to hackily handle that and let Rust know an exception happened instead of letting it propagate
 //
 
 #define DEFINE_byond(name, ret_type, params)     \
@@ -24,22 +24,23 @@ jmp_buf* current_jmp;
 
 #ifdef __MINGW32__
 
-struct RestoreJmpBuf {
-	jmp_buf* to_restore;
+struct RestoreJmpBuf
+{
+	jmp_buf *to_restore;
 
 	RestoreJmpBuf() : to_restore(current_jmp) {}
 	~RestoreJmpBuf() { current_jmp = to_restore; }
-	RestoreJmpBuf(const RestoreJmpBuf&) = delete;
-	RestoreJmpBuf(RestoreJmpBuf&&) = delete;
-	RestoreJmpBuf& operator=(const RestoreJmpBuf&) = delete;
-	RestoreJmpBuf& operator=(RestoreJmpBuf&&) = delete;
+	RestoreJmpBuf(const RestoreJmpBuf &) = delete;
+	RestoreJmpBuf(RestoreJmpBuf &&) = delete;
+	RestoreJmpBuf &operator=(const RestoreJmpBuf &) = delete;
+	RestoreJmpBuf &operator=(RestoreJmpBuf &&) = delete;
 };
 
-#define BYOND_TRY                   \
-	RestoreJmpBuf restore;            \
-	jmp_buf jmp;                      \
-	current_jmp = &jmp;               \
-	int jmp_val = setjmp(jmp);        \
+#define BYOND_TRY              \
+	RestoreJmpBuf restore;     \
+	jmp_buf jmp;               \
+	current_jmp = &jmp;        \
+	int jmp_val = setjmp(jmp); \
 	if (jmp_val == 0)
 #define BYOND_CATCH \
 	else
@@ -47,11 +48,12 @@ struct RestoreJmpBuf {
 #else
 
 #define BYOND_TRY try
-#define BYOND_CATCH catch(AuxtoolsException _)
+#define BYOND_CATCH catch (AuxtoolsException _)
 
 #endif
 
-extern "C" {
+extern "C"
+{
 	DEFINE_byond_REGPARM3(call_proc_by_id, Value, (Value, uint32_t, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
 	DEFINE_byond(call_datum_proc_by_name, Value, (Value, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
 	DEFINE_byond(get_proc_array_entry, void *, (uint32_t));
@@ -114,7 +116,8 @@ extern "C" uint8_t call_datum_proc_by_name(
 	{
 		clean(usr);
 		clean(src);
-		for (int i = 0; i < args_count; i++) {
+		for (int i = 0; i < args_count; i++)
+		{
 			clean(args[i]);
 		}
 		*out = call_datum_proc_by_name_byond(usr, proc_type, proc_name, src, args, args_count, unk_0, unk_1);
