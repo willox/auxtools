@@ -100,6 +100,8 @@ pub struct Server {
 	_thread: JoinHandle<()>,
 	should_catch_runtimes: bool,
 	state: Option<State>,
+	in_eval: bool,
+	eval_error: Option<String>,
 	app: App<'static, 'static>,
 }
 
@@ -159,6 +161,8 @@ impl Server {
 			_thread: thread,
 			should_catch_runtimes: true,
 			state: None,
+			in_eval: false,
+			eval_error: None,
 			app: Self::setup_app(),
 		};
 
@@ -181,8 +185,18 @@ impl Server {
 			_thread: thread,
 			should_catch_runtimes: true,
 			state: None,
+			in_eval: false,
+			eval_error: None,
 			app: Self::setup_app(),
 		})
+	}
+
+	pub fn is_in_eval(&self) -> bool {
+		self.in_eval
+	}
+
+	pub fn set_eval_error(&mut self, err: String) {
+		self.eval_error = Some(err);
 	}
 
 	fn get_line_number(&self, proc: ProcRef, offset: u32) -> Option<u32> {
@@ -191,9 +205,7 @@ impl Server {
 				let mut current_line_number = None;
 				let mut reached_offset = false;
 
-				let bytecode = unsafe {
-					proc.bytecode()
-				};
+				let bytecode = unsafe { proc.bytecode() };
 
 				let mut env = crate::disassemble_env::DisassembleEnv;
 				let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
@@ -233,9 +245,7 @@ impl Server {
 				let mut offset = None;
 				let mut at_offset = false;
 
-				let bytecode = unsafe {
-					proc.bytecode()
-				};
+				let bytecode = unsafe { proc.bytecode() };
 
 				let mut env = crate::disassemble_env::DisassembleEnv;
 				let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
@@ -787,37 +797,109 @@ impl Server {
 			return;
 		}
 
-		match dmasm::compiler::compile_expr(command, &["a", "b", "c"]) {
+		let args = match frame_id {
+			// Global context
+			None => {
+				vec![]
+			}
+
+			Some(frame_id) => {
+				let frame = match self.get_stack_frame(frame_id) {
+					Some(x) => x,
+					None => {
+						self.send_or_disconnect(Response::Eval(format!(
+							"tried to eval with invalid frame id: {}",
+							frame_id
+						)));
+						return;
+					}
+				};
+
+				let mut args = vec![
+					(".".to_owned(), frame.dot.clone()),
+					("usr".to_owned(), frame.usr.clone()),
+					("src".to_owned(), frame.src.clone()),
+				];
+
+				for arg in &frame.args {
+					if let Some(name) = &arg.0 {
+						args.push((name.into(), arg.1.clone()));
+					}
+				}
+
+				for local in &frame.locals {
+					args.push(((&local.0).into(), local.1.clone()));
+				}
+
+				args
+			}
+		};
+
+		let arg_names: Vec<&str> = args.iter().map(|(name, _)| name.as_str()).collect();
+		let arg_values: Vec<&Value> = args.iter().map(|(_, value)| value).collect();
+
+		match dmasm::compiler::compile_expr(command, &arg_names) {
 			Ok(expr) => {
 				let expr: Vec<dmasm::Node> = expr
 					.into_iter()
 					.map(dmasm::Node::<Option<dmasm::CompileData>>::strip_debug_data)
 					.collect();
 
-				let assembly = match dmasm::assembler::assemble(&expr, &mut crate::assemble_env::AssembleEnv) {
+				let assembly = match dmasm::assembler::assemble(
+					&expr,
+					&mut crate::assemble_env::AssembleEnv,
+				) {
 					Ok(assembly) => assembly,
 					Err(err) => {
+						self.send_or_disconnect(Response::Eval(format!(
+							"Assembly failed: {:#?}",
+							err
+						)));
+						return;
+					}
+				};
+
+				let proc = match Proc::find("/proc/auxtools_expr_stub") {
+					Some(proc) => proc,
+					None => {
 						self.send_or_disconnect(Response::Eval(
-							format!("Assembly failed: {:#?}", err)
+							"Couldn't find /proc/auxtools_expr_stub! DM evaluation not available."
+								.into(),
 						));
 						return;
 					}
 				};
 
-				let proc = Proc::find("/proc/auxtools_expr_stub").unwrap();
 				unsafe {
 					proc.set_bytecode(&assembly);
 				}
 
-				self.send_or_disconnect(Response::Eval(
-					format!("Result: {:#?}", proc.call(&[&Value::from_string("one"), &Value::from_string("two"), &Value::from_string("three")]))
-				));
+				self.in_eval = true;
+				self.eval_error = None;
+
+				match proc.call(&arg_values) {
+					Ok(res) => {
+						use std::fmt::Write;
+						let mut output = format!("{:#?}", res);
+
+						if let Some(err) = &self.eval_error {
+							write!(&mut output, "\nRuntime: {}", err).unwrap();
+						}
+
+						self.send_or_disconnect(Response::Eval(output));
+					}
+
+					Err(_) => {
+						self.send_or_disconnect(Response::Eval("Value::call failed!".into()));
+					}
+				}
+
+				self.in_eval = false;
+				self.eval_error = None;
 			}
 
 			Err(err) => {
-				self.send_or_disconnect(Response::Eval(
-					format!("Compilation failed: {:#?}", err)
-				));
+				self.send_or_disconnect(Response::Eval(format!("Compilation failed: {:#?}", err)));
 			}
 		}
 	}
@@ -832,9 +914,7 @@ impl Server {
 					unhook_instruction(&proc, *offset).unwrap();
 				}
 
-				let bytecode = unsafe {
-					proc.bytecode()
-				};
+				let bytecode = unsafe { proc.bytecode() };
 
 				let mut env = crate::DisassembleEnv;
 				let (nodes, error) = dmasm::disassembler::disassemble(bytecode, &mut env);
@@ -953,7 +1033,7 @@ impl Server {
 		}
 	}
 
-	fn notify<T: Into<String>>(&mut self, message: T) {
+	pub fn notify<T: Into<String>>(&mut self, message: T) {
 		let message = message.into();
 		eprintln!("Debug Server: {:?}", message);
 

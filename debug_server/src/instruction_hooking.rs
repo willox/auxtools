@@ -1,8 +1,8 @@
 use std::{cell::UnsafeCell, ffi::c_void};
 
+use crate::disassemble_env::DisassembleEnv;
 use crate::server_types::{BreakpointReason, ContinueKind};
 use crate::DEBUG_SERVER;
-use crate::disassemble_env::DisassembleEnv;
 use auxtools::*;
 use detour::RawDetour;
 use lazy_static::lazy_static;
@@ -246,6 +246,16 @@ fn proc_instance_is_suspended(proc_ref: ProcInstanceRef) -> bool {
 fn handle_runtime(error: &str) {
 	unsafe {
 		let ctx = *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
+
+		// If this is eval code, don't catch the breakpoint
+		// TODO: Could try to make this work
+		if let Some(server) = &mut *DEBUG_SERVER.get() {
+			if server.is_in_eval() {
+				server.set_eval_error(error.into());
+				return;
+			}
+		}
+
 		CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Runtime(error.to_string()));
 	}
 }
@@ -395,10 +405,12 @@ pub enum InstructionHookError {
 	InvalidOffset,
 }
 
-fn find_instruction<'a>(env: &'a mut DisassembleEnv, proc: &'a Proc, offset: u32) -> Option<(dmasm::Instruction, dmasm::DebugData<'a>)> {
-	let bytecode = unsafe {
-		proc.bytecode()
-	};
+fn find_instruction<'a>(
+	env: &'a mut DisassembleEnv,
+	proc: &'a Proc,
+	offset: u32,
+) -> Option<(dmasm::Instruction, dmasm::DebugData<'a>)> {
+	let bytecode = unsafe { proc.bytecode() };
 
 	let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, env);
 
@@ -415,8 +427,8 @@ fn find_instruction<'a>(env: &'a mut DisassembleEnv, proc: &'a Proc, offset: u32
 
 pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookError> {
 	let mut env = crate::disassemble_env::DisassembleEnv;
-	let (_, debug) = find_instruction(&mut env, proc, offset)
-		.ok_or(InstructionHookError::InvalidOffset)?;
+	let (_, debug) =
+		find_instruction(&mut env, proc, offset).ok_or(InstructionHookError::InvalidOffset)?;
 
 	let instruction_length = debug.bytecode.len();
 
@@ -459,8 +471,8 @@ pub enum InstructionUnhookError {
 
 pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnhookError> {
 	let mut env = crate::disassemble_env::DisassembleEnv;
-	let (_, _) = find_instruction(&mut env, proc, offset)
-		.ok_or(InstructionUnhookError::InvalidOffset)?;
+	let (_, _) =
+		find_instruction(&mut env, proc, offset).ok_or(InstructionUnhookError::InvalidOffset)?;
 
 	let opcode_ptr = unsafe {
 		let bytecode = {
@@ -491,9 +503,7 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 }
 
 pub fn get_hooked_offsets(proc: &Proc) -> Vec<u32> {
-	let bytecode = unsafe {
-		proc.bytecode()
-	};
+	let bytecode = unsafe { proc.bytecode() };
 
 	let mut env = crate::disassemble_env::DisassembleEnv;
 	let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);

@@ -99,10 +99,10 @@ macro_rules! find_function {
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name) {
 			unsafe {
 				$name = std::mem::transmute(ptr as *const c_void);
-				}
+			}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-			}
+		}
 	};
 }
 
@@ -113,10 +113,10 @@ macro_rules! find_function_by_call {
 			unsafe {
 				let offset = *(ptr.offset(1) as *const isize);
 				$name = ptr.offset(5).offset(offset) as *const () as *const std::ffi::c_void;
-				}
+			}
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
-			}
+		}
 	};
 }
 
