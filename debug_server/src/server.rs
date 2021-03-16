@@ -54,6 +54,10 @@ impl State {
 		}
 	}
 
+	fn invalidate_stacks(&mut self) {
+		self.stacks = debug::CallStacks::new(&DMContext {});
+	}
+
 	fn get_ref(&self, vars: Variables) -> VariablesRef {
 		let mut variables_to_refs = self.variables_to_refs.borrow_mut();
 		let mut variables = self.variables.borrow_mut();
@@ -283,46 +287,47 @@ impl Server {
 		value.get("vars").is_ok()
 	}
 
-	fn value_to_variable(&self, name: String, value: &Value) -> Variable {
-		let mut variables = None;
-		let state = self.state.as_ref().unwrap();
-
+	fn stringify(value: &Value) -> String {
 		if List::is_list(value) {
-			variables = Some(state.get_ref(Variables::ListContents {
-				tag: value.value.tag as u8,
-				data: unsafe { value.value.data.id },
-			}));
-
-			// Early return for lists so we can include their length in the value
-			let stringified = match List::from_value(value) {
+			match List::from_value(value) {
 				Ok(list) => format!("/list {{len = {}}}", list.len()),
 				Err(Runtime { message }) => format!("/list (failed to get len: {:?})", message),
-			};
-
-			return Variable {
-				name,
-				value: stringified,
-				variables,
-			};
-		} else if Self::is_object(value) {
-			variables = Some(state.get_ref(Variables::ObjectVars {
-				tag: value.value.tag as u8,
-				data: unsafe { value.value.data.id },
-			}));
-		}
-
-		let stringified = match value.to_string() {
-			Ok(v) if v.is_empty() => value.value.to_string(),
-			Ok(value) => value,
-			Err(Runtime { message }) => {
-				format!("{} -- stringify error: {:?}", value.value, message)
 			}
-		};
+		} else {
+			match value.to_string() {
+				Ok(v) if v.is_empty() => value.value.to_string(),
+				Ok(value) => value,
+				Err(Runtime { message }) => {
+					format!("{} -- stringify error: {:?}", value.value, message)
+				}
+			}
+		}
+	}
+
+	fn value_to_variable(&self, name: String, value: &Value) -> Variable {
+		let stringified = Self::stringify(value);
+		let variables = self.value_to_variables_ref(value);
 
 		Variable {
 			name,
 			value: stringified,
 			variables,
+		}
+	}
+
+	fn value_to_variables_ref(&self, value: &Value) -> Option<VariablesRef> {
+		match self.state.as_ref() {
+			Some(state) if List::is_list(value) => Some(state.get_ref(Variables::ListContents {
+				tag: value.value.tag as u8,
+				data: unsafe { value.value.data.id },
+			})),
+
+			Some(state) if Self::is_object(value) => Some(state.get_ref(Variables::ObjectVars {
+				tag: value.value.tag as u8,
+				data: unsafe { value.value.data.id },
+			})),
+
+			_ => None,
 		}
 	}
 
@@ -790,53 +795,66 @@ impl Server {
 		response
 	}
 
-	fn handle_eval(&mut self, frame_id: Option<u32>, command: &str) {
+	fn handle_eval(&mut self, frame_id: Option<u32>, command: &str, context: Option<String>) {
 		if command.starts_with('#') {
 			let response = self.handle_command(frame_id, &command[1..]);
-			self.send_or_disconnect(Response::Eval(response));
+			self.send_or_disconnect(Response::Eval(EvalResponse {
+				value: response,
+				variables: None,
+			}));
 			return;
 		}
 
-		let args = match frame_id {
+		enum ArgType {
+			Dot,
+			Usr,
+			Src,
+			Arg(u32),
+			Local(u32),
+		}
+
+		let (ctx, instance, args) = match frame_id {
 			// Global context
-			None => {
-				vec![]
-			}
+			None => (std::ptr::null_mut(), std::ptr::null_mut(), vec![]),
 
 			Some(frame_id) => {
 				let frame = match self.get_stack_frame(frame_id) {
 					Some(x) => x,
 					None => {
-						self.send_or_disconnect(Response::Eval(format!(
-							"tried to eval with invalid frame id: {}",
-							frame_id
-						)));
+						self.send_or_disconnect(Response::Eval(EvalResponse {
+							value: format!("tried to eval with invalid frame id: {}", frame_id),
+							variables: None,
+						}));
 						return;
 					}
 				};
 
 				let mut args = vec![
-					(".".to_owned(), frame.dot.clone()),
-					("usr".to_owned(), frame.usr.clone()),
-					("src".to_owned(), frame.src.clone()),
+					(".".to_owned(), frame.dot.clone(), ArgType::Dot),
+					("usr".to_owned(), frame.usr.clone(), ArgType::Usr),
+					("src".to_owned(), frame.src.clone(), ArgType::Src),
 				];
 
-				for arg in &frame.args {
+				for (idx, arg) in frame.args.iter().enumerate() {
 					if let Some(name) = &arg.0 {
-						args.push((name.into(), arg.1.clone()));
+						args.push((name.into(), arg.1.clone(), ArgType::Arg(idx as u32)));
 					}
 				}
 
-				for local in &frame.locals {
-					args.push(((&local.0).into(), local.1.clone()));
+				for (idx, local) in frame.locals.iter().enumerate() {
+					args.push((
+						(&local.0).into(),
+						local.1.clone(),
+						ArgType::Local(idx as u32),
+					));
 				}
 
-				args
+				(frame.context, frame.instance, args)
 			}
 		};
 
-		let arg_names: Vec<&str> = args.iter().map(|(name, _)| name.as_str()).collect();
-		let arg_values: Vec<&Value> = args.iter().map(|(_, value)| value).collect();
+		let arg_names: Vec<&str> = args.iter().map(|(name, _, _)| name.as_str()).collect();
+		let arg_values: Vec<&Value> = args.iter().map(|(_, value, _)| value).collect();
 
 		match dmasm::compiler::compile_expr(command, &arg_names) {
 			Ok(expr) => {
@@ -851,10 +869,10 @@ impl Server {
 				) {
 					Ok(assembly) => assembly,
 					Err(err) => {
-						self.send_or_disconnect(Response::Eval(format!(
-							"Assembly failed: {:#?}",
-							err
-						)));
+						self.send_or_disconnect(Response::Eval(EvalResponse {
+							value: format!("Assembly failed: {:#?}", err),
+							variables: None,
+						}));
 						return;
 					}
 				};
@@ -862,10 +880,11 @@ impl Server {
 				let proc = match Proc::find("/proc/auxtools_expr_stub") {
 					Some(proc) => proc,
 					None => {
-						self.send_or_disconnect(Response::Eval(
-							"Couldn't find /proc/auxtools_expr_stub! DM evaluation not available."
+						self.send_or_disconnect(Response::Eval(EvalResponse {
+							value: "Couldn't find /proc/auxtools_expr_stub! DM evaluation not available."
 								.into(),
-						));
+							variables: None,
+						}));
 						return;
 					}
 				};
@@ -879,27 +898,91 @@ impl Server {
 
 				match proc.call(&arg_values) {
 					Ok(res) => {
-						use std::fmt::Write;
-						let mut output = format!("{:#?}", res);
+						let stringified;
+						let variables;
 
-						if let Some(err) = &self.eval_error {
-							write!(&mut output, "\nRuntime: {}", err).unwrap();
+						if let Ok(list) = res.as_list() {
+							let returned = list.get(1).unwrap();
+							stringified = Self::stringify(&returned);
+							variables = match context {
+								Some(str) if str == "repl" => {
+									// variable ref is disabled for repl results because vs code does not properly invalidate them
+									None
+								}
+
+								_ => self.value_to_variables_ref(&returned),
+							};
+
+							// The rest are the potentially mutated parameters. We need to commit them to the function that called us.
+							// TODO: This sucks, obviously.
+							let len = list.len();
+							for i in 2..=len {
+								let value = list.get(i).unwrap();
+								let slot = &args[i as usize - 2].2;
+
+								unsafe {
+									match slot {
+										ArgType::Dot => {
+											let _ = Value::from_raw_owned((*ctx).dot);
+											(*ctx).dot = value.value;
+										}
+										ArgType::Usr => {
+											let _ = Value::from_raw_owned((*instance).usr);
+											(*instance).usr = value.value;
+										}
+										ArgType::Src => {
+											let _ = Value::from_raw_owned((*instance).src);
+											(*instance).src = value.value;
+										}
+										ArgType::Arg(idx) => {
+											let args = (*instance).args;
+											let arg = args.add(*idx as usize);
+											let _ = Value::from_raw_owned(*arg);
+											(*arg) = value.value;
+										}
+										ArgType::Local(idx) => {
+											let locals = (*ctx).locals;
+											let local = locals.add(*idx as usize);
+											let _ = Value::from_raw_owned(*local);
+											(*local) = value.value;
+										}
+									}
+								}
+
+								std::mem::forget(value);
+							}
+						} else {
+							// The function either runtimed or called something that caused a sleep
+							stringified = "<no value>".to_owned();
+							variables = None;
 						}
 
-						self.send_or_disconnect(Response::Eval(output));
+						self.send_or_disconnect(Response::Eval(EvalResponse {
+							value: stringified,
+							variables,
+						}));
 					}
 
 					Err(_) => {
-						self.send_or_disconnect(Response::Eval("Value::call failed!".into()));
+						self.send_or_disconnect(Response::Eval(EvalResponse {
+							value: "Value::call failed!".into(),
+							variables: None,
+						}));
 					}
 				}
 
 				self.in_eval = false;
-				self.eval_error = None;
+
+				if let Some(err) = self.eval_error.take() {
+					self.notify(format!("Eval Runtime: {}", err));
+				}
 			}
 
 			Err(err) => {
-				self.send_or_disconnect(Response::Eval(format!("Compilation failed: {:#?}", err)));
+				self.send_or_disconnect(Response::Eval(EvalResponse {
+					value: format!("Compilation failed: {:#?}", err),
+					variables: None,
+				}));
 			}
 		}
 	}
@@ -951,7 +1034,11 @@ impl Server {
 			Request::Stacks => self.handle_stacks(),
 			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
 			Request::Variables { vars } => self.handle_variables(vars),
-			Request::Eval { frame_id, command } => self.handle_eval(frame_id, &command),
+			Request::Eval {
+				frame_id,
+				command,
+				context,
+			} => self.handle_eval(frame_id, &command, context),
 
 			Request::StackFrames {
 				stack_id,
@@ -1072,6 +1159,18 @@ impl Server {
 				self.send_or_disconnect(Response::Ack);
 				self.state = None;
 				return kind;
+			}
+
+			// Hijack eval too so that we can refresh our state after it
+			if let Request::Eval {
+				frame_id,
+				command,
+				context,
+			} = request
+			{
+				self.handle_eval(frame_id, &command, context);
+				self.state.as_mut().unwrap().invalidate_stacks();
+				continue;
 			}
 
 			// if we get a pause request here we can ignore it

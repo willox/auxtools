@@ -5,6 +5,8 @@ use crate::StringRef;
 use crate::Value;
 
 pub struct StackFrame {
+	pub context: *mut procs::ExecutionContext,
+	pub instance: *mut procs::ProcInstance,
 	pub proc: Proc,
 	pub offset: u16,
 	pub usr: Value,
@@ -24,7 +26,7 @@ pub struct CallStacks {
 }
 
 impl StackFrame {
-	unsafe fn from_context(context: *const procs::ExecutionContext) -> StackFrame {
+	unsafe fn from_context(context: *mut procs::ExecutionContext) -> StackFrame {
 		let instance = (*context).proc_instance;
 
 		let proc = Proc::from_id((*instance).proc).unwrap();
@@ -68,6 +70,8 @@ impl StackFrame {
 		// let time_to_resume = None;
 
 		StackFrame {
+			context,
+			instance,
 			proc,
 			offset,
 			usr,
@@ -113,7 +117,7 @@ impl CallStacks {
 	}
 
 	fn from_context(
-		mut context: *const procs::ExecutionContext,
+		mut context: *mut procs::ExecutionContext,
 		kind: CallStackKind,
 	) -> Vec<StackFrame> {
 		let mut frames = vec![];
