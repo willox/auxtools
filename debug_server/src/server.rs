@@ -329,7 +329,7 @@ impl Server {
 					// assoc entry
 					variables.push(Variable {
 						name: format!("[{}]", i),
-						value: format!("{} = {}", key.to_string()?, value.to_string()?), // TODO: prettify these prints?
+						value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
 						variables: Some(state.get_ref(Variables::ListPair { key, value })),
 					});
 					continue;
