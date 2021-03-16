@@ -16,6 +16,23 @@ pub struct Value {
 	phantom: PhantomData<*mut ()>,
 }
 
+impl PartialEq for Value {
+	fn eq(&self, other: &Self) -> bool {
+		unsafe { self.value.tag == other.value.tag && self.value.data.id == other.value.data.id }
+	}
+}
+
+impl Eq for Value {}
+
+impl std::hash::Hash for Value {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		unsafe {
+			self.value.tag.hash(state);
+			self.value.data.id.hash(state);
+		}
+	}
+}
+
 impl Drop for Value {
 	fn drop(&mut self) {
 		unsafe {

@@ -15,28 +15,13 @@ use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
 use auxtools::*;
 
-#[derive(Clone, Hash, Eq, PartialEq)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 enum Variables {
-	Arguments {
-		frame: u32,
-	},
-	Locals {
-		frame: u32,
-	},
-	ObjectVars {
-		tag: u8,
-		data: u32,
-	},
-	ListContents {
-		tag: u8,
-		data: u32,
-	},
-	ListPair {
-		key_tag: u8,
-		key_data: u32,
-		value_tag: u8,
-		value_data: u32,
-	},
+	Arguments { frame: u32 },
+	Locals { frame: u32 },
+	ObjectVars(Value),
+	ListContents(Value),
+	ListPair { key: Value, value: Value },
 }
 
 struct State {
@@ -317,15 +302,13 @@ impl Server {
 
 	fn value_to_variables_ref(&self, value: &Value) -> Option<VariablesRef> {
 		match self.state.as_ref() {
-			Some(state) if List::is_list(value) => Some(state.get_ref(Variables::ListContents {
-				tag: value.value.tag as u8,
-				data: unsafe { value.value.data.id },
-			})),
+			Some(state) if List::is_list(value) => {
+				Some(state.get_ref(Variables::ListContents(value.clone())))
+			}
 
-			Some(state) if Self::is_object(value) => Some(state.get_ref(Variables::ObjectVars {
-				tag: value.value.tag as u8,
-				data: unsafe { value.value.data.id },
-			})),
+			Some(state) if Self::is_object(value) => {
+				Some(state.get_ref(Variables::ObjectVars(value.clone())))
+			}
 
 			_ => None,
 		}
@@ -347,14 +330,7 @@ impl Server {
 					variables.push(Variable {
 						name: format!("[{}]", i),
 						value: format!("{} = {}", key.to_string()?, value.to_string()?), // TODO: prettify these prints?
-						variables: Some(state.get_ref(unsafe {
-							Variables::ListPair {
-								key_tag: key.value.tag as u8,
-								key_data: key.value.data.id,
-								value_tag: value.value.tag as u8,
-								value_data: value.value.data.id,
-							}
-						})),
+						variables: Some(state.get_ref(Variables::ListPair { key, value })),
 					});
 					continue;
 				}
@@ -647,13 +623,7 @@ impl Server {
 		let arguments = Variables::Arguments { frame: frame_id };
 		let locals = Variables::Locals { frame: frame_id };
 
-		let globals_value = Value::globals();
-		let globals = unsafe {
-			Variables::ObjectVars {
-				tag: globals_value.value.tag as u8,
-				data: globals_value.value.data.id,
-			}
-		};
+		let globals = Variables::ObjectVars(Value::globals());
 
 		let response = Response::Scopes {
 			arguments: Some(state.get_ref(arguments)),
@@ -665,93 +635,57 @@ impl Server {
 	}
 
 	fn handle_variables(&mut self, vars: VariablesRef) {
-		let response =
-			match &self.state {
-				Some(state) => {
-					match state.get_variables(vars) {
-						Some(vars) => match vars {
-							Variables::Arguments { frame } => Response::Variables {
-								vars: self.get_args(frame),
-							},
-							Variables::Locals { frame } => Response::Variables {
-								vars: self.get_locals(frame),
-							},
-							Variables::ObjectVars { tag, data } => {
-								let value = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(tag),
-										data: ValueData { id: data },
-									})
-								};
+		let response = match &self.state {
+			Some(state) => match state.get_variables(vars) {
+				Some(vars) => match vars {
+					Variables::Arguments { frame } => Response::Variables {
+						vars: self.get_args(frame),
+					},
+					Variables::Locals { frame } => Response::Variables {
+						vars: self.get_locals(frame),
+					},
+					Variables::ObjectVars(value) => match self.object_to_variables(&value) {
+						Ok(vars) => Response::Variables { vars },
 
-								match self.object_to_variables(&value) {
-									Ok(vars) => Response::Variables { vars },
-
-									Err(e) => {
-										self.notify(format!("runtime occured while processing Variables request: {:?}", e));
-										Response::Variables { vars: vec![] }
-									}
-								}
-							}
-							Variables::ListContents { tag, data } => {
-								let value = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(tag),
-										data: ValueData { id: data },
-									})
-								};
-
-								match self.list_to_variables(&value) {
-									Ok(vars) => Response::Variables { vars },
-
-									Err(e) => {
-										self.notify(format!("runtime occured while processing Variables request: {:?}", e));
-										Response::Variables { vars: vec![] }
-									}
-								}
-							}
-
-							Variables::ListPair {
-								key_tag,
-								key_data,
-								value_tag,
-								value_data,
-							} => {
-								let key = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(key_tag),
-										data: ValueData { id: key_data },
-									})
-								};
-
-								let value = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(value_tag),
-										data: ValueData { id: value_data },
-									})
-								};
-
-								Response::Variables {
-									vars: vec![
-										self.value_to_variable("key".to_owned(), &key),
-										self.value_to_variable("value".to_owned(), &value),
-									],
-								}
-							}
-						},
-
-						None => {
-							self.notify("received unknown VariableRef in Variables request");
+						Err(e) => {
+							self.notify(format!(
+								"runtime occured while processing Variables request: {:?}",
+								e
+							));
 							Response::Variables { vars: vec![] }
 						}
-					}
-				}
+					},
+					Variables::ListContents(value) => match self.list_to_variables(&value) {
+						Ok(vars) => Response::Variables { vars },
+
+						Err(e) => {
+							self.notify(format!(
+								"runtime occured while processing Variables request: {:?}",
+								e
+							));
+							Response::Variables { vars: vec![] }
+						}
+					},
+
+					Variables::ListPair { key, value } => Response::Variables {
+						vars: vec![
+							self.value_to_variable("key".to_owned(), &key),
+							self.value_to_variable("value".to_owned(), &value),
+						],
+					},
+				},
 
 				None => {
-					self.notify("recevied Variables request while not paused");
+					self.notify("received unknown VariableRef in Variables request");
 					Response::Variables { vars: vec![] }
 				}
-			};
+			},
+
+			None => {
+				self.notify("recevied Variables request while not paused");
+				Response::Variables { vars: vec![] }
+			}
+		};
 
 		self.send_or_disconnect(response);
 	}
