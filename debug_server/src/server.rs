@@ -1101,6 +1101,9 @@ impl Server {
 						return ContinueKind::Continue;
 					}
 				}
+
+				// We might have just executed some code so invalidate the stacks we already fetched
+				self.state.as_mut().unwrap().invalidate_stacks();
 			}
 		}
 
