@@ -91,6 +91,7 @@ pub struct Server {
 	state: Option<State>,
 	in_eval: bool,
 	eval_error: Option<String>,
+	conditional_breakpoints: HashMap<(raw_types::procs::ProcId, u16), String>,
 	app: App<'static, 'static>,
 }
 
@@ -152,6 +153,7 @@ impl Server {
 			state: None,
 			in_eval: false,
 			eval_error: None,
+			conditional_breakpoints: HashMap::new(),
 			app: Self::setup_app(),
 		};
 
@@ -176,6 +178,7 @@ impl Server {
 			state: None,
 			in_eval: false,
 			eval_error: None,
+			conditional_breakpoints: HashMap::new(),
 			app: Self::setup_app(),
 		})
 	}
@@ -487,25 +490,31 @@ impl Server {
 		}
 	}
 
-	fn handle_breakpoint_set(&mut self, instruction: InstructionRef) {
+	fn handle_breakpoint_set(&mut self, instruction: InstructionRef, condition: Option<String>) {
 		let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
 
-		match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
-			Some(proc) => match hook_instruction(&proc, instruction.offset) {
-				Ok(()) => {
-					self.send_or_disconnect(Response::BreakpointSet {
-						result: BreakpointSetResult::Success { line },
-					});
-				}
-
-				Err(_) => {
-					self.send_or_disconnect(Response::BreakpointSet {
-						result: BreakpointSetResult::Failed,
-					});
-				}
-			},
-
+		let proc = match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
+			Some(proc) => proc,
 			None => {
+				self.send_or_disconnect(Response::BreakpointSet {
+					result: BreakpointSetResult::Failed,
+				});
+				return;
+			}
+		};
+
+		match hook_instruction(&proc, instruction.offset) {
+			Ok(()) => {
+				if let Some(condition) = condition {
+					self.conditional_breakpoints.insert((proc.id, instruction.offset as u16), condition);
+				}
+
+				self.send_or_disconnect(Response::BreakpointSet {
+					result: BreakpointSetResult::Success { line },
+				});
+			}
+
+			Err(_) => {
 				self.send_or_disconnect(Response::BreakpointSet {
 					result: BreakpointSetResult::Failed,
 				});
@@ -514,18 +523,24 @@ impl Server {
 	}
 
 	fn handle_breakpoint_unset(&mut self, instruction: InstructionRef) {
-		match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
-			Some(proc) => match unhook_instruction(&proc, instruction.offset) {
-				Ok(()) => {
-					self.send_or_disconnect(Response::BreakpointUnset { success: true });
-				}
-
-				Err(_) => {
-					self.send_or_disconnect(Response::BreakpointUnset { success: false });
-				}
-			},
-
+		let proc = match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
+			Some(proc) => proc,
 			None => {
+				self.send_or_disconnect(Response::BreakpointSet {
+					result: BreakpointSetResult::Failed,
+				});
+				return;
+			}
+		};
+
+		self.conditional_breakpoints.remove(&(proc.id, instruction.offset as u16));
+
+		match unhook_instruction(&proc, instruction.offset) {
+			Ok(()) => {
+				self.send_or_disconnect(Response::BreakpointUnset { success: true });
+			}
+
+			Err(_) => {
 				self.send_or_disconnect(Response::BreakpointUnset { success: false });
 			}
 		}
@@ -729,16 +744,7 @@ impl Server {
 		response
 	}
 
-	fn handle_eval(&mut self, frame_id: Option<u32>, command: &str, context: Option<String>) {
-		if command.starts_with('#') {
-			let response = self.handle_command(frame_id, &command[1..]);
-			self.send_or_disconnect(Response::Eval(EvalResponse {
-				value: response,
-				variables: None,
-			}));
-			return;
-		}
-
+	fn eval_expr(&mut self, frame_id: Option<u32>, command: &str) -> Option<Value> {
 		enum ArgType {
 			Dot,
 			Usr,
@@ -755,11 +761,8 @@ impl Server {
 				let frame = match self.get_stack_frame(frame_id) {
 					Some(x) => x,
 					None => {
-						self.send_or_disconnect(Response::Eval(EvalResponse {
-							value: format!("tried to eval with invalid frame id: {}", frame_id),
-							variables: None,
-						}));
-						return;
+						self.notify(format!("tried to evaluate expression with invalid frame id: {}", frame_id));
+						return None;
 					}
 				};
 
@@ -790,129 +793,128 @@ impl Server {
 		let arg_names: Vec<&str> = args.iter().map(|(name, _, _)| name.as_str()).collect();
 		let arg_values: Vec<&Value> = args.iter().map(|(_, value, _)| value).collect();
 
-		match dmasm::compiler::compile_expr(command, &arg_names) {
-			Ok(expr) => {
-				let expr: Vec<dmasm::Node> = expr
-					.into_iter()
-					.map(dmasm::Node::<Option<dmasm::CompileData>>::strip_debug_data)
-					.collect();
+		let expr = match dmasm::compiler::compile_expr(command, &arg_names) {
+			Ok(expr) => expr,
+			Err(err) => {
+				self.notify(format!("Compilation failed: {:#?}", err));
+				return None;
+			}
+		};
 
-				let assembly = match dmasm::assembler::assemble(
-					&expr,
-					&mut crate::assemble_env::AssembleEnv,
-				) {
-					Ok(assembly) => assembly,
-					Err(err) => {
-						self.send_or_disconnect(Response::Eval(EvalResponse {
-							value: format!("Assembly failed: {:#?}", err),
-							variables: None,
-						}));
-						return;
-					}
-				};
+		// TODO: It'd be nice if we didn't haev to strip off the debug data
+		let expr: Vec<dmasm::Node> = expr
+			.into_iter()
+			.map(dmasm::Node::<Option<dmasm::CompileData>>::strip_debug_data)
+			.collect();
 
-				let proc = match Proc::find("/proc/auxtools_expr_stub") {
-					Some(proc) => proc,
-					None => {
-						self.send_or_disconnect(Response::Eval(EvalResponse {
-							value: "Couldn't find /proc/auxtools_expr_stub! DM evaluation not available."
-								.into(),
-							variables: None,
-						}));
-						return;
-					}
-				};
+		let assembly = match dmasm::assembler::assemble(
+			&expr,
+			&mut crate::assemble_env::AssembleEnv,
+		) {
+			Ok(assembly) => assembly,
+			Err(err) => {
+				self.notify(format!("expression {} failed to assemble: {:#?}", command, err));
+				return None;
+			}
+		};
 
-				proc.set_bytecode(assembly);
+		let proc = match Proc::find("/proc/auxtools_expr_stub") {
+			Some(proc) => proc,
+			None => {
+				self.notify("Couldn't find /proc/auxtools_expr_stub! DM evaluation not available.");
+				return None;
+			}
+		};
 
-				self.in_eval = true;
-				self.eval_error = None;
+		proc.set_bytecode(assembly);
 
-				match proc.call(&arg_values) {
-					Ok(res) => {
-						let stringified;
-						let variables;
+		self.in_eval = true;
+		self.eval_error = None;
 
-						if let Ok(list) = res.as_list() {
-							let returned = list.get(1).unwrap();
-							stringified = Self::stringify(&returned);
-							variables = match context {
-								Some(str) if str == "repl" => {
-									// variable ref is disabled for repl results because vs code does not properly invalidate them
-									None
+		let result = match proc.call(&arg_values) {
+			Ok(res) => {
+				if let Ok(list) = res.as_list() {
+					// The rest are the potentially mutated parameters. We need to commit them to the function that called us.
+					// TODO: This sucks, obviously.
+					let len = list.len();
+					for i in 2..=len {
+						let value = list.get(i).unwrap();
+						let slot = &args[i as usize - 2].2;
+
+						unsafe {
+							match slot {
+								ArgType::Dot => {
+									let _ = Value::from_raw_owned((*ctx).dot);
+									(*ctx).dot = value.value;
 								}
-
-								_ => self.value_to_variables_ref(&returned),
-							};
-
-							// The rest are the potentially mutated parameters. We need to commit them to the function that called us.
-							// TODO: This sucks, obviously.
-							let len = list.len();
-							for i in 2..=len {
-								let value = list.get(i).unwrap();
-								let slot = &args[i as usize - 2].2;
-
-								unsafe {
-									match slot {
-										ArgType::Dot => {
-											let _ = Value::from_raw_owned((*ctx).dot);
-											(*ctx).dot = value.value;
-										}
-										ArgType::Usr => {
-											let _ = Value::from_raw_owned((*instance).usr);
-											(*instance).usr = value.value;
-										}
-										ArgType::Src => {
-											let _ = Value::from_raw_owned((*instance).src);
-											(*instance).src = value.value;
-										}
-										ArgType::Arg(idx) => {
-											let args = (*instance).args;
-											let arg = args.add(*idx as usize);
-											let _ = Value::from_raw_owned(*arg);
-											(*arg) = value.value;
-										}
-										ArgType::Local(idx) => {
-											let locals = (*ctx).locals;
-											let local = locals.add(*idx as usize);
-											let _ = Value::from_raw_owned(*local);
-											(*local) = value.value;
-										}
-									}
+								ArgType::Usr => {
+									let _ = Value::from_raw_owned((*instance).usr);
+									(*instance).usr = value.value;
 								}
-
-								std::mem::forget(value);
+								ArgType::Src => {
+									let _ = Value::from_raw_owned((*instance).src);
+									(*instance).src = value.value;
+								}
+								ArgType::Arg(idx) => {
+									let args = (*instance).args;
+									let arg = args.add(*idx as usize);
+									let _ = Value::from_raw_owned(*arg);
+									(*arg) = value.value;
+								}
+								ArgType::Local(idx) => {
+									let locals = (*ctx).locals;
+									let local = locals.add(*idx as usize);
+									let _ = Value::from_raw_owned(*local);
+									(*local) = value.value;
+								}
 							}
-						} else {
-							// The function either runtimed or called something that caused a sleep
-							stringified = "<no value>".to_owned();
-							variables = None;
 						}
 
-						self.send_or_disconnect(Response::Eval(EvalResponse {
-							value: stringified,
-							variables,
-						}));
+						std::mem::forget(value);
 					}
 
-					Err(_) => {
-						self.send_or_disconnect(Response::Eval(EvalResponse {
-							value: "Value::call failed!".into(),
-							variables: None,
-						}));
-					}
-				}
-
-				self.in_eval = false;
-
-				if let Some(err) = self.eval_error.take() {
-					self.notify(format!("Eval Runtime: {}", err));
+					Some(list.get(1).unwrap())
+				} else {
+					None
 				}
 			}
 
-			Err(err) => {
+			Err(_) => {
+				self.notify(format!("Value::call failed when evaluating expression {}", command));
+				None
+			}
+		};
+
+		self.in_eval = false;
+
+		if let Some(err) = self.eval_error.take() {
+			self.notify(format!("runtime occured when executing expression: {}", err));
+		}
+
+		result
+	}
+
+	fn handle_eval(&mut self, frame_id: Option<u32>, command: &str, context: Option<String>) {
+		if command.starts_with('#') {
+			let response = self.handle_command(frame_id, &command[1..]);
+			self.send_or_disconnect(Response::Eval(EvalResponse {
+				value: response,
+				variables: None,
+			}));
+			return;
+		}
+
+		match self.eval_expr(frame_id, command) {
+			Some(result) => {
 				self.send_or_disconnect(Response::Eval(EvalResponse {
-					value: format!("Compilation failed: {:#?}", err),
+					value: Self::stringify(&result),
+					variables: self.value_to_variables_ref(&result),
+				}));
+			},
+
+			None => {
+				self.send_or_disconnect(Response::Eval(EvalResponse {
+					value: "<no value>".to_owned(),
 					variables: None,
 				}));
 			}
@@ -961,7 +963,7 @@ impl Server {
 		match request {
 			Request::Disconnect => unreachable!(),
 			Request::CatchRuntimes { should_catch } => self.should_catch_runtimes = should_catch,
-			Request::BreakpointSet { instruction } => self.handle_breakpoint_set(instruction),
+			Request::BreakpointSet { instruction, condition } => self.handle_breakpoint_set(instruction, condition),
 			Request::BreakpointUnset { instruction } => self.handle_breakpoint_unset(instruction),
 			Request::Stacks => self.handle_stacks(),
 			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
@@ -1079,10 +1081,25 @@ impl Server {
 			}
 		}
 
-		self.notify(format!("Pausing execution (reason: {:?})", reason));
-
 		self.state = Some(State::new());
 
+		// Exit now if this is a conditional breakpoint and the condition doesn't pass!
+		if let BreakpointReason::Breakpoint = reason {
+			let proc = unsafe { (*(*_ctx).proc_instance).proc };
+			let offset = unsafe { (*_ctx).bytecode_offset };
+			let condition = self.conditional_breakpoints.get(&(proc, offset)).map(|x| x.clone());
+
+			if let Some(condition) = condition {
+				if let Some(result) = self.eval_expr(Some(0), &condition) {
+					if !result.is_truthy() {
+						self.state = None;
+						return ContinueKind::Continue;
+					}
+				}
+			}
+		}
+
+		self.notify(format!("Pausing execution (reason: {:?})", reason));
 		self.send_or_disconnect(Response::BreakpointHit { reason });
 
 		while let Ok(request) = self.requests.recv() {

@@ -318,6 +318,19 @@ impl Value {
 		}
 	}
 
+	pub fn is_truthy(&self) -> bool {
+		match self.value.tag {
+			raw_types::values::ValueTag::Null => false,
+			raw_types::values::ValueTag::Number => {
+				unsafe {
+					self.value.data.number != 0.0
+				}
+			},
+
+			_ => true,
+		}
+	}
+
 	/// Creates a Value that references a byond string.
 	/// Will panic if the given string contains null bytes
 	///
