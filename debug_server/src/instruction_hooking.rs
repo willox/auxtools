@@ -439,7 +439,7 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 	unsafe {
 		bytecode = {
 			let (ptr, count) = proc.bytecode_mut_ptr();
-			std::slice::from_raw_parts_mut(ptr, count)
+			std::slice::from_raw_parts_mut(ptr, count as usize)
 		};
 
 		opcode_ptr = bytecode.as_mut_ptr().add(offset as usize);
@@ -477,7 +477,7 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 	let opcode_ptr = unsafe {
 		let bytecode = {
 			let (ptr, count) = proc.bytecode_mut_ptr();
-			std::slice::from_raw_parts_mut(ptr, count)
+			std::slice::from_raw_parts_mut(ptr, count as usize)
 		};
 
 		bytecode.as_mut_ptr().add(offset as usize)

@@ -6,6 +6,7 @@
 //compile_error!("Auxtools must be compiled for a 32-bit target");
 
 mod byond_ffi;
+mod bytecode_manager;
 mod context;
 pub mod debug;
 mod hooks;
@@ -397,6 +398,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	if did_partial {
+		bytecode_manager::init();
 		string_intern::setup_interned_strings();
 	}
 
@@ -420,6 +422,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 byond_ffi_fn! { auxtools_shutdown(_input) {
 	init::run_partial_shutdown();
 	string_intern::destroy_interned_strings();
+	bytecode_manager::shutdown();
 
 	hooks::clear_hooks();
 	proc::clear_procs();

@@ -89,17 +89,17 @@ impl Proc {
 		}
 	}
 
-	pub unsafe fn set_bytecode(&self, bytecode: &[u32]) {
-		misc::set_bytecode((*self.entry).bytecode, bytecode);
+	pub fn set_bytecode(&self, bytecode: Vec<u32>) {
+		crate::bytecode_manager::set_bytecode(self, bytecode);
 	}
 
-	pub unsafe fn bytecode_mut_ptr(&self) -> (*mut u32, usize) {
+	pub unsafe fn bytecode_mut_ptr(&self) -> (*mut u32, u16) {
 		misc::get_bytecode((*self.entry).bytecode)
 	}
 
 	pub unsafe fn bytecode(&self) -> &[u32] {
 		let (ptr, count) = self.bytecode_mut_ptr();
-		std::slice::from_raw_parts(ptr, count)
+		std::slice::from_raw_parts(ptr, count as usize)
 	}
 
 	/// Calls a global proc with the given arguments.

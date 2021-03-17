@@ -823,9 +823,7 @@ impl Server {
 					}
 				};
 
-				unsafe {
-					proc.set_bytecode(&assembly);
-				}
+				proc.set_bytecode(assembly);
 
 				self.in_eval = true;
 				self.eval_error = None;
