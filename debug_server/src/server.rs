@@ -906,9 +906,14 @@ impl Server {
 
 		match self.eval_expr(frame_id, command) {
 			Some(result) => {
+				let variables = match context {
+					Some(str) if str == "repl" => None,
+					_ => self.value_to_variables_ref(&result),
+				};
+
 				self.send_or_disconnect(Response::Eval(EvalResponse {
 					value: Self::stringify(&result),
-					variables: self.value_to_variables_ref(&result),
+					variables,
 				}));
 			},
 
