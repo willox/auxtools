@@ -2,7 +2,10 @@ use std::env;
 
 fn main() {
 	let mut build = cc::Build::new();
-	build.cpp(true).file("src/execute_instruction_data.cpp");
+	build
+		.cpp(true)
+		.file("src/execute_instruction_data.cpp")
+		.file("src/init_hook_data.cpp");
 
 	match env::var("CARGO_CFG_TARGET_FAMILY").unwrap().as_str() {
 		"unix" => {
@@ -10,10 +13,14 @@ fn main() {
 		}
 		"windows" => match env::var("CARGO_CFG_TARGET_ENV").unwrap().as_str() {
 			"gnu" => {
-				build.file("src/execute_instruction_hook.windows.S");
+				build
+					.file("src/execute_instruction_hook.windows.S")
+					.file("src/init_hook.windows.S");
 			}
 			"msvc" => {
-				build.file("src/execute_instruction_hook.windows.asm");
+				build
+					.file("src/execute_instruction_hook.windows.asm")
+					.file("src/init_hook.windows.asm");
 			}
 			other => panic!(
 				"don't know how to build hook for family=\"windows\", env={:?}",

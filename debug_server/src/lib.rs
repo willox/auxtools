@@ -1,5 +1,6 @@
 mod assemble_env;
 mod disassemble_env;
+mod init_hooking;
 mod instruction_hooking;
 mod server;
 mod server_types;
