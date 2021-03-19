@@ -35,4 +35,13 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 	fn get_proc_index(&mut self, path: &str) -> Option<u32> {
 		Proc::find(path).map(|p| p.id.0)
 	}
+
+	// TODO: Replace with something better
+	fn get_type(&mut self, path: &str) -> Option<(u8, u32)> {
+		let typeval = Proc::find("/proc/auxtools_text2path_wrapper")
+			.unwrap()
+			.call(&[&Value::from_string(path)])
+			.unwrap();
+		Some((typeval.value.tag as u8, unsafe { typeval.value.data.id }))
+	}
 }
