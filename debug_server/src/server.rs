@@ -801,12 +801,6 @@ impl Server {
 			}
 		};
 
-		// TODO: It'd be nice if we didn't haev to strip off the debug data
-		let expr: Vec<dmasm::Node> = expr
-			.into_iter()
-			.map(dmasm::Node::<Option<dmasm::CompileData>>::strip_debug_data)
-			.collect();
-
 		let assembly = match dmasm::assembler::assemble(
 			&expr,
 			&mut crate::assemble_env::AssembleEnv,
