@@ -191,9 +191,7 @@ impl Server {
 				let mut current_line_number = None;
 				let mut reached_offset = false;
 
-				let bytecode = unsafe {
-					proc.bytecode()
-				};
+				let bytecode = unsafe { proc.bytecode() };
 
 				let mut env = crate::disassemble_env::DisassembleEnv;
 				let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
@@ -233,9 +231,7 @@ impl Server {
 				let mut offset = None;
 				let mut at_offset = false;
 
-				let bytecode = unsafe {
-					proc.bytecode()
-				};
+				let bytecode = unsafe { proc.bytecode() };
 
 				let mut env = crate::disassemble_env::DisassembleEnv;
 				let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
@@ -803,9 +799,7 @@ impl Server {
 					unhook_instruction(&proc, *offset).unwrap();
 				}
 
-				let bytecode = unsafe {
-					proc.bytecode()
-				};
+				let bytecode = unsafe { proc.bytecode() };
 
 				let mut env = crate::DisassembleEnv;
 				let (nodes, error) = dmasm::disassembler::disassemble(bytecode, &mut env);
