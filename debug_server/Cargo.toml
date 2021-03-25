@@ -20,7 +20,7 @@ clap = "2.33.3"
 dmasm = { git = "https://github.com/willox/dmasm" }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.9", features = ["winuser", "libloaderapi"] }
+winapi = { version = "0.3.9", features = ["winuser", "libloaderapi", "errhandlingapi"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
