@@ -321,11 +321,7 @@ impl Value {
 	pub fn is_truthy(&self) -> bool {
 		match self.value.tag {
 			raw_types::values::ValueTag::Null => false,
-			raw_types::values::ValueTag::Number => {
-				unsafe {
-					self.value.data.number != 0.0
-				}
-			},
+			raw_types::values::ValueTag::Number => unsafe { self.value.data.number != 0.0 },
 
 			_ => true,
 		}

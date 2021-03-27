@@ -42,6 +42,11 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 			.unwrap()
 			.call(&[&Value::from_string(path)])
 			.unwrap();
+
+		if typeval == Value::null() {
+			return None;
+		}
+
 		Some((typeval.value.tag as u8, unsafe { typeval.value.data.id }))
 	}
 }

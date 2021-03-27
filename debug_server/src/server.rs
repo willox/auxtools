@@ -493,7 +493,10 @@ impl Server {
 	fn handle_breakpoint_set(&mut self, instruction: InstructionRef, condition: Option<String>) {
 		let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
 
-		let proc = match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
+		let proc = match auxtools::Proc::find_override(
+			instruction.proc.path,
+			instruction.proc.override_id,
+		) {
 			Some(proc) => proc,
 			None => {
 				self.send_or_disconnect(Response::BreakpointSet {
@@ -506,7 +509,8 @@ impl Server {
 		match hook_instruction(&proc, instruction.offset) {
 			Ok(()) => {
 				if let Some(condition) = condition {
-					self.conditional_breakpoints.insert((proc.id, instruction.offset as u16), condition);
+					self.conditional_breakpoints
+						.insert((proc.id, instruction.offset as u16), condition);
 				}
 
 				self.send_or_disconnect(Response::BreakpointSet {
@@ -523,7 +527,10 @@ impl Server {
 	}
 
 	fn handle_breakpoint_unset(&mut self, instruction: InstructionRef) {
-		let proc = match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
+		let proc = match auxtools::Proc::find_override(
+			instruction.proc.path,
+			instruction.proc.override_id,
+		) {
 			Some(proc) => proc,
 			None => {
 				self.send_or_disconnect(Response::BreakpointSet {
@@ -533,7 +540,8 @@ impl Server {
 			}
 		};
 
-		self.conditional_breakpoints.remove(&(proc.id, instruction.offset as u16));
+		self.conditional_breakpoints
+			.remove(&(proc.id, instruction.offset as u16));
 
 		match unhook_instruction(&proc, instruction.offset) {
 			Ok(()) => {
@@ -761,7 +769,10 @@ impl Server {
 				let frame = match self.get_stack_frame(frame_id) {
 					Some(x) => x,
 					None => {
-						self.notify(format!("tried to evaluate expression with invalid frame id: {}", frame_id));
+						self.notify(format!(
+							"tried to evaluate expression with invalid frame id: {}",
+							frame_id
+						));
 						return None;
 					}
 				};
@@ -801,16 +812,17 @@ impl Server {
 			}
 		};
 
-		let assembly = match dmasm::assembler::assemble(
-			&expr,
-			&mut crate::assemble_env::AssembleEnv,
-		) {
-			Ok(assembly) => assembly,
-			Err(err) => {
-				self.notify(format!("expression {} failed to assemble: {:#?}", command, err));
-				return None;
-			}
-		};
+		let assembly =
+			match dmasm::assembler::assemble(&expr, &mut crate::assemble_env::AssembleEnv) {
+				Ok(assembly) => assembly,
+				Err(err) => {
+					self.notify(format!(
+						"expression {} failed to assemble: {:#?}",
+						command, err
+					));
+					return None;
+				}
+			};
 
 		let proc = match Proc::find("/proc/auxtools_expr_stub") {
 			Some(proc) => proc,
@@ -874,7 +886,10 @@ impl Server {
 			}
 
 			Err(_) => {
-				self.notify(format!("Value::call failed when evaluating expression {}", command));
+				self.notify(format!(
+					"Value::call failed when evaluating expression {}",
+					command
+				));
 				None
 			}
 		};
@@ -882,7 +897,10 @@ impl Server {
 		self.in_eval = false;
 
 		if let Some(err) = self.eval_error.take() {
-			self.notify(format!("runtime occured when executing expression: {}", err));
+			self.notify(format!(
+				"runtime occured when executing expression: {}",
+				err
+			));
 		}
 
 		result
@@ -909,7 +927,7 @@ impl Server {
 					value: Self::stringify(&result),
 					variables,
 				}));
-			},
+			}
 
 			None => {
 				self.send_or_disconnect(Response::Eval(EvalResponse {
@@ -962,7 +980,10 @@ impl Server {
 		match request {
 			Request::Disconnect => unreachable!(),
 			Request::CatchRuntimes { should_catch } => self.should_catch_runtimes = should_catch,
-			Request::BreakpointSet { instruction, condition } => self.handle_breakpoint_set(instruction, condition),
+			Request::BreakpointSet {
+				instruction,
+				condition,
+			} => self.handle_breakpoint_set(instruction, condition),
 			Request::BreakpointUnset { instruction } => self.handle_breakpoint_unset(instruction),
 			Request::Stacks => self.handle_stacks(),
 			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
@@ -1086,7 +1107,10 @@ impl Server {
 		if let BreakpointReason::Breakpoint = reason {
 			let proc = unsafe { (*(*_ctx).proc_instance).proc };
 			let offset = unsafe { (*_ctx).bytecode_offset };
-			let condition = self.conditional_breakpoints.get(&(proc, offset)).map(|x| x.clone());
+			let condition = self
+				.conditional_breakpoints
+				.get(&(proc, offset))
+				.map(|x| x.clone());
 
 			if let Some(condition) = condition {
 				if let Some(result) = self.eval_expr(Some(0), &condition) {
