@@ -5,6 +5,9 @@ mod server;
 mod server_types;
 mod stddef;
 
+#[cfg(windows)]
+mod crash_handler_windows;
+
 pub(crate) use disassemble_env::DisassembleEnv;
 
 use std::{
