@@ -36,17 +36,26 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 		Proc::find(path).map(|p| p.id.0)
 	}
 
-	// TODO: Replace with something better
+	// This is... pretty crazy
 	fn get_type(&mut self, path: &str) -> Option<(u8, u32)> {
-		let typeval = Proc::find("/proc/auxtools_text2path_wrapper")
-			.unwrap()
+		let expr = dmasm::compiler::compile_expr("text2path(name)", &["name"]).unwrap();
+		let assembly = dmasm::assembler::assemble(&expr, &mut Self).unwrap();
+
+		let proc = Proc::find("/proc/auxtools_expr_stub")?;
+		proc.set_bytecode(assembly);
+
+		let res = proc
 			.call(&[&Value::from_string(path)])
+			.unwrap()
+			.as_list()
+			.unwrap()
+			.get(1)
 			.unwrap();
 
-		if typeval == Value::null() {
+		if res == Value::null() {
 			return None;
 		}
 
-		Some((typeval.value.tag as u8, unsafe { typeval.value.data.id }))
+		Some((res.value.tag as u8, unsafe { res.value.data.id }))
 	}
 }
