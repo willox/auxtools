@@ -6,6 +6,7 @@
 //compile_error!("Auxtools must be compiled for a 32-bit target");
 
 mod byond_ffi;
+mod bytecode_manager;
 mod context;
 pub mod debug;
 mod hooks;
@@ -28,6 +29,7 @@ pub use hooks::{CompileTimeHook, RuntimeHook};
 pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
 pub use list::List;
 pub use proc::Proc;
+pub use raw_types::variables::VariableNameIdTable;
 pub use runtime::{ConversionResult, DMResult, Runtime};
 use std::ffi::c_void;
 pub use string::StringRef;
@@ -360,18 +362,18 @@ byond_ffi_fn! { auxtools_init(_input) {
 		{
 			if cfg!(windows) {
 				if let Some(ptr) = byondcore.find(signature!("8B 1D ?? ?? ?? ?? 2B 0C ?? 8B 5D ?? 74 ?? 85 C9 79 ?? 0F B7 D0 EB ?? 83 C0 02")) {
-					variable_names = unsafe { **((ptr.add(2)) as *mut *mut *mut raw_types::strings::StringId) };
+					variable_names = unsafe { *((ptr.add(2)) as *mut *mut VariableNameIdTable) };
 				}
 			}
 
 			if cfg!(unix) {
 				if version::get().1 >= 1543 {
 					if let Some(ptr) = byondcore.find(signature!("A1 ?? ?? ?? ?? 8B 13 8B 39 8B 75 ?? 8B 14 ?? 89 7D ?? 8B 3C ?? 83 EE 02")) {
-						variable_names = unsafe { **((ptr.add(1)) as *mut *mut *mut raw_types::strings::StringId) };
+						variable_names = unsafe { *((ptr.add(1)) as *mut *mut VariableNameIdTable) };
 					}
 				} else {
 					if let Some(ptr) = byondcore.find(signature!("8B 35 ?? ?? ?? ?? 89 5D ?? 0F B7 08 89 75 ?? 66 C7 45 ?? 00 00 89 7D ??")) {
-						variable_names = unsafe { **((ptr.add(2)) as *mut *mut *mut raw_types::strings::StringId) };
+						variable_names = unsafe { *((ptr.add(2)) as *mut *mut VariableNameIdTable) };
 					}
 				};
 			}
@@ -396,6 +398,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	if did_partial {
+		bytecode_manager::init();
 		string_intern::setup_interned_strings();
 	}
 
@@ -419,6 +422,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 byond_ffi_fn! { auxtools_shutdown(_input) {
 	init::run_partial_shutdown();
 	string_intern::destroy_interned_strings();
+	bytecode_manager::shutdown();
 
 	hooks::clear_hooks();
 	proc::clear_procs();

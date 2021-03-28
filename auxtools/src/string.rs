@@ -15,6 +15,12 @@ impl StringRef {
 		}
 	}
 
+	pub fn from_raw(data: &[u8]) -> Self {
+		StringRef {
+			value: Value::from_string_raw(data),
+		}
+	}
+
 	pub fn from_value(value: Value) -> Option<Self> {
 		if value.value.tag != raw_types::values::ValueTag::String {
 			return None;
@@ -36,7 +42,9 @@ impl StringRef {
 	}
 
 	pub unsafe fn from_variable_id(id: raw_types::strings::VariableId) -> Self {
-		let string_id = *(raw_types::funcs::VARIABLE_NAMES.add(id.0 as usize));
+		let string_id = *((*raw_types::funcs::VARIABLE_NAMES)
+			.entries
+			.add(id.0 as usize));
 
 		StringRef {
 			value: Value::from_raw(raw_types::values::Value {

@@ -16,6 +16,23 @@ pub struct Value {
 	phantom: PhantomData<*mut ()>,
 }
 
+impl PartialEq for Value {
+	fn eq(&self, other: &Self) -> bool {
+		unsafe { self.value.tag == other.value.tag && self.value.data.id == other.value.data.id }
+	}
+}
+
+impl Eq for Value {}
+
+impl std::hash::Hash for Value {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		unsafe {
+			self.value.tag.hash(state);
+			self.value.data.id.hash(state);
+		}
+	}
+}
+
 impl Drop for Value {
 	fn drop(&mut self) {
 		unsafe {
@@ -301,6 +318,15 @@ impl Value {
 		}
 	}
 
+	pub fn is_truthy(&self) -> bool {
+		match self.value.tag {
+			raw_types::values::ValueTag::Null => false,
+			raw_types::values::ValueTag::Number => unsafe { self.value.data.number != 0.0 },
+
+			_ => true,
+		}
+	}
+
 	/// Creates a Value that references a byond string.
 	/// Will panic if the given string contains null bytes
 	///
@@ -311,6 +337,22 @@ impl Value {
 	pub fn from_string<S: AsRef<str>>(data: S) -> Value {
 		// TODO: This should be done differently
 		let string = CString::new(data.as_ref()).unwrap();
+
+		unsafe {
+			let mut id = raw_types::strings::StringId(0);
+
+			assert_eq!(raw_types::funcs::get_string_id(&mut id, string.as_ptr()), 1);
+
+			Value::new(
+				raw_types::values::ValueTag::String,
+				raw_types::values::ValueData { string: id },
+			)
+		}
+	}
+
+	pub fn from_string_raw(data: &[u8]) -> Value {
+		// TODO: This should be done differently
+		let string = CString::new(data).unwrap();
 
 		unsafe {
 			let mut id = raw_types::strings::StringId(0);

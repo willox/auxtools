@@ -5,7 +5,7 @@ use std::ffi::CStr;
 use std::fmt;
 
 #[repr(u8)]
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug, Hash)]
 #[allow(unused)]
 #[non_exhaustive]
 pub enum ValueTag {

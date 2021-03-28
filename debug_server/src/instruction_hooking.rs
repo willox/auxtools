@@ -246,6 +246,16 @@ fn proc_instance_is_suspended(proc_ref: ProcInstanceRef) -> bool {
 fn handle_runtime(error: &str) {
 	unsafe {
 		let ctx = *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
+
+		// If this is eval code, don't catch the breakpoint
+		// TODO: Could try to make this work
+		if let Some(server) = &mut *DEBUG_SERVER.get() {
+			if server.is_in_eval() {
+				server.set_eval_error(error.into());
+				return;
+			}
+		}
+
 		CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Runtime(error.to_string()));
 	}
 }
@@ -284,11 +294,13 @@ extern "C" fn handle_instruction(
 			DebuggerAction::None => {}
 
 			DebuggerAction::Pause => {
+				CURRENT_ACTION = DebuggerAction::None;
 				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Pause);
 				did_breakpoint = true;
 			}
 
 			DebuggerAction::BreakOnNext => {
+				CURRENT_ACTION = DebuggerAction::None;
 				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 				did_breakpoint = true;
 			}
@@ -305,6 +317,7 @@ extern "C" fn handle_instruction(
 					if !proc_instance_is_in_stack(ctx, target)
 						&& !proc_instance_is_suspended(target)
 					{
+						CURRENT_ACTION = DebuggerAction::None;
 						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 						did_breakpoint = true;
 					}
@@ -329,6 +342,7 @@ extern "C" fn handle_instruction(
 						// If the context isn't in any stacks, it has just returned. Break!
 						// TODO: Don't break if the context's stack is gone (returned to C)
 						if !in_stack && !is_suspended {
+							CURRENT_ACTION = DebuggerAction::None;
 							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 							did_breakpoint = true;
 						} else if in_stack && is_dbgline {
@@ -342,6 +356,7 @@ extern "C" fn handle_instruction(
 			DebuggerAction::StepOut { target } => {
 				if !is_generated_proc(ctx) {
 					if target.is((*ctx).proc_instance) {
+						CURRENT_ACTION = DebuggerAction::None;
 						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 						did_breakpoint = true;
 					} else {
@@ -362,6 +377,7 @@ extern "C" fn handle_instruction(
 		// We don't want to break twice when stepping on to a breakpoint
 		if !did_breakpoint {
 			unsafe {
+				CURRENT_ACTION = DebuggerAction::None;
 				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Breakpoint);
 			}
 		}
@@ -423,7 +439,7 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 	unsafe {
 		bytecode = {
 			let (ptr, count) = proc.bytecode_mut_ptr();
-			std::slice::from_raw_parts_mut(ptr, count)
+			std::slice::from_raw_parts_mut(ptr, count as usize)
 		};
 
 		opcode_ptr = bytecode.as_mut_ptr().add(offset as usize);
@@ -461,7 +477,7 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 	let opcode_ptr = unsafe {
 		let bytecode = {
 			let (ptr, count) = proc.bytecode_mut_ptr();
-			std::slice::from_raw_parts_mut(ptr, count)
+			std::slice::from_raw_parts_mut(ptr, count as usize)
 		};
 
 		bytecode.as_mut_ptr().add(offset as usize)

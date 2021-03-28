@@ -122,7 +122,7 @@ impl Parameters_V2 {
 	}
 }
 
-pub fn get_bytecode(id: BytecodeId) -> (*mut u32, usize) {
+pub fn set_bytecode(id: BytecodeId, new_bytecode: *mut u32, new_bytecode_count: u16) {
 	let mut misc: *mut c_void = std::ptr::null_mut();
 	unsafe {
 		assert_eq!(super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()), 1);
@@ -133,11 +133,35 @@ pub fn get_bytecode(id: BytecodeId) -> (*mut u32, usize) {
 	// Lame
 	if major > 513 || minor >= 1539 {
 		let misc = misc as *mut Misc_V2;
-		return unsafe { ((*misc).bytecode.bytecode, (*misc).bytecode.count as usize) };
+		unsafe {
+			(*misc).bytecode.bytecode = new_bytecode;
+			(*misc).bytecode.count = new_bytecode_count;
+		}
 	}
 
 	let misc = misc as *mut Misc_V1;
-	unsafe { ((*misc).bytecode.bytecode, (*misc).bytecode.count as usize) }
+	unsafe {
+		(*misc).bytecode.bytecode = new_bytecode;
+		(*misc).bytecode.count = new_bytecode_count;
+	}
+}
+
+pub fn get_bytecode(id: BytecodeId) -> (*mut u32, u16) {
+	let mut misc: *mut c_void = std::ptr::null_mut();
+	unsafe {
+		assert_eq!(super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()), 1);
+	}
+
+	let (major, minor) = version::get();
+
+	// Lame
+	if major > 513 || minor >= 1539 {
+		let misc = misc as *mut Misc_V2;
+		return unsafe { ((*misc).bytecode.bytecode, (*misc).bytecode.count) };
+	}
+
+	let misc = misc as *mut Misc_V1;
+	unsafe { ((*misc).bytecode.bytecode, (*misc).bytecode.count) }
 }
 
 pub fn get_locals(id: LocalsId) -> (*const strings::VariableId, usize) {

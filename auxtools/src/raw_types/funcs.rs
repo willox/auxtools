@@ -3,6 +3,7 @@ use super::misc;
 use super::procs;
 use super::strings;
 use super::values;
+use super::variables;
 
 use std::ffi::c_void;
 use std::os::raw::c_char;
@@ -11,7 +12,8 @@ use std::os::raw::c_char;
 pub static mut CURRENT_EXECUTION_CONTEXT: *mut *mut procs::ExecutionContext = std::ptr::null_mut();
 pub static mut SUSPENDED_PROCS_BUFFER: *mut procs::SuspendedProcsBuffer = std::ptr::null_mut();
 pub static mut SUSPENDED_PROCS: *mut procs::SuspendedProcs = std::ptr::null_mut();
-pub static mut VARIABLE_NAMES: *const strings::StringId = std::ptr::null();
+
+pub static mut VARIABLE_NAMES: *const variables::VariableNameIdTable = std::ptr::null();
 
 // Function pointers exported by C++ but set by Rust
 // Rust shouldn't call these so we're going to treat them as void ptrs for simplicity
