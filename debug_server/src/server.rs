@@ -807,7 +807,7 @@ impl Server {
 		let expr = match dmasm::compiler::compile_expr(command, &arg_names) {
 			Ok(expr) => expr,
 			Err(err) => {
-				self.notify(format!("Compilation failed: {:#?}", err));
+				self.notify(format!("{}", err));
 				return None;
 			}
 		};
