@@ -42,17 +42,17 @@ impl List {
 		}
 	}
 
-	pub fn get<I: ListKey>(&self, index: I) -> runtime::DMResult {
+	pub fn get<I: Into<Value>>(&self, index: I) -> runtime::DMResult {
+		let index = index.into();
+
 		let mut value = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
 		};
 
-		let index = index.into_list_key();
-
 		// assoc funcs for everything else
 		unsafe {
-			if raw_types::funcs::get_assoc_element(&mut value, self.value.raw, index)
+			if raw_types::funcs::get_assoc_element(&mut value, self.value.raw, index.raw)
 				== 1
 			{
 				return Ok(Value::from_raw_owned(value));
@@ -64,18 +64,18 @@ impl List {
 		}
 	}
 
-	pub fn set<I: ListKey, V: Into<Value>>(
+	pub fn set<V: Into<Value>>(
 		&self,
-		index: I,
+		index: V,
 		value: V,
 	) -> Result<(), runtime::Runtime> {
-		let index = index.into_list_key();
+		let index = index.into();
 		let value = value.into();
 
 		unsafe {
 			if raw_types::funcs::set_assoc_element(
 				self.value.raw,
-				index.into_list_key(),
+				index.raw,
 				value.raw,
 			) == 1
 			{
@@ -167,32 +167,5 @@ impl From<List> for Value {
 impl From<&List> for Value {
 	fn from(list: &List) -> Self {
 		list.value.clone()
-	}
-}
-
-pub trait ListKey {
-	fn into_list_key(self) -> raw_types::values::Value;
-}
-
-impl ListKey for &raw_types::values::Value {
-	fn into_list_key(self) -> raw_types::values::Value {
-		*self
-	}
-}
-
-impl ListKey for &Value {
-	fn into_list_key(self) -> raw_types::values::Value {
-		self.raw
-	}
-}
-
-impl ListKey for u32 {
-	fn into_list_key(self) -> raw_types::values::Value {
-		raw_types::values::Value {
-			tag: raw_types::values::ValueTag::Number,
-			data: raw_types::values::ValueData {
-				number: self as f32,
-			},
-		}
 	}
 }
