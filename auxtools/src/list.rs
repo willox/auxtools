@@ -33,14 +33,6 @@ impl List {
 			assert_eq!(raw_types::funcs::create_list(&mut id, capacity), 1);
 		}
 
-		let mut ptr: *mut raw_types::lists::List = std::ptr::null_mut();
-		unsafe {
-			assert_eq!(raw_types::funcs::get_list_by_id(&mut ptr, id), 1);
-		}
-		if ptr.is_null() {
-			panic!("oh fuck");
-		}
-
 		let raw = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::List,
 			data: raw_types::values::ValueData { id: id.0 },
@@ -117,18 +109,6 @@ impl List {
 			);
 		}
 		length
-	}
-
-	/// Copies the List's vector part (values accessible by numeric indices) into a Vec<Value>.
-	pub fn to_vec(self) -> Vec<Value> {
-		unsafe {
-			let mut ptr: *mut raw_types::lists::List = std::ptr::null_mut();
-			assert_eq!(
-				raw_types::funcs::get_list_by_id(&mut ptr, self.value.value.data.list),
-				1
-			);
-			std::slice::from_raw_parts((*ptr).vector_part as *const _, self.len() as usize).to_vec()
-		}
 	}
 
 	pub fn is_list(value: &Value) -> bool {

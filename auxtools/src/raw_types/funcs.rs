@@ -27,7 +27,6 @@ extern "C" {
 	pub static mut get_string_table_entry_byond: *const c_void;
 	pub static mut inc_ref_count_byond: *const c_void;
 	pub static mut dec_ref_count_byond: *const c_void;
-	pub static mut get_list_by_id_byond: *const c_void;
 	pub static mut get_assoc_element_byond: *const c_void;
 	pub static mut set_assoc_element_byond: *const c_void;
 	pub static mut create_list_byond: *const c_void;
@@ -79,7 +78,6 @@ extern "C" {
 	) -> u8;
 	pub fn inc_ref_count(value: values::Value) -> u8;
 	pub fn dec_ref_count(value: values::Value) -> u8;
-	pub fn get_list_by_id(out: *mut *mut lists::List, index: lists::ListId) -> u8;
 	pub fn get_assoc_element(
 		out: *mut values::Value,
 		datum: values::Value,
