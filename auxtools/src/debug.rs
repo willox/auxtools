@@ -1,5 +1,4 @@
 use crate::raw_types::{funcs, procs};
-use crate::DMContext;
 use crate::Proc;
 use crate::StringRef;
 use crate::Value;
@@ -92,7 +91,7 @@ enum CallStackKind {
 }
 
 impl CallStacks {
-	pub fn new(_: &DMContext) -> CallStacks {
+	pub fn new() -> CallStacks {
 		let mut suspended = vec![];
 
 		unsafe {

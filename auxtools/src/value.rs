@@ -2,7 +2,7 @@ use super::raw_types;
 use super::string;
 use crate::list;
 use crate::runtime;
-use crate::runtime::{DMResult};
+use crate::runtime::DMResult;
 use std::ffi::CString;
 use std::fmt;
 use std::marker::PhantomData;
@@ -186,7 +186,11 @@ impl Value {
 	}
 
 	/// Sets a variable by name to a given value.
-	pub fn set<S: Into<string::StringRef>, V: Into<Value>>(&self, name: S, value: V) -> DMResult<()> {
+	pub fn set<S: Into<string::StringRef>, V: Into<Value>>(
+		&self,
+		name: S,
+		value: V,
+	) -> DMResult<()> {
 		let value = value.into();
 
 		self.set_by_id(name.into().get_id(), value.raw)?;
@@ -330,9 +334,8 @@ impl Value {
 	/// let my_string = Value::from_string("Testing!");
 	/// ```
 	pub fn from_string<S: AsRef<str>>(data: S) -> DMResult {
-		let string = CString::new(data.as_ref()).map_err(|_| {
-			runtime!("tried to create string containing NUL")
-		})?;
+		let string = CString::new(data.as_ref())
+			.map_err(|_| runtime!("tried to create string containing NUL"))?;
 
 		unsafe {
 			let mut id = raw_types::strings::StringId(0);
@@ -347,9 +350,8 @@ impl Value {
 	}
 
 	pub fn from_string_raw(data: &[u8]) -> DMResult {
-		let string = CString::new(data).map_err(|_| {
-			runtime!("tried to create string containing NUL")
-		})?;
+		let string =
+			CString::new(data).map_err(|_| runtime!("tried to create string containing NUL"))?;
 
 		unsafe {
 			let mut id = raw_types::strings::StringId(0);

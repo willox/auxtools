@@ -1,7 +1,6 @@
 use super::proc::Proc;
 use super::raw_types;
 use super::value::Value;
-use super::DMContext;
 use crate::runtime::DMResult;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
@@ -91,7 +90,7 @@ pub fn init() -> Result<(), String> {
 	Ok(())
 }
 
-pub type ProcHook = fn(&DMContext, &Value, &Value, &mut Vec<Value>) -> DMResult;
+pub type ProcHook = fn(&Value, &Value, &mut Vec<Value>) -> DMResult;
 
 thread_local! {
 	static PROC_HOOKS: RefCell<DashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(DashMap::new());
@@ -152,7 +151,6 @@ extern "C" fn call_proc_by_id_hook(
 ) -> u8 {
 	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
 		Some(hook) => {
-			let ctx = unsafe { DMContext::new() };
 			let src;
 			let usr;
 			let mut args: Vec<Value>;
@@ -168,7 +166,7 @@ extern "C" fn call_proc_by_id_hook(
 					.collect();
 			}
 
-			let result = hook(&ctx, &src, &usr, &mut args);
+			let result = hook(&src, &usr, &mut args);
 
 			match result {
 				Ok(r) => {

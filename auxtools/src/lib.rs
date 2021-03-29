@@ -7,7 +7,6 @@
 
 mod byond_ffi;
 mod bytecode_manager;
-mod context;
 pub mod debug;
 mod hooks;
 mod init;
@@ -24,7 +23,6 @@ mod version;
 use init::{get_init_level, set_init_level, InitLevel};
 
 pub use auxtools_impl::{hook, init, runtime_handler, shutdown};
-pub use context::DMContext;
 pub use hooks::{CompileTimeHook, RuntimeHook};
 pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
 pub use list::List;
@@ -399,15 +397,14 @@ byond_ffi_fn! { auxtools_init(_input) {
 	}
 
 	// Run user-defined initializers
-	let ctx = DMContext {};
 	if did_full {
-		if let Err(err) = init::run_full_init(&ctx) {
+		if let Err(err) = init::run_full_init() {
 			return Some(format!("FAILED ({})", err));
 		}
 	}
 
 	if did_partial {
-		if let Err(err) = init::run_partial_init(&ctx) {
+		if let Err(err) = init::run_partial_init() {
 			return Some(format!("FAILED ({})", err));
 		}
 	}

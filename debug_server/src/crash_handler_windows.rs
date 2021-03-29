@@ -22,7 +22,7 @@ extern "system" fn exception_filter(_: *mut EXCEPTION_POINTERS) -> LONG {
 }
 
 #[init(full)]
-fn crash_handler_init(_: &DMContext) -> Result<(), String> {
+fn crash_handler_init() -> Result<(), String> {
 	unsafe {
 		SetUnhandledExceptionFilter(Some(exception_filter));
 	}

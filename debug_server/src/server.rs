@@ -33,14 +33,14 @@ struct State {
 impl State {
 	fn new() -> Self {
 		Self {
-			stacks: debug::CallStacks::new(&DMContext {}),
+			stacks: debug::CallStacks::new(),
 			variables: RefCell::new(vec![]),
 			variables_to_refs: RefCell::new(HashMap::new()),
 		}
 	}
 
 	fn invalidate_stacks(&mut self) {
-		self.stacks = debug::CallStacks::new(&DMContext {});
+		self.stacks = debug::CallStacks::new();
 	}
 
 	fn get_ref(&self, vars: Variables) -> VariablesRef {

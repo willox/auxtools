@@ -1,5 +1,4 @@
 use crate::inventory;
-use crate::DMContext;
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum InitLevel {
@@ -21,7 +20,7 @@ pub fn set_init_level(level: InitLevel) {
 //
 // Hooks that run on intiailization
 //
-pub type InitFunc = fn(&DMContext) -> Result<(), String>;
+pub type InitFunc = fn() -> Result<(), String>;
 
 #[doc(hidden)]
 pub struct FullInitFunc(pub InitFunc);
@@ -36,17 +35,17 @@ inventory::collect!(FullInitFunc);
 inventory::collect!(PartialInitFunc);
 inventory::collect!(PartialShutdownFunc);
 
-pub fn run_full_init(ctx: &DMContext) -> Result<(), String> {
+pub fn run_full_init() -> Result<(), String> {
 	for func in inventory::iter::<FullInitFunc> {
-		func.0(ctx)?;
+		func.0()?;
 	}
 
 	Ok(())
 }
 
-pub fn run_partial_init(ctx: &DMContext) -> Result<(), String> {
+pub fn run_partial_init() -> Result<(), String> {
 	for func in inventory::iter::<PartialInitFunc> {
-		func.0(ctx)?;
+		func.0()?;
 	}
 
 	Ok(())

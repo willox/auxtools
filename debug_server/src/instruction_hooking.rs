@@ -25,7 +25,7 @@ extern "C" {
 }
 
 #[init(full)]
-fn instruction_hooking_init(_: &DMContext) -> Result<(), String> {
+fn instruction_hooking_init() -> Result<(), String> {
 	let byondcore = sigscan::Scanner::for_module(BYONDCORE).unwrap();
 
 	if cfg!(windows) {
