@@ -72,7 +72,7 @@ fn test_strings() {
 
 		// Returned value should be equal to string_a_contents .. string_b_contents
 		// and have a ref count of 1
-		if concatenated.value.tag != values::ValueTag::String {
+		if concatenated.raw.tag != values::ValueTag::String {
 			return Err(runtime!(
 				"test_string: concat_strings did not return a string"
 			));
@@ -80,7 +80,7 @@ fn test_strings() {
 
 		let mut concatenated_entry: *mut strings::StringEntry = std::ptr::null_mut();
 		assert_eq!(
-			funcs::get_string_table_entry(&mut concatenated_entry, concatenated.value.data.string),
+			funcs::get_string_table_entry(&mut concatenated_entry, concatenated.raw.data.string),
 			1
 		);
 

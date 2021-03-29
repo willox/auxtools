@@ -2,7 +2,6 @@ use super::proc::Proc;
 use super::raw_types;
 use super::value::Value;
 use super::DMContext;
-use crate::raw_types::values::IntoRawValue;
 use crate::runtime::DMResult;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
@@ -174,7 +173,7 @@ extern "C" fn call_proc_by_id_hook(
 
 			match result {
 				Ok(r) => {
-					let result_raw = unsafe { (&r).into_raw_value() };
+					let result_raw = (&r).raw;
 					// Stealing our reference out of the Value
 					std::mem::forget(r);
 					Some(result_raw)
@@ -185,7 +184,7 @@ extern "C" fn call_proc_by_id_hook(
 						.unwrap()
 						.call(&[&Value::from_string(e.message.as_str())])
 						.unwrap();
-					unsafe { Some(Value::null().into_raw_value()) }
+					Some(Value::null().raw)
 				}
 			}
 		}

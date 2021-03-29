@@ -56,6 +56,6 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 			return None;
 		}
 
-		Some((res.value.tag as u8, unsafe { res.value.data.id }))
+		Some((res.raw.tag as u8, unsafe { res.raw.data.id }))
 	}
 }

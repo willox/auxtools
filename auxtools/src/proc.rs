@@ -123,18 +123,18 @@ impl Proc {
 		unsafe {
 			// Increment ref-count of args permenently before passing them on
 			for v in args {
-				raw_types::funcs::inc_ref_count(v.value);
+				raw_types::funcs::inc_ref_count(v.raw);
 			}
 
-			let args: Vec<_> = args.iter().map(|e| e.value).collect();
+			let args: Vec<_> = args.iter().map(|e| e.raw).collect();
 
 			if raw_types::funcs::call_proc_by_id(
 				&mut ret,
-				Value::null().value,
+				Value::null().raw,
 				0,
 				self.id,
 				0,
-				Value::null().value,
+				Value::null().raw,
 				args.as_ptr(),
 				args.len(),
 				0,

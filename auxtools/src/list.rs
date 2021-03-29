@@ -1,5 +1,5 @@
 use crate::raw_types;
-use crate::raw_types::values::{IntoRawValue, ValueTag};
+use crate::raw_types::values::{ValueTag};
 use crate::runtime;
 use crate::runtime::ConversionResult;
 use crate::value::Value;
@@ -52,7 +52,7 @@ impl List {
 
 		// assoc funcs for everything else
 		unsafe {
-			if raw_types::funcs::get_assoc_element(&mut value, self.value.into_raw_value(), index)
+			if raw_types::funcs::get_assoc_element(&mut value, self.value.raw, index)
 				== 1
 			{
 				return Ok(Value::from_raw_owned(value));
@@ -64,19 +64,19 @@ impl List {
 		}
 	}
 
-	pub fn set<I: ListKey, V: IntoRawValue>(
+	pub fn set<I: ListKey, V: Into<Value>>(
 		&self,
 		index: I,
 		value: V,
 	) -> Result<(), runtime::Runtime> {
 		let index = index.into_list_key();
-		let value = unsafe { value.into_raw_value() };
+		let value = value.into();
 
 		unsafe {
 			if raw_types::funcs::set_assoc_element(
-				self.value.into_raw_value(),
+				self.value.raw,
 				index.into_list_key(),
-				value,
+				value.raw,
 			) == 1
 			{
 				return Ok(());
@@ -88,15 +88,25 @@ impl List {
 		}
 	}
 
-	pub fn append<V: IntoRawValue>(&self, value: V) {
+	pub fn append<V: Into<Value>>(&self, value: V) {
+		let value = value.into();
+
 		unsafe {
-			raw_types::funcs::append_to_list(self.value.into_raw_value(), value.into_raw_value());
+			assert_eq!(
+				raw_types::funcs::append_to_list(self.value.raw, value.raw),
+				1
+			);
 		}
 	}
 
-	pub fn remove<V: IntoRawValue>(&self, value: V) {
+	pub fn remove<V: Into<Value>>(&self, value: V) {
+		let value = value.into();
+
 		unsafe {
-			raw_types::funcs::remove_from_list(self.value.into_raw_value(), value.into_raw_value());
+			assert_eq!(
+				raw_types::funcs::remove_from_list(self.value.raw, value.raw),
+				1
+			);
 		}
 	}
 
@@ -104,7 +114,7 @@ impl List {
 		let mut length: u32 = 0;
 		unsafe {
 			assert_eq!(
-				raw_types::funcs::get_length(&mut length, self.value.into_raw_value()),
+				raw_types::funcs::get_length(&mut length, self.value.raw),
 				1
 			);
 		}
@@ -112,7 +122,7 @@ impl List {
 	}
 
 	pub fn is_list(value: &Value) -> bool {
-		match value.value.tag {
+		match value.raw.tag {
 			ValueTag::List
 			| ValueTag::MobVars
 			| ValueTag::ObjVars
@@ -140,23 +150,22 @@ impl FromIterator<Value> for List {
 	fn from_iter<I: IntoIterator<Item = Value>>(it: I) -> Self {
 		let res = Self::new();
 
-		// TODO: This is probably a performane bottleneck.
 		for val in it {
-			res.append(&val);
+			res.append(val);
 		}
 
 		res
 	}
 }
 
-impl raw_types::values::IntoRawValue for &List {
-	unsafe fn into_raw_value(self) -> raw_types::values::Value {
-		self.value.into_raw_value()
+impl From<List> for Value {
+	fn from(list: List) -> Self {
+		list.value
 	}
 }
 
-impl From<List> for Value {
-	fn from(list: List) -> Value {
+impl From<&List> for Value {
+	fn from(list: &List) -> Self {
 		list.value.clone()
 	}
 }
@@ -173,7 +182,7 @@ impl ListKey for &raw_types::values::Value {
 
 impl ListKey for &Value {
 	fn into_list_key(self) -> raw_types::values::Value {
-		unsafe { self.into_raw_value() }
+		self.raw
 	}
 }
 

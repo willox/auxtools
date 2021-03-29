@@ -11,7 +11,7 @@ macro_rules! byond_string {
 				auxtools::InternedString($s, std::cell::UnsafeCell::new(None));
 			auxtools::inventory::submit!(unsafe { &store });
 			let x = &*store.1.get();
-			x.clone().unwrap()
+			x.as_ref().unwrap()
 		}
 	};
 }
@@ -40,17 +40,3 @@ pub fn destroy_interned_strings() {
 		}
 	}
 }
-
-/*
-impl From<&InternedString> for StringRef {
-	fn from(interned: &InternedString) -> StringRef {
-		unsafe {
-			let inner = &*interned.1.get();
-			match &inner {
-				Some(inner) => inner.clone(),
-				None => panic!("uninitialized InternedString"),
-			}
-		}
-	}
-}
-*/

@@ -111,16 +111,3 @@ pub struct Value {
 	pub tag: ValueTag,
 	pub data: ValueData,
 }
-
-pub trait IntoRawValue {
-	unsafe fn into_raw_value(self) -> Value;
-}
-
-impl IntoRawValue for f32 {
-	unsafe fn into_raw_value(self) -> Value {
-		Value {
-			tag: ValueTag::Number,
-			data: ValueData { number: self },
-		}
-	}
-}
