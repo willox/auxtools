@@ -39,5 +39,18 @@ fn test_lists() {
 		return Err(runtime!("test_lists: list_a[2] != 103"));
 	}
 
+	let list_b = List::with_size(6);
+
+	// This list should have 6 nulls in it
+	if list_b.len() != 6 {
+		return Err(runtime!("test_lists: list_b's len != 6"));
+	}
+
+	for n in 1..=6 {
+		if list_b.get(n)? != Value::null() {
+			return Err(runtime!("test_lists: list_b[{}] != null", n));
+		}
+	}
+
 	Ok(Value::from(true))
 }
