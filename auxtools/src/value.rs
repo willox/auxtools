@@ -16,6 +16,23 @@ pub struct Value {
 	phantom: PhantomData<*mut ()>,
 }
 
+impl PartialEq for Value {
+	fn eq(&self, other: &Self) -> bool {
+		unsafe { self.value.tag == other.value.tag && self.value.data.id == other.value.data.id }
+	}
+}
+
+impl Eq for Value {}
+
+impl std::hash::Hash for Value {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		unsafe {
+			self.value.tag.hash(state);
+			self.value.data.id.hash(state);
+		}
+	}
+}
+
 impl Drop for Value {
 	fn drop(&mut self) {
 		unsafe {
@@ -225,7 +242,7 @@ impl Value {
 			}
 
 			let procname = String::from(procname.as_ref()).replace("_", " ");
-			let args: Vec<_> = args.iter().map(|e| e.as_ref().into_raw_value()).collect();
+			let mut args: Vec<_> = args.iter().map(|e| e.as_ref().into_raw_value()).collect();
 			let name_ref = string::StringRef::new(&procname);
 
 			if raw_types::funcs::call_datum_proc_by_name(
@@ -234,7 +251,7 @@ impl Value {
 				2,
 				name_ref.value.value.data.string,
 				self.value,
-				args.as_ptr(),
+				args.as_mut_ptr(),
 				args.len(),
 				0,
 				0,
@@ -247,7 +264,28 @@ impl Value {
 		Err(runtime!("External proc call failed"))
 	}
 
-	// TODO: Really bad - not the same as as_string
+	// ugh
+	pub fn to_dmstring(&self) -> ConversionResult<string::StringRef> {
+		match self.value.tag {
+			raw_types::values::ValueTag::Null
+			| raw_types::values::ValueTag::Number
+			| raw_types::values::ValueTag::String => {
+				return Ok(string::StringRef::new(format!("{}", self.value).as_str()))
+			}
+
+			_ => {}
+		}
+
+		let mut id = raw_types::strings::StringId(0);
+
+		unsafe {
+			if raw_types::funcs::to_string(&mut id, self.value) != 1 {
+				return Err(runtime!("to_string failed on {:?}", self));
+			}
+			Ok(string::StringRef::from_id(id))
+		}
+	}
+
 	pub fn to_string(&self) -> ConversionResult<String> {
 		match self.value.tag {
 			raw_types::values::ValueTag::Null
@@ -280,6 +318,15 @@ impl Value {
 		}
 	}
 
+	pub fn is_truthy(&self) -> bool {
+		match self.value.tag {
+			raw_types::values::ValueTag::Null => false,
+			raw_types::values::ValueTag::Number => unsafe { self.value.data.number != 0.0 },
+
+			_ => true,
+		}
+	}
+
 	/// Creates a Value that references a byond string.
 	/// Will panic if the given string contains null bytes
 	///
@@ -290,6 +337,22 @@ impl Value {
 	pub fn from_string<S: AsRef<str>>(data: S) -> Value {
 		// TODO: This should be done differently
 		let string = CString::new(data.as_ref()).unwrap();
+
+		unsafe {
+			let mut id = raw_types::strings::StringId(0);
+
+			assert_eq!(raw_types::funcs::get_string_id(&mut id, string.as_ptr()), 1);
+
+			Value::new(
+				raw_types::values::ValueTag::String,
+				raw_types::values::ValueData { string: id },
+			)
+		}
+	}
+
+	pub fn from_string_raw(data: &[u8]) -> Value {
+		// TODO: This should be done differently
+		let string = CString::new(data).unwrap();
 
 		unsafe {
 			let mut id = raw_types::strings::StringId(0);

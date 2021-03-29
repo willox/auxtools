@@ -9,32 +9,19 @@ use std::{
 	thread::JoinHandle,
 };
 
+use clap::{App, AppSettings, Arg};
+
 use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
 use auxtools::*;
 
-#[derive(Clone, Hash, Eq, PartialEq)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 enum Variables {
-	Arguments {
-		frame: u32,
-	},
-	Locals {
-		frame: u32,
-	},
-	ObjectVars {
-		tag: u8,
-		data: u32,
-	},
-	ListContents {
-		tag: u8,
-		data: u32,
-	},
-	ListPair {
-		key_tag: u8,
-		key_data: u32,
-		value_tag: u8,
-		value_data: u32,
-	},
+	Arguments { frame: u32 },
+	Locals { frame: u32 },
+	ObjectVars(Value),
+	ListContents(Value),
+	ListPair { key: Value, value: Value },
 }
 
 struct State {
@@ -50,6 +37,10 @@ impl State {
 			variables: RefCell::new(vec![]),
 			variables_to_refs: RefCell::new(HashMap::new()),
 		}
+	}
+
+	fn invalidate_stacks(&mut self) {
+		self.stacks = debug::CallStacks::new(&DMContext {});
 	}
 
 	fn get_ref(&self, vars: Variables) -> VariablesRef {
@@ -98,6 +89,10 @@ pub struct Server {
 	_thread: JoinHandle<()>,
 	should_catch_runtimes: bool,
 	state: Option<State>,
+	in_eval: bool,
+	eval_error: Option<String>,
+	conditional_breakpoints: HashMap<(raw_types::procs::ProcId, u16), String>,
+	app: App<'static, 'static>,
 }
 
 struct ServerThread {
@@ -105,6 +100,38 @@ struct ServerThread {
 }
 
 impl Server {
+	pub fn setup_app() -> App<'static, 'static> {
+		App::new("Auxtools Debug Server")
+			.version(clap::crate_version!())
+			.settings(&[
+				AppSettings::SubcommandRequired,
+			])
+			.global_settings(&[
+				AppSettings::NoBinaryName,
+				AppSettings::ColorNever,
+				AppSettings::DisableVersion,
+				AppSettings::VersionlessSubcommands,
+				AppSettings::DisableHelpFlags,
+			])
+			.usage("#<SUBCOMMAND>")
+			.subcommand(
+				App::new("disassemble")
+					.alias("dis")
+					.about("Disassembles a proc and displays its bytecode in an assembly-like format")
+					.after_help("If no parameters are provided, the proc executing in the currently debugged stack frame will be disassembled")
+					.arg(
+						Arg::with_name("proc")
+							.help("Path of the proc to disassemble (e.g. /proc/do_stuff)")
+							.takes_value(true),
+					)
+					.arg(
+						Arg::with_name("id")
+							.help("Id of the proc to disassemble (for when multiple procs are defined with the same path)")
+							.takes_value(true),
+					)
+		)
+	}
+
 	pub fn connect(addr: &SocketAddr) -> std::io::Result<Server> {
 		let stream = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))?;
 		let (requests_sender, requests_receiver) = mpsc::channel();
@@ -124,6 +151,10 @@ impl Server {
 			_thread: thread,
 			should_catch_runtimes: true,
 			state: None,
+			in_eval: false,
+			eval_error: None,
+			conditional_breakpoints: HashMap::new(),
+			app: Self::setup_app(),
 		};
 
 		server.process_until_configured();
@@ -145,32 +176,47 @@ impl Server {
 			_thread: thread,
 			should_catch_runtimes: true,
 			state: None,
+			in_eval: false,
+			eval_error: None,
+			conditional_breakpoints: HashMap::new(),
+			app: Self::setup_app(),
 		})
+	}
+
+	pub fn is_in_eval(&self) -> bool {
+		self.in_eval
+	}
+
+	pub fn set_eval_error(&mut self, err: String) {
+		self.eval_error = Some(err);
 	}
 
 	fn get_line_number(&self, proc: ProcRef, offset: u32) -> Option<u32> {
 		match auxtools::Proc::find_override(proc.path, proc.override_id) {
 			Some(proc) => {
-				// We're ignoring disassemble errors because any bytecode in the result is still valid
-				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
-				let dism = proc.disassemble().instructions;
 				let mut current_line_number = None;
 				let mut reached_offset = false;
 
-				for (instruction_offset, _, instruction) in dism {
-					// If we're in the middle of executing an operand (like call), the offset might be between two instructions
-					if instruction_offset > offset {
-						reached_offset = true;
-						break;
-					}
+				let bytecode = unsafe { proc.bytecode() };
 
-					if let Instruction::DbgLine(line) = instruction {
-						current_line_number = Some(line);
-					}
+				let mut env = crate::disassemble_env::DisassembleEnv;
+				let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
 
-					if instruction_offset == offset {
-						reached_offset = true;
-						break;
+				for node in nodes {
+					if let dmasm::Node::Instruction(ins, debug) = node {
+						if debug.offset > offset {
+							reached_offset = true;
+							break;
+						}
+
+						if let dmasm::Instruction::DbgLine(line) = ins {
+							current_line_number = Some(line);
+						}
+
+						if debug.offset == offset {
+							reached_offset = true;
+							break;
+						}
 					}
 				}
 
@@ -188,20 +234,25 @@ impl Server {
 	fn get_offset(&self, proc: ProcRef, line: u32) -> Option<u32> {
 		match auxtools::Proc::find_override(proc.path, proc.override_id) {
 			Some(proc) => {
-				// We're ignoring disassemble errors because any bytecode in the result is still valid
-				// stepping over unknown bytecode still works, but trying to set breakpoints in it can fail
-				let dism = proc.disassemble().instructions;
 				let mut offset = None;
 				let mut at_offset = false;
 
-				for (instruction_offset, _, instruction) in dism {
-					if at_offset {
-						offset = Some(instruction_offset);
-						break;
-					}
-					if let Instruction::DbgLine(current_line) = instruction {
-						if current_line == line {
-							at_offset = true;
+				let bytecode = unsafe { proc.bytecode() };
+
+				let mut env = crate::disassemble_env::DisassembleEnv;
+				let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+
+				for node in nodes {
+					if let dmasm::Node::Instruction(ins, debug) = node {
+						if at_offset {
+							offset = Some(debug.offset);
+							break;
+						}
+
+						if let dmasm::Instruction::DbgLine(current_line) = ins {
+							if current_line == line {
+								at_offset = true;
+							}
 						}
 					}
 				}
@@ -224,46 +275,45 @@ impl Server {
 		value.get("vars").is_ok()
 	}
 
-	fn value_to_variable(&self, name: String, value: &Value) -> Variable {
-		let mut variables = None;
-		let state = self.state.as_ref().unwrap();
-
+	fn stringify(value: &Value) -> String {
 		if List::is_list(value) {
-			variables = Some(state.get_ref(Variables::ListContents {
-				tag: value.value.tag as u8,
-				data: unsafe { value.value.data.id },
-			}));
-
-			// Early return for lists so we can include their length in the value
-			let stringified = match List::from_value(value) {
+			match List::from_value(value) {
 				Ok(list) => format!("/list {{len = {}}}", list.len()),
 				Err(Runtime { message }) => format!("/list (failed to get len: {:?})", message),
-			};
-
-			return Variable {
-				name,
-				value: stringified,
-				variables,
-			};
-		} else if Self::is_object(value) {
-			variables = Some(state.get_ref(Variables::ObjectVars {
-				tag: value.value.tag as u8,
-				data: unsafe { value.value.data.id },
-			}));
-		}
-
-		let stringified = match value.to_string() {
-			Ok(v) if v.is_empty() => value.value.to_string(),
-			Ok(value) => value,
-			Err(Runtime { message }) => {
-				format!("{} -- stringify error: {:?}", value.value, message)
 			}
-		};
+		} else {
+			match value.to_string() {
+				Ok(v) if v.is_empty() => value.value.to_string(),
+				Ok(value) => value,
+				Err(Runtime { message }) => {
+					format!("{} -- stringify error: {:?}", value.value, message)
+				}
+			}
+		}
+	}
+
+	fn value_to_variable(&self, name: String, value: &Value) -> Variable {
+		let stringified = Self::stringify(value);
+		let variables = self.value_to_variables_ref(value);
 
 		Variable {
 			name,
 			value: stringified,
 			variables,
+		}
+	}
+
+	fn value_to_variables_ref(&self, value: &Value) -> Option<VariablesRef> {
+		match self.state.as_ref() {
+			Some(state) if List::is_list(value) => {
+				Some(state.get_ref(Variables::ListContents(value.clone())))
+			}
+
+			Some(state) if Self::is_object(value) => {
+				Some(state.get_ref(Variables::ObjectVars(value.clone())))
+			}
+
+			_ => None,
 		}
 	}
 
@@ -282,15 +332,8 @@ impl Server {
 					// assoc entry
 					variables.push(Variable {
 						name: format!("[{}]", i),
-						value: format!("{} = {}", key.to_string()?, value.to_string()?), // TODO: prettify these prints?
-						variables: Some(state.get_ref(unsafe {
-							Variables::ListPair {
-								key_tag: key.value.tag as u8,
-								key_data: key.value.data.id,
-								value_tag: value.value.tag as u8,
-								value_data: value.value.data.id,
-							}
-						})),
+						value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
+						variables: Some(state.get_ref(Variables::ListPair { key, value })),
 					});
 					continue;
 				}
@@ -447,25 +490,35 @@ impl Server {
 		}
 	}
 
-	fn handle_breakpoint_set(&mut self, instruction: InstructionRef) {
+	fn handle_breakpoint_set(&mut self, instruction: InstructionRef, condition: Option<String>) {
 		let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
 
-		match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
-			Some(proc) => match hook_instruction(&proc, instruction.offset) {
-				Ok(()) => {
-					self.send_or_disconnect(Response::BreakpointSet {
-						result: BreakpointSetResult::Success { line },
-					});
-				}
-
-				Err(_) => {
-					self.send_or_disconnect(Response::BreakpointSet {
-						result: BreakpointSetResult::Failed,
-					});
-				}
-			},
-
+		let proc = match auxtools::Proc::find_override(
+			instruction.proc.path,
+			instruction.proc.override_id,
+		) {
+			Some(proc) => proc,
 			None => {
+				self.send_or_disconnect(Response::BreakpointSet {
+					result: BreakpointSetResult::Failed,
+				});
+				return;
+			}
+		};
+
+		match hook_instruction(&proc, instruction.offset) {
+			Ok(()) => {
+				if let Some(condition) = condition {
+					self.conditional_breakpoints
+						.insert((proc.id, instruction.offset as u16), condition);
+				}
+
+				self.send_or_disconnect(Response::BreakpointSet {
+					result: BreakpointSetResult::Success { line },
+				});
+			}
+
+			Err(_) => {
 				self.send_or_disconnect(Response::BreakpointSet {
 					result: BreakpointSetResult::Failed,
 				});
@@ -474,18 +527,28 @@ impl Server {
 	}
 
 	fn handle_breakpoint_unset(&mut self, instruction: InstructionRef) {
-		match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
-			Some(proc) => match unhook_instruction(&proc, instruction.offset) {
-				Ok(()) => {
-					self.send_or_disconnect(Response::BreakpointUnset { success: true });
-				}
-
-				Err(_) => {
-					self.send_or_disconnect(Response::BreakpointUnset { success: false });
-				}
-			},
-
+		let proc = match auxtools::Proc::find_override(
+			instruction.proc.path,
+			instruction.proc.override_id,
+		) {
+			Some(proc) => proc,
 			None => {
+				self.send_or_disconnect(Response::BreakpointSet {
+					result: BreakpointSetResult::Failed,
+				});
+				return;
+			}
+		};
+
+		self.conditional_breakpoints
+			.remove(&(proc.id, instruction.offset as u16));
+
+		match unhook_instruction(&proc, instruction.offset) {
+			Ok(()) => {
+				self.send_or_disconnect(Response::BreakpointUnset { success: true });
+			}
+
+			Err(_) => {
 				self.send_or_disconnect(Response::BreakpointUnset { success: false });
 			}
 		}
@@ -567,18 +630,23 @@ impl Server {
 	}
 
 	fn handle_scopes(&mut self, frame_id: u32) {
+		if self.state.is_none() {
+			let response = Response::Scopes {
+				arguments: None,
+				locals: None,
+				globals: None,
+			};
+
+			self.send_or_disconnect(response);
+			return;
+		}
+
 		let state = self.state.as_ref().unwrap();
 
 		let arguments = Variables::Arguments { frame: frame_id };
 		let locals = Variables::Locals { frame: frame_id };
 
-		let globals_value = Value::globals();
-		let globals = unsafe {
-			Variables::ObjectVars {
-				tag: globals_value.value.tag as u8,
-				data: globals_value.value.data.id,
-			}
-		};
+		let globals = Variables::ObjectVars(Value::globals());
 
 		let response = Response::Scopes {
 			arguments: Some(state.get_ref(arguments)),
@@ -590,99 +658,288 @@ impl Server {
 	}
 
 	fn handle_variables(&mut self, vars: VariablesRef) {
-		let response =
-			match &self.state {
-				Some(state) => {
-					match state.get_variables(vars) {
-						Some(vars) => match vars {
-							Variables::Arguments { frame } => Response::Variables {
-								vars: self.get_args(frame),
-							},
-							Variables::Locals { frame } => Response::Variables {
-								vars: self.get_locals(frame),
-							},
-							Variables::ObjectVars { tag, data } => {
-								let value = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(tag),
-										data: ValueData { id: data },
-									})
-								};
+		let response = match &self.state {
+			Some(state) => match state.get_variables(vars) {
+				Some(vars) => match vars {
+					Variables::Arguments { frame } => Response::Variables {
+						vars: self.get_args(frame),
+					},
+					Variables::Locals { frame } => Response::Variables {
+						vars: self.get_locals(frame),
+					},
+					Variables::ObjectVars(value) => match self.object_to_variables(&value) {
+						Ok(vars) => Response::Variables { vars },
 
-								match self.object_to_variables(&value) {
-									Ok(vars) => Response::Variables { vars },
-
-									Err(e) => {
-										self.notify(format!("runtime occured while processing Variables request: {:?}", e));
-										Response::Variables { vars: vec![] }
-									}
-								}
-							}
-							Variables::ListContents { tag, data } => {
-								let value = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(tag),
-										data: ValueData { id: data },
-									})
-								};
-
-								match self.list_to_variables(&value) {
-									Ok(vars) => Response::Variables { vars },
-
-									Err(e) => {
-										self.notify(format!("runtime occured while processing Variables request: {:?}", e));
-										Response::Variables { vars: vec![] }
-									}
-								}
-							}
-
-							Variables::ListPair {
-								key_tag,
-								key_data,
-								value_tag,
-								value_data,
-							} => {
-								let key = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(key_tag),
-										data: ValueData { id: key_data },
-									})
-								};
-
-								let value = unsafe {
-									Value::from_raw(raw_types::values::Value {
-										tag: std::mem::transmute(value_tag),
-										data: ValueData { id: value_data },
-									})
-								};
-
-								Response::Variables {
-									vars: vec![
-										self.value_to_variable("key".to_owned(), &key),
-										self.value_to_variable("value".to_owned(), &value),
-									],
-								}
-							}
-						},
-
-						None => {
-							self.notify("received unknown VariableRef in Variables request");
+						Err(e) => {
+							self.notify(format!(
+								"runtime occured while processing Variables request: {:?}",
+								e
+							));
 							Response::Variables { vars: vec![] }
 						}
-					}
-				}
+					},
+					Variables::ListContents(value) => match self.list_to_variables(&value) {
+						Ok(vars) => Response::Variables { vars },
+
+						Err(e) => {
+							self.notify(format!(
+								"runtime occured while processing Variables request: {:?}",
+								e
+							));
+							Response::Variables { vars: vec![] }
+						}
+					},
+
+					Variables::ListPair { key, value } => Response::Variables {
+						vars: vec![
+							self.value_to_variable("key".to_owned(), &key),
+							self.value_to_variable("value".to_owned(), &value),
+						],
+					},
+				},
 
 				None => {
-					self.notify("recevied Variables request while not paused");
+					self.notify("received unknown VariableRef in Variables request");
 					Response::Variables { vars: vec![] }
 				}
-			};
+			},
+
+			None => {
+				self.notify("recevied Variables request while not paused");
+				Response::Variables { vars: vec![] }
+			}
+		};
 
 		self.send_or_disconnect(response);
 	}
 
-	fn handle_disassemble(&mut self, proc: ProcRef) {
-		let response = match auxtools::Proc::find_override(proc.path, proc.override_id) {
+	fn handle_command(&mut self, frame_id: Option<u32>, command: &str) -> String {
+		// How many matches variables can you spot? It could be better...
+		let response = match self
+			.app
+			.get_matches_from_safe_borrow(command.split_ascii_whitespace())
+		{
+			Ok(matches) => {
+				match matches.subcommand() {
+					("disassemble", Some(matches)) => {
+						if let Some(proc) = matches.value_of("proc") {
+							// Default id to 0 in the worst way possible
+							let id = matches
+								.value_of("id")
+								.and_then(|x| x.parse::<u32>().ok())
+								.unwrap_or(0);
+
+							self.handle_disassemble(proc, id)
+						} else if let Some(frame_id) = frame_id {
+							if let Some(frame) = self.get_stack_frame(frame_id) {
+								let proc = frame.proc.path.clone();
+								let id = frame.proc.override_id();
+								self.handle_disassemble(&proc, id)
+							} else {
+								"couldn't find stack frame (is execution not paused?)".to_owned()
+							}
+						} else {
+							"no execution frame selected".to_owned()
+						}
+					}
+
+					_ => "unknown command".to_owned(),
+				}
+			}
+			Err(e) => e.message,
+		};
+
+		response
+	}
+
+	fn eval_expr(&mut self, frame_id: Option<u32>, command: &str) -> Option<Value> {
+		enum ArgType {
+			Dot,
+			Usr,
+			Src,
+			Arg(u32),
+			Local(u32),
+		}
+
+		let (ctx, instance, args) = match frame_id {
+			// Global context
+			None => (std::ptr::null_mut(), std::ptr::null_mut(), vec![]),
+
+			Some(frame_id) => {
+				let frame = match self.get_stack_frame(frame_id) {
+					Some(x) => x,
+					None => {
+						self.notify(format!(
+							"tried to evaluate expression with invalid frame id: {}",
+							frame_id
+						));
+						return None;
+					}
+				};
+
+				let mut args = vec![
+					(".".to_owned(), frame.dot.clone(), ArgType::Dot),
+					("usr".to_owned(), frame.usr.clone(), ArgType::Usr),
+					("src".to_owned(), frame.src.clone(), ArgType::Src),
+				];
+
+				for (idx, arg) in frame.args.iter().enumerate() {
+					if let Some(name) = &arg.0 {
+						args.push((name.into(), arg.1.clone(), ArgType::Arg(idx as u32)));
+					}
+				}
+
+				for (idx, local) in frame.locals.iter().enumerate() {
+					args.push((
+						(&local.0).into(),
+						local.1.clone(),
+						ArgType::Local(idx as u32),
+					));
+				}
+
+				(frame.context, frame.instance, args)
+			}
+		};
+
+		let arg_names: Vec<&str> = args.iter().map(|(name, _, _)| name.as_str()).collect();
+		let arg_values: Vec<&Value> = args.iter().map(|(_, value, _)| value).collect();
+
+		let expr = match dmasm::compiler::compile_expr(command, &arg_names) {
+			Ok(expr) => expr,
+			Err(err) => {
+				self.notify(format!("{}", err));
+				return None;
+			}
+		};
+
+		let assembly =
+			match dmasm::assembler::assemble(&expr, &mut crate::assemble_env::AssembleEnv) {
+				Ok(assembly) => assembly,
+				Err(err) => {
+					self.notify(format!(
+						"expression {} failed to assemble: {:#?}",
+						command, err
+					));
+					return None;
+				}
+			};
+
+		let proc = match Proc::find("/proc/auxtools_expr_stub") {
+			Some(proc) => proc,
+			None => {
+				self.notify("Couldn't find /proc/auxtools_expr_stub! DM evaluation not available.");
+				return None;
+			}
+		};
+
+		proc.set_bytecode(assembly);
+
+		self.in_eval = true;
+		self.eval_error = None;
+
+		let result = match proc.call(&arg_values) {
+			Ok(res) => {
+				if let Ok(list) = res.as_list() {
+					// The rest are the potentially mutated parameters. We need to commit them to the function that called us.
+					// TODO: This sucks, obviously.
+					let len = list.len();
+					for i in 2..=len {
+						let value = list.get(i).unwrap();
+						let slot = &args[i as usize - 2].2;
+
+						unsafe {
+							match slot {
+								ArgType::Dot => {
+									let _ = Value::from_raw_owned((*ctx).dot);
+									(*ctx).dot = value.value;
+								}
+								ArgType::Usr => {
+									let _ = Value::from_raw_owned((*instance).usr);
+									(*instance).usr = value.value;
+								}
+								ArgType::Src => {
+									let _ = Value::from_raw_owned((*instance).src);
+									(*instance).src = value.value;
+								}
+								ArgType::Arg(idx) => {
+									let args = (*instance).args;
+									let arg = args.add(*idx as usize);
+									let _ = Value::from_raw_owned(*arg);
+									(*arg) = value.value;
+								}
+								ArgType::Local(idx) => {
+									let locals = (*ctx).locals;
+									let local = locals.add(*idx as usize);
+									let _ = Value::from_raw_owned(*local);
+									(*local) = value.value;
+								}
+							}
+						}
+
+						std::mem::forget(value);
+					}
+
+					Some(list.get(1).unwrap())
+				} else {
+					None
+				}
+			}
+
+			Err(_) => {
+				self.notify(format!(
+					"Value::call failed when evaluating expression {}",
+					command
+				));
+				None
+			}
+		};
+
+		self.in_eval = false;
+
+		if let Some(err) = self.eval_error.take() {
+			self.notify(format!(
+				"runtime occured when executing expression: {}",
+				err
+			));
+		}
+
+		result
+	}
+
+	fn handle_eval(&mut self, frame_id: Option<u32>, command: &str, context: Option<String>) {
+		if command.starts_with('#') {
+			let response = self.handle_command(frame_id, &command[1..]);
+			self.send_or_disconnect(Response::Eval(EvalResponse {
+				value: response,
+				variables: None,
+			}));
+			return;
+		}
+
+		match self.eval_expr(frame_id, command) {
+			Some(result) => {
+				let variables = match context {
+					Some(str) if str == "repl" => None,
+					_ => self.value_to_variables_ref(&result),
+				};
+
+				self.send_or_disconnect(Response::Eval(EvalResponse {
+					value: Self::stringify(&result),
+					variables,
+				}));
+			}
+
+			None => {
+				self.send_or_disconnect(Response::Eval(EvalResponse {
+					value: "<no value>".to_owned(),
+					variables: None,
+				}));
+			}
+		}
+	}
+
+	fn handle_disassemble(&mut self, path: &str, id: u32) -> String {
+		let response = match auxtools::Proc::find_override(path, id) {
 			Some(proc) => {
 				// Make sure to temporarily remove all breakpoints in this proc
 				let breaks = get_hooked_offsets(&proc);
@@ -691,19 +948,31 @@ impl Server {
 					unhook_instruction(&proc, *offset).unwrap();
 				}
 
-				let dism = proc.disassemble();
+				let bytecode = unsafe { proc.bytecode() };
+
+				let mut env = crate::DisassembleEnv;
+				let (nodes, error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+				let dism = dmasm::format_disassembly(&nodes, None);
 
 				for offset in &breaks {
 					hook_instruction(&proc, *offset).unwrap();
 				}
 
-				format!("Dism for {:?}\n{}", proc, dism)
+				match error {
+					Some(error) => {
+						format!("Dism for {:?}\n{}\n\tError: {:?}", proc, dism, error)
+					}
+
+					None => {
+						format!("Dism for {:?}\n{}", proc, dism)
+					}
+				}
 			}
 
 			None => "Proc not found".to_owned(),
 		};
 
-		self.send_or_disconnect(Response::Disassemble(response));
+		return response;
 	}
 
 	// returns true if we need to break
@@ -711,12 +980,19 @@ impl Server {
 		match request {
 			Request::Disconnect => unreachable!(),
 			Request::CatchRuntimes { should_catch } => self.should_catch_runtimes = should_catch,
-			Request::BreakpointSet { instruction } => self.handle_breakpoint_set(instruction),
+			Request::BreakpointSet {
+				instruction,
+				condition,
+			} => self.handle_breakpoint_set(instruction, condition),
 			Request::BreakpointUnset { instruction } => self.handle_breakpoint_unset(instruction),
 			Request::Stacks => self.handle_stacks(),
 			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
 			Request::Variables { vars } => self.handle_variables(vars),
-			Request::Disassemble(proc) => self.handle_disassemble(proc),
+			Request::Eval {
+				frame_id,
+				command,
+				context,
+			} => self.handle_eval(frame_id, &command, context),
 
 			Request::StackFrames {
 				stack_id,
@@ -798,7 +1074,7 @@ impl Server {
 		}
 	}
 
-	fn notify<T: Into<String>>(&mut self, message: T) {
+	pub fn notify<T: Into<String>>(&mut self, message: T) {
 		let message = message.into();
 		eprintln!("Debug Server: {:?}", message);
 
@@ -825,10 +1101,31 @@ impl Server {
 			}
 		}
 
-		self.notify(format!("Pausing execution (reason: {:?})", reason));
-
 		self.state = Some(State::new());
 
+		// Exit now if this is a conditional breakpoint and the condition doesn't pass!
+		if let BreakpointReason::Breakpoint = reason {
+			let proc = unsafe { (*(*_ctx).proc_instance).proc };
+			let offset = unsafe { (*_ctx).bytecode_offset };
+			let condition = self
+				.conditional_breakpoints
+				.get(&(proc, offset))
+				.map(|x| x.clone());
+
+			if let Some(condition) = condition {
+				if let Some(result) = self.eval_expr(Some(0), &condition) {
+					if !result.is_truthy() {
+						self.state = None;
+						return ContinueKind::Continue;
+					}
+				}
+
+				// We might have just executed some code so invalidate the stacks we already fetched
+				self.state.as_mut().unwrap().invalidate_stacks();
+			}
+		}
+
+		self.notify(format!("Pausing execution (reason: {:?})", reason));
 		self.send_or_disconnect(Response::BreakpointHit { reason });
 
 		while let Ok(request) = self.requests.recv() {
@@ -837,6 +1134,18 @@ impl Server {
 				self.send_or_disconnect(Response::Ack);
 				self.state = None;
 				return kind;
+			}
+
+			// Hijack eval too so that we can refresh our state after it
+			if let Request::Eval {
+				frame_id,
+				command,
+				context,
+			} = request
+			{
+				self.handle_eval(frame_id, &command, context);
+				self.state.as_mut().unwrap().invalidate_stacks();
+				continue;
 			}
 
 			// if we get a pause request here we can ignore it

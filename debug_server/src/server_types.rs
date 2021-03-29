@@ -11,12 +11,17 @@ pub enum Request {
 	Disconnect,
 	Configured,
 	StdDef,
-	Disassemble(ProcRef),
+	Eval {
+		frame_id: Option<u32>,
+		command: String,
+		context: Option<String>,
+	},
 	CurrentInstruction {
 		frame_id: u32,
 	},
 	BreakpointSet {
 		instruction: InstructionRef,
+		condition: Option<String>,
 	},
 	BreakpointUnset {
 		instruction: InstructionRef,
@@ -55,7 +60,7 @@ pub enum Request {
 pub enum Response {
 	Ack,
 	StdDef(Option<String>),
-	Disassemble(String),
+	Eval(EvalResponse),
 	CurrentInstruction(Option<InstructionRef>),
 	BreakpointSet {
 		result: BreakpointSetResult,
@@ -149,6 +154,12 @@ pub struct VariablesRef(pub i32);
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Variable {
 	pub name: String,
+	pub value: String,
+	pub variables: Option<VariablesRef>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EvalResponse {
 	pub value: String,
 	pub variables: Option<VariablesRef>,
 }

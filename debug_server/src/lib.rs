@@ -1,7 +1,14 @@
+mod assemble_env;
+mod disassemble_env;
 mod instruction_hooking;
 mod server;
 mod server_types;
 mod stddef;
+
+#[cfg(windows)]
+mod crash_handler_windows;
+
+pub(crate) use disassemble_env::DisassembleEnv;
 
 use std::{
 	cell::UnsafeCell,

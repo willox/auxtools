@@ -1,5 +1,6 @@
 use std::{cell::UnsafeCell, ffi::c_void};
 
+use crate::disassemble_env::DisassembleEnv;
 use crate::server_types::{BreakpointReason, ContinueKind};
 use crate::DEBUG_SERVER;
 use auxtools::*;
@@ -7,6 +8,11 @@ use detour::RawDetour;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::sync::Mutex;
+
+// Could move these to dmasm
+const OPCODE_DBGLINE: u32 = 0x85;
+const OPCODE_DEBUG_BREAK: u32 = 0x1337;
+const OPCODE_DEBUG_OPERAND: u32 = 0x1338;
 
 static mut EXECUTE_INSTRUCTION: *const c_void = std::ptr::null();
 
@@ -25,7 +31,7 @@ fn instruction_hooking_init(_: &DMContext) -> Result<(), String> {
 	if cfg!(windows) {
 		let ptr = byondcore
 			.find(signature!(
-				"0F B7 48 ?? 8B 78 ?? 8B F1 8B 14 ?? 81 FA 59 01 00 00 0F 87 ?? ?? ?? ??"
+				"0F B7 48 ?? 8B 78 ?? 8B F1 8B 14 ?? 81 FA ?? ?? 00 00 0F 87 ?? ?? ?? ??"
 			))
 			.ok_or_else(|| "Couldn't find EXECUTE_INSTRUCTION")?;
 
@@ -37,7 +43,7 @@ fn instruction_hooking_init(_: &DMContext) -> Result<(), String> {
 	if cfg!(unix) {
 		let ptr = byondcore
 			.find(signature!(
-				"0F B7 47 ?? 8B 57 ?? 0F B7 D8 8B 0C ?? 81 F9 59 01 00 00 77 ?? FF 24 8D ?? ?? ?? ??"
+				"0F B7 47 ?? 8B 57 ?? 0F B7 D8 8B 0C ?? 81 F9 ?? ?? 00 00 77 ?? FF 24 8D ?? ?? ?? ??"
 			))
 			.ok_or_else(|| "Couldn't find EXECUTE_INSTRUCTION")?;
 
@@ -240,6 +246,16 @@ fn proc_instance_is_suspended(proc_ref: ProcInstanceRef) -> bool {
 fn handle_runtime(error: &str) {
 	unsafe {
 		let ctx = *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
+
+		// If this is eval code, don't catch the breakpoint
+		// TODO: Could try to make this work
+		if let Some(server) = &mut *DEBUG_SERVER.get() {
+			if server.is_in_eval() {
+				server.set_eval_error(error.into());
+				return;
+			}
+		}
+
 		CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Runtime(error.to_string()));
 	}
 }
@@ -278,11 +294,13 @@ extern "C" fn handle_instruction(
 			DebuggerAction::None => {}
 
 			DebuggerAction::Pause => {
+				CURRENT_ACTION = DebuggerAction::None;
 				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Pause);
 				did_breakpoint = true;
 			}
 
 			DebuggerAction::BreakOnNext => {
+				CURRENT_ACTION = DebuggerAction::None;
 				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 				did_breakpoint = true;
 			}
@@ -291,7 +309,7 @@ extern "C" fn handle_instruction(
 			// 1) The target context has disappeared - this means it has returned or runtimed
 			// 2) We're inside the target context and on a DbgLine instruction
 			DebuggerAction::StepOver { target } => {
-				if opcode == (OpCode::DbgLine as u32) && target.is((*ctx).proc_instance) {
+				if opcode == OPCODE_DBGLINE && target.is((*ctx).proc_instance) {
 					CURRENT_ACTION = DebuggerAction::BreakOnNext;
 				} else {
 					// If the context isn't in any stacks, it has just returned. Break!
@@ -299,6 +317,7 @@ extern "C" fn handle_instruction(
 					if !proc_instance_is_in_stack(ctx, target)
 						&& !proc_instance_is_suspended(target)
 					{
+						CURRENT_ACTION = DebuggerAction::None;
 						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 						did_breakpoint = true;
 					}
@@ -311,7 +330,7 @@ extern "C" fn handle_instruction(
 			// 3) We're inside the parent context and on a DbgLine instruction
 			DebuggerAction::StepInto { parent } => {
 				if !is_generated_proc(ctx) {
-					let is_dbgline = opcode == (OpCode::DbgLine as u32);
+					let is_dbgline = opcode == OPCODE_DBGLINE;
 					let is_in_parent = parent.is((*ctx).proc_instance);
 
 					if is_dbgline && is_in_parent {
@@ -323,6 +342,7 @@ extern "C" fn handle_instruction(
 						// If the context isn't in any stacks, it has just returned. Break!
 						// TODO: Don't break if the context's stack is gone (returned to C)
 						if !in_stack && !is_suspended {
+							CURRENT_ACTION = DebuggerAction::None;
 							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 							did_breakpoint = true;
 						} else if in_stack && is_dbgline {
@@ -336,6 +356,7 @@ extern "C" fn handle_instruction(
 			DebuggerAction::StepOut { target } => {
 				if !is_generated_proc(ctx) {
 					if target.is((*ctx).proc_instance) {
+						CURRENT_ACTION = DebuggerAction::None;
 						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 						did_breakpoint = true;
 					} else {
@@ -352,10 +373,11 @@ extern "C" fn handle_instruction(
 		}
 	}
 
-	if opcode == DEBUG_BREAK_OPCODE {
+	if opcode == OPCODE_DEBUG_BREAK {
 		// We don't want to break twice when stepping on to a breakpoint
 		if !did_breakpoint {
 			unsafe {
+				CURRENT_ACTION = DebuggerAction::None;
 				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Breakpoint);
 			}
 		}
@@ -383,16 +405,32 @@ pub enum InstructionHookError {
 	InvalidOffset,
 }
 
-pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookError> {
-	let dism = proc.disassemble().instructions;
+fn find_instruction<'a>(
+	env: &'a mut DisassembleEnv,
+	proc: &'a Proc,
+	offset: u32,
+) -> Option<(dmasm::Instruction, dmasm::DebugData<'a>)> {
+	let bytecode = unsafe { proc.bytecode() };
 
-	let instruction = dism.iter().find(|x| x.0 == offset);
+	let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, env);
 
-	if instruction.is_none() {
-		return Err(InstructionHookError::InvalidOffset);
+	for node in nodes {
+		if let dmasm::Node::Instruction(ins, debug) = node {
+			if debug.offset == offset {
+				return Some((ins, debug));
+			}
+		}
 	}
 
-	let instruction_length = instruction.unwrap().1 - instruction.unwrap().0 + 1;
+	None
+}
+
+pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookError> {
+	let mut env = crate::disassemble_env::DisassembleEnv;
+	let (_, debug) =
+		find_instruction(&mut env, proc, offset).ok_or(InstructionHookError::InvalidOffset)?;
+
+	let instruction_length = debug.bytecode.len();
 
 	let bytecode;
 	let opcode;
@@ -400,15 +438,15 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 
 	unsafe {
 		bytecode = {
-			let (ptr, count) = proc.bytecode();
-			std::slice::from_raw_parts_mut(ptr, count)
+			let (ptr, count) = proc.bytecode_mut_ptr();
+			std::slice::from_raw_parts_mut(ptr, count as usize)
 		};
 
 		opcode_ptr = bytecode.as_mut_ptr().add(offset as usize);
 		opcode = *opcode_ptr;
 	}
 
-	if opcode == DEBUG_BREAK_OPCODE {
+	if opcode == OPCODE_DEBUG_BREAK {
 		return Ok(());
 	}
 
@@ -419,9 +457,9 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 		);
 	}
 
-	bytecode[offset as usize] = DEBUG_BREAK_OPCODE;
-	for i in (offset + 1)..(offset + instruction_length) {
-		bytecode[i as usize] = DEBUG_BREAK_OPERAND;
+	bytecode[offset as usize] = OPCODE_DEBUG_BREAK;
+	for i in (offset + 1)..(offset + instruction_length as u32) {
+		bytecode[i as usize] = OPCODE_DEBUG_OPERAND;
 	}
 	Ok(())
 }
@@ -432,18 +470,14 @@ pub enum InstructionUnhookError {
 }
 
 pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnhookError> {
-	let dism = proc.disassemble().instructions;
-
-	let instruction = dism.iter().find(|x| x.0 == offset);
-
-	if instruction.is_none() {
-		return Err(InstructionUnhookError::InvalidOffset);
-	}
+	let mut env = crate::disassemble_env::DisassembleEnv;
+	let (_, _) =
+		find_instruction(&mut env, proc, offset).ok_or(InstructionUnhookError::InvalidOffset)?;
 
 	let opcode_ptr = unsafe {
 		let bytecode = {
-			let (ptr, count) = proc.bytecode();
-			std::slice::from_raw_parts_mut(ptr, count)
+			let (ptr, count) = proc.bytecode_mut_ptr();
+			std::slice::from_raw_parts_mut(ptr, count as usize)
 		};
 
 		bytecode.as_mut_ptr().add(offset as usize)
@@ -469,15 +503,20 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 }
 
 pub fn get_hooked_offsets(proc: &Proc) -> Vec<u32> {
-	let dism = proc.disassemble().instructions;
-	dism.iter()
-		.filter(|x| {
-			if let Instruction::DebugBreak = x.2 {
-				true
-			} else {
-				false
+	let bytecode = unsafe { proc.bytecode() };
+
+	let mut env = crate::disassemble_env::DisassembleEnv;
+	let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+
+	let mut offsets = vec![];
+
+	for node in nodes {
+		if let dmasm::Node::Instruction(ins, debug) = node {
+			if ins == dmasm::Instruction::AuxtoolsDebugBreak {
+				offsets.push(debug.offset);
 			}
-		})
-		.map(|x| x.0)
-		.collect()
+		}
+	}
+
+	offsets
 }

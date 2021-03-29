@@ -82,6 +82,8 @@ cargo build --release --target i686-pc-windows-msvc
 
 ## License
 
-This project is licensed under the [MIT license](https://en.wikipedia.org/wiki/MIT_License).
-
+Auxtools is licensed under the [MIT license](https://en.wikipedia.org/wiki/MIT_License).
 See [LICENSE](./LICENSE) for more details.
+
+The Auxtool Debug Server (located @ ./debug_server) is licensed under the [GPL 3.0 license](https://www.gnu.org/licenses/gpl-3.0.en.html).
+See [debug_server/LICENSE](./debug_server/LICENSE) for more details.

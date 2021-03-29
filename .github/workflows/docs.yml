@@ -14,6 +14,17 @@ jobs:
       with:
         persist-credentials: false # Necessary.
 
+    - name: Cache Cargo
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-docs-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-docs-cargo-
+
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
@@ -25,7 +36,9 @@ jobs:
       run: |
         sudo dpkg --add-architecture i386
         sudo apt-get update
-        sudo apt install build-essential g++-multilib libc6-i386 libstdc++6:i386
+        sudo apt install libc6-i386
+        sudo apt install libstdc++6:i386
+        sudo apt install build-essential g++-multilib
 
     - name: Build Docs
       run: cargo doc --no-deps
