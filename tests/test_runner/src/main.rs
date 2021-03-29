@@ -78,4 +78,6 @@ fn main() {
 		.filter(|x| x.starts_with("SUCCESS: "))
 		.collect::<Vec<&str>>();
 	assert_eq!(successes.len(), 1);
+
+	println!("Tests Succeeded");
 }
