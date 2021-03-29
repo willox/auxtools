@@ -15,7 +15,7 @@ fn inc_counter() {
 fn out(msg: Value) {
 	use std::io::{self, Write};
 
-	writeln!(io::stderr(), "{}", msg.as_string()?).unwrap();
+	writeln!(io::stderr(), "\n{}", msg.as_string()?).unwrap();
 	Ok(Value::null())
 }
 
