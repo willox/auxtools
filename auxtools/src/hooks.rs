@@ -1,8 +1,6 @@
 use super::proc::Proc;
 use super::raw_types;
 use super::value::Value;
-use super::DMContext;
-use crate::raw_types::values::IntoRawValue;
 use crate::runtime::DMResult;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
@@ -92,7 +90,7 @@ pub fn init() -> Result<(), String> {
 	Ok(())
 }
 
-pub type ProcHook = fn(&DMContext, &Value, &Value, &mut Vec<Value>) -> DMResult;
+pub type ProcHook = fn(&Value, &Value, &mut Vec<Value>) -> DMResult;
 
 thread_local! {
 	static PROC_HOOKS: RefCell<DashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(DashMap::new());
@@ -124,7 +122,6 @@ pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure>
 }
 
 impl Proc {
-	#[allow(unused)]
 	pub fn hook(&self, func: ProcHook) -> Result<(), HookFailure> {
 		hook_by_id(self.id, func)
 	}
@@ -154,7 +151,6 @@ extern "C" fn call_proc_by_id_hook(
 ) -> u8 {
 	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
 		Some(hook) => {
-			let ctx = unsafe { DMContext::new() };
 			let src;
 			let usr;
 			let mut args: Vec<Value>;
@@ -170,11 +166,11 @@ extern "C" fn call_proc_by_id_hook(
 					.collect();
 			}
 
-			let result = hook(&ctx, &src, &usr, &mut args);
+			let result = hook(&src, &usr, &mut args);
 
 			match result {
 				Ok(r) => {
-					let result_raw = unsafe { (&r).into_raw_value() };
+					let result_raw = (&r).raw;
 					// Stealing our reference out of the Value
 					std::mem::forget(r);
 					Some(result_raw)
@@ -183,9 +179,9 @@ extern "C" fn call_proc_by_id_hook(
 					// TODO: Some info about the hook would be useful (as the hook is never part of byond's stack, the runtime won't show it.)
 					Proc::find("/proc/auxtools_stack_trace")
 						.unwrap()
-						.call(&[&Value::from_string(e.message.as_str())])
+						.call(&[&Value::from_string(e.message.as_str()).unwrap()])
 						.unwrap();
-					unsafe { Some(Value::null().into_raw_value()) }
+					Some(Value::null().raw)
 				}
 			}
 		}

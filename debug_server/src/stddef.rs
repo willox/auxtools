@@ -12,7 +12,7 @@ static STDDEF_FN_SYMBOL: &[u8] = b"_ZN11DungBuilder8StdDefDMEv\0";
 static mut STDDEF: Option<&'static str> = None;
 
 #[init(full)]
-fn stddef_init(_: &DMContext) -> Result<(), String> {
+fn stddef_init() -> Result<(), String> {
 	let stddef_fn: extern "C" fn(*const c_void) -> *const c_char;
 
 	#[cfg(windows)]

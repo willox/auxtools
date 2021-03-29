@@ -47,6 +47,7 @@ jobs:
         sudo apt install libc6-i386
         sudo apt install libstdc++6:i386
         sudo apt install build-essential g++-multilib
+        sudo apt install pkg-config:i386 libssl-dev:i386
 
     - uses: actions-rs/toolchain@v1
       with:

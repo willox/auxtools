@@ -6,7 +6,6 @@ use std::fmt;
 
 #[repr(u8)]
 #[derive(PartialEq, Copy, Clone, Debug, Hash)]
-#[allow(unused)]
 #[non_exhaustive]
 pub enum ValueTag {
 	Null = 0x00,
@@ -110,17 +109,4 @@ pub union ValueData {
 pub struct Value {
 	pub tag: ValueTag,
 	pub data: ValueData,
-}
-
-pub trait IntoRawValue {
-	unsafe fn into_raw_value(self) -> Value;
-}
-
-impl IntoRawValue for f32 {
-	unsafe fn into_raw_value(self) -> Value {
-		Value {
-			tag: ValueTag::Number,
-			data: ValueData { number: self },
-		}
-	}
 }

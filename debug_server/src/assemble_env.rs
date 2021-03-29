@@ -5,7 +5,7 @@ pub struct AssembleEnv;
 
 impl dmasm::assembler::AssembleEnv for AssembleEnv {
 	fn get_string_index(&mut self, string: &[u8]) -> Option<u32> {
-		let string = StringRef::from_raw(string);
+		let string = StringRef::from_raw(string).ok()?;
 		let id = string.get_id();
 
 		// We leak here because the assembled code now holds a reference to this string
@@ -38,6 +38,7 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 
 	// This is... pretty crazy
 	fn get_type(&mut self, path: &str) -> Option<(u8, u32)> {
+		let path = Value::from_string(path).ok()?;
 		let expr = dmasm::compiler::compile_expr("text2path(name)", &["name"]).unwrap();
 		let assembly = dmasm::assembler::assemble(&expr, &mut Self).unwrap();
 
@@ -45,7 +46,7 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 		proc.set_bytecode(assembly);
 
 		let res = proc
-			.call(&[&Value::from_string(path)])
+			.call(&[&path])
 			.unwrap()
 			.as_list()
 			.unwrap()
@@ -56,6 +57,6 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 			return None;
 		}
 
-		Some((res.value.tag as u8, unsafe { res.value.data.id }))
+		Some((res.raw.tag as u8, unsafe { res.raw.data.id }))
 	}
 }

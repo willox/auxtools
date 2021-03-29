@@ -1,0 +1,15 @@
+[package]
+name = "auxtest"
+version = "0.1.0"
+authors = ["William Wallace <me@wiox.me>"]
+edition = "2018"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+auxtools = { path = "../../auxtools" }
+
+[dev-dependencies]
+test-cdylib = "1.1.0"

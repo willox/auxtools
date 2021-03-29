@@ -1,10 +1,4 @@
-use super::raw_types;
-use super::raw_types::misc;
-use super::raw_types::procs::{ProcEntry, ProcId};
-use super::runtime;
-use super::string::StringRef;
-use super::value::Value;
-
+use crate::*;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use std::cell::RefCell;
@@ -36,8 +30,8 @@ use std::fmt;
 /// Used to hook and call procs.
 #[derive(Clone)]
 pub struct Proc {
-	pub id: ProcId,
-	pub entry: *mut ProcEntry,
+	pub id: raw_types::procs::ProcId,
+	pub entry: *mut raw_types::procs::ProcEntry,
 	pub path: String,
 }
 
@@ -52,8 +46,8 @@ impl Proc {
 		get_proc_override(path, override_id)
 	}
 
-	pub fn from_id(id: ProcId) -> Option<Self> {
-		let mut proc_entry: *mut ProcEntry = std::ptr::null_mut();
+	pub fn from_id(id: raw_types::procs::ProcId) -> Option<Self> {
+		let mut proc_entry: *mut raw_types::procs::ProcEntry = std::ptr::null_mut();
 		unsafe {
 			assert_eq!(
 				raw_types::funcs::get_proc_array_entry(&mut proc_entry, id),
@@ -73,7 +67,7 @@ impl Proc {
 
 	pub fn parameter_names(&self) -> Vec<StringRef> {
 		unsafe {
-			let (data, count) = misc::get_parameters((*self.entry).parameters);
+			let (data, count) = raw_types::misc::get_parameters((*self.entry).parameters);
 			(0..count)
 				.map(|i| StringRef::from_variable_id((*data.add(i as usize)).name))
 				.collect()
@@ -82,7 +76,7 @@ impl Proc {
 
 	pub fn local_names(&self) -> Vec<StringRef> {
 		unsafe {
-			let (names, count) = misc::get_locals((*self.entry).locals);
+			let (names, count) = raw_types::misc::get_locals((*self.entry).locals);
 			(0..count)
 				.map(|i| StringRef::from_variable_id(*names.add(i as usize)))
 				.collect()
@@ -94,7 +88,7 @@ impl Proc {
 	}
 
 	pub unsafe fn bytecode_mut_ptr(&self) -> (*mut u32, u16) {
-		misc::get_bytecode((*self.entry).bytecode)
+		raw_types::misc::get_bytecode((*self.entry).bytecode)
 	}
 
 	pub unsafe fn bytecode(&self) -> &[u32] {
@@ -123,18 +117,18 @@ impl Proc {
 		unsafe {
 			// Increment ref-count of args permenently before passing them on
 			for v in args {
-				raw_types::funcs::inc_ref_count(v.value);
+				raw_types::funcs::inc_ref_count(v.raw);
 			}
 
-			let args: Vec<_> = args.iter().map(|e| e.value).collect();
+			let args: Vec<_> = args.iter().map(|e| e.raw).collect();
 
 			if raw_types::funcs::call_proc_by_id(
 				&mut ret,
-				Value::null().value,
+				Value::null().raw,
 				0,
 				self.id,
 				0,
-				Value::null().value,
+				Value::null().raw,
 				args.as_ptr(),
 				args.len(),
 				0,
@@ -164,7 +158,7 @@ impl fmt::Debug for Proc {
 }
 
 thread_local!(static PROCS_BY_NAME: RefCell<DashMap<String, Vec<Proc>>> = RefCell::new(DashMap::new()));
-thread_local!(static PROC_OVERRIDE_IDS: RefCell<DashMap<ProcId, u32>> = RefCell::new(DashMap::new()));
+thread_local!(static PROC_OVERRIDE_IDS: RefCell<DashMap<raw_types::procs::ProcId, u32>> = RefCell::new(DashMap::new()));
 
 fn strip_path(p: String) -> String {
 	p.replace("/proc/", "/").replace("/verb/", "/")
@@ -173,7 +167,7 @@ fn strip_path(p: String) -> String {
 pub fn populate_procs() {
 	let mut i: u32 = 0;
 	loop {
-		let proc = Proc::from_id(ProcId(i));
+		let proc = Proc::from_id(raw_types::procs::ProcId(i));
 		if proc.is_none() {
 			break;
 		}

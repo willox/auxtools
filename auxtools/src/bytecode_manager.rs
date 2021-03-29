@@ -36,7 +36,7 @@ fn get_active_bytecode_ptrs() -> HashSet<*mut u32> {
 		}
 	}
 
-	let stacks = debug::CallStacks::new(&DMContext {});
+	let stacks = debug::CallStacks::new();
 
 	let mut ptrs = HashSet::new();
 	visit(&mut ptrs, stacks.active);

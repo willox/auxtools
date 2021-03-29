@@ -33,14 +33,14 @@ struct State {
 impl State {
 	fn new() -> Self {
 		Self {
-			stacks: debug::CallStacks::new(&DMContext {}),
+			stacks: debug::CallStacks::new(),
 			variables: RefCell::new(vec![]),
 			variables_to_refs: RefCell::new(HashMap::new()),
 		}
 	}
 
 	fn invalidate_stacks(&mut self) {
-		self.stacks = debug::CallStacks::new(&DMContext {});
+		self.stacks = debug::CallStacks::new();
 	}
 
 	fn get_ref(&self, vars: Variables) -> VariablesRef {
@@ -268,11 +268,11 @@ impl Server {
 
 	fn is_object(value: &Value) -> bool {
 		// Hack for globals
-		if value.value.tag == ValueTag::World && unsafe { value.value.data.id == 1 } {
+		if value.raw.tag == ValueTag::World && unsafe { value.raw.data.id == 1 } {
 			return true;
 		}
 
-		value.get("vars").is_ok()
+		value.get(byond_string!("vars")).is_ok()
 	}
 
 	fn stringify(value: &Value) -> String {
@@ -283,10 +283,10 @@ impl Server {
 			}
 		} else {
 			match value.to_string() {
-				Ok(v) if v.is_empty() => value.value.to_string(),
+				Ok(v) if v.is_empty() => value.raw.to_string(),
 				Ok(value) => value,
 				Err(Runtime { message }) => {
-					format!("{} -- stringify error: {:?}", value.value, message)
+					format!("{} -- stringify error: {:?}", value.raw, message)
 				}
 			}
 		}
@@ -328,7 +328,7 @@ impl Server {
 			let key = list.get(i)?;
 
 			if let Ok(value) = list.get(&key) {
-				if value.value.tag != raw_types::values::ValueTag::Null {
+				if value.raw.tag != raw_types::values::ValueTag::Null {
 					// assoc entry
 					variables.push(Variable {
 						name: format!("[{}]", i),
@@ -349,10 +349,10 @@ impl Server {
 	fn object_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
 		// Grab `value.vars`. We have a little hack for globals which use a special type.
 		let vars = List::from_value(&unsafe {
-			if value.value.tag == ValueTag::World && value.value.data.id == 1 {
+			if value.raw.tag == ValueTag::World && value.raw.data.id == 1 {
 				Value::new(ValueTag::GlobalVars, ValueData { id: 0 })
 			} else {
-				value.get("vars")?
+				value.get(byond_string!("vars"))?
 			}
 		})?;
 
@@ -361,7 +361,7 @@ impl Server {
 
 		for i in 1..=vars.len() {
 			let name = vars.get(i)?.as_string()?;
-			let value = value.get(name.as_str())?;
+			let value = value.get(StringRef::new(name.as_str())?)?;
 			let variable = self.value_to_variable(name, &value);
 			if variable.name == "type" {
 				top_variables.push(variable);
@@ -851,27 +851,27 @@ impl Server {
 							match slot {
 								ArgType::Dot => {
 									let _ = Value::from_raw_owned((*ctx).dot);
-									(*ctx).dot = value.value;
+									(*ctx).dot = value.raw;
 								}
 								ArgType::Usr => {
 									let _ = Value::from_raw_owned((*instance).usr);
-									(*instance).usr = value.value;
+									(*instance).usr = value.raw;
 								}
 								ArgType::Src => {
 									let _ = Value::from_raw_owned((*instance).src);
-									(*instance).src = value.value;
+									(*instance).src = value.raw;
 								}
 								ArgType::Arg(idx) => {
 									let args = (*instance).args;
 									let arg = args.add(*idx as usize);
 									let _ = Value::from_raw_owned(*arg);
-									(*arg) = value.value;
+									(*arg) = value.raw;
 								}
 								ArgType::Local(idx) => {
 									let locals = (*ctx).locals;
 									let local = locals.add(*idx as usize);
 									let _ = Value::from_raw_owned(*local);
-									(*local) = value.value;
+									(*local) = value.raw;
 								}
 							}
 						}

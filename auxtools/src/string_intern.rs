@@ -7,11 +7,11 @@ use crate::StringRef;
 macro_rules! byond_string {
 	($s:literal) => {
 		unsafe {
-			static mut store: auxtools::InternedString =
-				auxtools::InternedString($s, std::cell::UnsafeCell::new(None));
-			auxtools::inventory::submit!(unsafe { &store });
-			let x = &*store.1.get();
-			x.clone().unwrap()
+			static mut STORE: $crate::InternedString =
+				$crate::InternedString($s, std::cell::UnsafeCell::new(None));
+			$crate::inventory::submit!(unsafe { &STORE });
+			let x = &*STORE.1.get();
+			x.as_ref().unwrap()
 		}
 	};
 }
@@ -23,7 +23,7 @@ inventory::collect!(&'static InternedString);
 
 pub fn setup_interned_strings() {
 	for info in inventory::iter::<&'static InternedString> {
-		let string = StringRef::new(info.0);
+		let string = StringRef::new(info.0).expect("failed to create interned string");
 
 		unsafe {
 			let dst = &mut *info.1.get();
@@ -40,17 +40,3 @@ pub fn destroy_interned_strings() {
 		}
 	}
 }
-
-/*
-impl From<&InternedString> for StringRef {
-	fn from(interned: &InternedString) -> StringRef {
-		unsafe {
-			let inner = &*interned.1.get();
-			match &inner {
-				Some(inner) => inner.clone(),
-				None => panic!("uninitialized InternedString"),
-			}
-		}
-	}
-}
-*/

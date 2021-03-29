@@ -1,0 +1,12 @@
+[package]
+name = "test_runner"
+version = "0.1.0"
+authors = ["William Wallace <me@wiox.me>"]
+edition = "2018"
+publish = false
+
+# Rust emits a warning for this... but we want it anyway so
+# that auxtest will be compiled before `cargo run` runs us
+# See: https://github.com/rust-lang/cargo/issues/7825
+[dependencies]
+auxtest = { path = "../auxtest" }

@@ -187,7 +187,6 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	};
 	let signature = quote! {
 		fn #func_name(
-			ctx: &auxtools::DMContext,
 			src: &auxtools::Value,
 			usr: &auxtools::Value,
 			args: &mut Vec<auxtools::Value>,
