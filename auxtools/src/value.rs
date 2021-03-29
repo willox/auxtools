@@ -187,11 +187,7 @@ impl Value {
 	}
 
 	/// Sets a variable by name to a given value.
-	pub fn set<S: Into<string::StringRef>, V: Into<Value>>(
-		&self,
-		name: S,
-		value: V,
-	) {
+	pub fn set<S: Into<string::StringRef>, V: Into<Value>>(&self, name: S, value: V) {
 		let value = value.into();
 
 		unsafe {

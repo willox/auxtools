@@ -3,7 +3,6 @@ use auxtools::*;
 mod lists;
 mod strings;
 
-
 #[hook("/proc/auxtest_inc_counter")]
 fn inc_counter() {
 	static mut COUNTER: u32 = 0;
@@ -21,4 +20,3 @@ fn out(msg: Value) {
 	writeln!(io::stderr(), "\n{}", msg.as_string()?).unwrap();
 	Ok(Value::null())
 }
-

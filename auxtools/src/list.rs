@@ -1,5 +1,5 @@
 use crate::raw_types;
-use crate::raw_types::values::{ValueTag};
+use crate::raw_types::values::ValueTag;
 use crate::runtime;
 use crate::runtime::ConversionResult;
 use crate::value::Value;
@@ -52,9 +52,7 @@ impl List {
 
 		// assoc funcs for everything else
 		unsafe {
-			if raw_types::funcs::get_assoc_element(&mut value, self.value.raw, index.raw)
-				== 1
-			{
+			if raw_types::funcs::get_assoc_element(&mut value, self.value.raw, index.raw) == 1 {
 				return Ok(Value::from_raw_owned(value));
 			}
 
@@ -64,21 +62,12 @@ impl List {
 		}
 	}
 
-	pub fn set<V: Into<Value>>(
-		&self,
-		index: V,
-		value: V,
-	) -> Result<(), runtime::Runtime> {
+	pub fn set<V: Into<Value>>(&self, index: V, value: V) -> Result<(), runtime::Runtime> {
 		let index = index.into();
 		let value = value.into();
 
 		unsafe {
-			if raw_types::funcs::set_assoc_element(
-				self.value.raw,
-				index.raw,
-				value.raw,
-			) == 1
-			{
+			if raw_types::funcs::set_assoc_element(self.value.raw, index.raw, value.raw) == 1 {
 				return Ok(());
 			}
 
@@ -113,10 +102,7 @@ impl List {
 	pub fn len(&self) -> u32 {
 		let mut length: u32 = 0;
 		unsafe {
-			assert_eq!(
-				raw_types::funcs::get_length(&mut length, self.value.raw),
-				1
-			);
+			assert_eq!(raw_types::funcs::get_length(&mut length, self.value.raw), 1);
 		}
 		length
 	}
