@@ -1,3 +1,5 @@
+use crate::ConversionResult;
+
 use super::raw_types;
 use super::value::Value;
 use std::ffi::CStr;
@@ -9,16 +11,16 @@ pub struct StringRef {
 }
 
 impl StringRef {
-	pub fn new(string: &str) -> Self {
-		StringRef {
-			value: Value::from_string(string),
-		}
+	pub fn new(string: &str) -> ConversionResult<Self> {
+		Ok(StringRef {
+			value: Value::from_string(string)?,
+		})
 	}
 
-	pub fn from_raw(data: &[u8]) -> Self {
-		StringRef {
-			value: Value::from_string_raw(data),
-		}
+	pub fn from_raw(data: &[u8]) -> ConversionResult<Self> {
+		Ok(StringRef {
+			value: Value::from_string_raw(data)?,
+		})
 	}
 
 	pub fn from_value(value: Value) -> Option<Self> {
@@ -165,9 +167,9 @@ impl fmt::Debug for StringRef {
 	}
 }
 
-impl From<&str> for StringRef {
-	fn from(string: &str) -> StringRef {
-		StringRef::new(string)
+impl From<&StringRef> for StringRef {
+	fn from(string: &StringRef) -> StringRef {
+		string.to_owned()
 	}
 }
 
@@ -185,5 +187,17 @@ impl From<&StringRef> for String {
 impl From<StringRef> for String {
 	fn from(string: StringRef) -> String {
 		String::from(&string)
+	}
+}
+
+impl From<StringRef> for Value {
+	fn from(string: StringRef) -> Self {
+		string.value
+	}
+}
+
+impl From<&StringRef> for Value {
+	fn from(string: &StringRef) -> Self {
+		string.value.clone()
 	}
 }

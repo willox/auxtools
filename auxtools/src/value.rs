@@ -103,9 +103,9 @@ impl Value {
 	/// Gets a turf by ID, with bounds checking.
 	pub fn turf_by_id(id: u32) -> DMResult {
 		let world = Value::world();
-		let max_x = world.get_number("maxx")? as u32;
-		let max_y = world.get_number("maxy")? as u32;
-		let max_z = world.get_number("maxz")? as u32;
+		let max_x = world.get_number(crate::byond_string!("maxx"))? as u32;
+		let max_y = world.get_number(crate::byond_string!("maxy"))? as u32;
+		let max_z = world.get_number(crate::byond_string!("maxz"))? as u32;
 		if (0..max_x * max_y * max_z).contains(&(id - 1)) {
 			Ok(unsafe { Value::turf_by_id_unchecked(id) })
 		} else {
@@ -116,9 +116,9 @@ impl Value {
 	/// Gets a turf by coordinates.
 	pub fn turf(x: u32, y: u32, z: u32) -> DMResult {
 		let world = Value::world();
-		let max_x = world.get_number("maxx")? as u32;
-		let max_y = world.get_number("maxy")? as u32;
-		let max_z = world.get_number("maxz")? as u32;
+		let max_x = world.get_number(crate::byond_string!("maxx"))? as u32;
+		let max_y = world.get_number(crate::byond_string!("maxy"))? as u32;
+		let max_z = world.get_number(crate::byond_string!("maxz"))? as u32;
 		let x = x - 1; // thanks byond
 		let y = y - 1;
 		let z = z - 1;
@@ -240,7 +240,7 @@ impl Value {
 
 			let procname = String::from(procname.as_ref()).replace("_", " ");
 			let mut args: Vec<_> = args.iter().map(|e| e.as_ref().raw).collect();
-			let name_ref = string::StringRef::new(&procname);
+			let name_ref = string::StringRef::new(&procname)?;
 
 			if raw_types::funcs::call_datum_proc_by_name(
 				&mut ret,
@@ -267,7 +267,7 @@ impl Value {
 			raw_types::values::ValueTag::Null
 			| raw_types::values::ValueTag::Number
 			| raw_types::values::ValueTag::String => {
-				return Ok(string::StringRef::new(format!("{}", self.raw).as_str()))
+				return Ok(string::StringRef::new(format!("{}", self.raw).as_str())?)
 			}
 
 			_ => {}
@@ -304,7 +304,7 @@ impl Value {
 
 	/// Gets the type of the Value as a string
 	pub fn get_type(&self) -> Result<String, runtime::Runtime> {
-		self.get("type")?.to_string()
+		self.get(crate::byond_string!("type"))?.to_string()
 	}
 
 	/// Checks whether this Value's type is equal to `typepath`.
@@ -331,35 +331,37 @@ impl Value {
 	/// ```ignore
 	/// let my_string = Value::from_string("Testing!");
 	/// ```
-	pub fn from_string<S: AsRef<str>>(data: S) -> Value {
-		// TODO: This should be done differently
-		let string = CString::new(data.as_ref()).unwrap();
+	pub fn from_string<S: AsRef<str>>(data: S) -> DMResult {
+		let string = CString::new(data.as_ref()).map_err(|_| {
+			runtime!("tried to create string containing NUL")
+		})?;
 
 		unsafe {
 			let mut id = raw_types::strings::StringId(0);
 
 			assert_eq!(raw_types::funcs::get_string_id(&mut id, string.as_ptr()), 1);
 
-			Value::new(
+			Ok(Value::new(
 				raw_types::values::ValueTag::String,
 				raw_types::values::ValueData { string: id },
-			)
+			))
 		}
 	}
 
-	pub fn from_string_raw(data: &[u8]) -> Value {
-		// TODO: This should be done differently
-		let string = CString::new(data).unwrap();
+	pub fn from_string_raw(data: &[u8]) -> DMResult {
+		let string = CString::new(data).map_err(|_| {
+			runtime!("tried to create string containing NUL")
+		})?;
 
 		unsafe {
 			let mut id = raw_types::strings::StringId(0);
 
 			assert_eq!(raw_types::funcs::get_string_id(&mut id, string.as_ptr()), 1);
 
-			Value::new(
+			Ok(Value::new(
 				raw_types::values::ValueTag::String,
 				raw_types::values::ValueData { string: id },
-			)
+			))
 		}
 	}
 

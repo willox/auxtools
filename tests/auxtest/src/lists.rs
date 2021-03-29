@@ -20,9 +20,9 @@ fn test_lists() {
 	}
 
 	// Now we become assoc
-	list_a.set(&Value::from_string("key"), &Value::from_string("value"))?;
+	list_a.set(byond_string!("key"), byond_string!("value"))?;
 
-	if list_a.get(&Value::from_string("key"))?.as_string()? != "value" {
+	if list_a.get(byond_string!("key"))?.as_string()? != "value" {
 		return Err(runtime!("test_lists: list_a[2] != 102"));
 	}
 

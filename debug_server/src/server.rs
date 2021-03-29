@@ -272,7 +272,7 @@ impl Server {
 			return true;
 		}
 
-		value.get("vars").is_ok()
+		value.get(byond_string!("vars")).is_ok()
 	}
 
 	fn stringify(value: &Value) -> String {
@@ -352,7 +352,7 @@ impl Server {
 			if value.raw.tag == ValueTag::World && value.raw.data.id == 1 {
 				Value::new(ValueTag::GlobalVars, ValueData { id: 0 })
 			} else {
-				value.get("vars")?
+				value.get(byond_string!("vars"))?
 			}
 		})?;
 
@@ -361,7 +361,7 @@ impl Server {
 
 		for i in 1..=vars.len() {
 			let name = vars.get(i)?.as_string()?;
-			let value = value.get(name.as_str())?;
+			let value = value.get(StringRef::new(name.as_str())?)?;
 			let variable = self.value_to_variable(name, &value);
 			if variable.name == "type" {
 				top_variables.push(variable);
