@@ -39,7 +39,7 @@ jobs:
         sudo apt install libc6-i386
         sudo apt install libstdc++6:i386
         sudo apt install build-essential g++-multilib
-        sudo apt install libssl-dev
+        sudo apt install pkg-config libssl-dev
 
     - name: Build Docs
       run: cargo doc --no-deps
