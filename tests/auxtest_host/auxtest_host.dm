@@ -7,20 +7,25 @@
 /proc/auxtest_out()
 	// Graceful failure
 
-/proc/auxtest_strings()
-	CRASH()
-
 /proc/auxtest_inc_counter()
 	CRASH()
 
 /proc/concat_strings(a, b)
 	return addtext(a, b)
 
+// Tests
+/proc/auxtest_lists()
+	CRASH()
+
+/proc/auxtest_strings()
+	CRASH()
+
 /proc/do_tests()
 	var/auxtest_dll = auxtools_test_dll()
 	ASSERT(call(auxtest_dll, "auxtools_init")() == "SUCCESS")
 
-	// TODO: More tests
+	// Tests
+	ASSERT(auxtest_lists() == TRUE)
 	ASSERT(auxtest_strings() == TRUE)
 
 	// Stop testing after the 8th reboot

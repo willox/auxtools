@@ -1,6 +1,8 @@
 use auxtools::*;
 
+mod lists;
 mod strings;
+
 
 #[hook("/proc/auxtest_inc_counter")]
 fn inc_counter() {

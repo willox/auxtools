@@ -77,7 +77,7 @@ fn main() {
 		.lines()
 		.filter(|x| x.starts_with("SUCCESS: "))
 		.collect::<Vec<&str>>();
-	assert_eq!(successes.len(), 1);
+	assert_eq!(successes.len(), 1, "Tests didn't output success message");
 
 	println!("Tests Succeeded");
 }
