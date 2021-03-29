@@ -6,12 +6,10 @@ use crate::DMResult;
 use std::iter::FromIterator;
 
 /// A wrapper around [Values](struct.Value.html) that make working with lists a little easier
-#[allow(unused)]
 pub struct List {
 	value: Value,
 }
 
-#[allow(unused)]
 impl List {
 	pub fn from_value(val: &Value) -> DMResult<Self> {
 		if !Self::is_list(val) {

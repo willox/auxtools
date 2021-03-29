@@ -11,10 +11,8 @@ use runtime::DMResult;
 ///
 /// ## Note
 /// In order for global getters/setters to work, the DM code needs to contain usage of `global.vars["varname"]` somewhere.
-#[allow(unused)]
 pub struct DMContext {}
 
-#[allow(unused)]
 impl DMContext {
 	/// Fetch a global variable from BYOND. Will return a runtime if the variable does not exist.
 	///

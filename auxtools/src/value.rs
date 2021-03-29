@@ -40,7 +40,6 @@ impl Drop for Value {
 	}
 }
 
-#[allow(unused)]
 impl Value {
 	/// Creates a new value from raw tag and data.
 	/// Use if you know what you are doing.
@@ -187,12 +186,11 @@ impl Value {
 	}
 
 	/// Sets a variable by name to a given value.
-	pub fn set<S: Into<string::StringRef>, V: Into<Value>>(&self, name: S, value: V) {
+	pub fn set<S: Into<string::StringRef>, V: Into<Value>>(&self, name: S, value: V) -> DMResult<()> {
 		let value = value.into();
 
-		unsafe {
-			self.set_by_id(name.into().get_id(), value.raw);
-		}
+		self.set_by_id(name.into().get_id(), value.raw)?;
+		Ok(())
 	}
 
 	/// Check if the current value is a number and casts it.

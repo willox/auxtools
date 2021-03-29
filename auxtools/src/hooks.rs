@@ -123,7 +123,6 @@ pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure>
 }
 
 impl Proc {
-	#[allow(unused)]
 	pub fn hook(&self, func: ProcHook) -> Result<(), HookFailure> {
 		hook_by_id(self.id, func)
 	}
