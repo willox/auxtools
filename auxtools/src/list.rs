@@ -1,8 +1,8 @@
 use crate::raw_types;
 use crate::raw_types::values::ValueTag;
 use crate::runtime;
-use crate::runtime::ConversionResult;
 use crate::value::Value;
+use crate::DMResult;
 use std::iter::FromIterator;
 
 /// A wrapper around [Values](struct.Value.html) that make working with lists a little easier
@@ -13,7 +13,7 @@ pub struct List {
 
 #[allow(unused)]
 impl List {
-	pub fn from_value(val: &Value) -> ConversionResult<Self> {
+	pub fn from_value(val: &Value) -> DMResult<Self> {
 		if !Self::is_list(val) {
 			return Err(runtime!("attempted to create List from non-list value"));
 		}

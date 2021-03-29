@@ -1,4 +1,4 @@
-use crate::ConversionResult;
+use crate::DMResult;
 
 use super::raw_types;
 use super::value::Value;
@@ -11,13 +11,13 @@ pub struct StringRef {
 }
 
 impl StringRef {
-	pub fn new(string: &str) -> ConversionResult<Self> {
+	pub fn new(string: &str) -> DMResult<Self> {
 		Ok(StringRef {
 			value: Value::from_string(string)?,
 		})
 	}
 
-	pub fn from_raw(data: &[u8]) -> ConversionResult<Self> {
+	pub fn from_raw(data: &[u8]) -> DMResult<Self> {
 		Ok(StringRef {
 			value: Value::from_string_raw(data)?,
 		})

@@ -30,7 +30,7 @@ pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
 pub use list::List;
 pub use proc::Proc;
 pub use raw_types::variables::VariableNameIdTable;
-pub use runtime::{ConversionResult, DMResult, Runtime};
+pub use runtime::{DMResult, Runtime};
 use std::ffi::c_void;
 pub use string::StringRef;
 pub use string_intern::InternedString;

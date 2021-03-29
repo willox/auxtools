@@ -3,7 +3,7 @@ use super::raw_types::values::{ValueData, ValueTag};
 use super::string;
 use super::value::Value;
 use crate::runtime;
-use runtime::{ConversionResult, DMResult};
+use runtime::DMResult;
 
 /// Used to interact with global variables.
 ///
@@ -36,7 +36,7 @@ impl DMContext {
 	/// Fetch a numeric global variable from BYOND. Will return a runtime if the variable does not exist or is not a number.
 	///
 	/// See [get_global](#method.get_global)
-	pub fn get_global_number<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<f32> {
+	pub fn get_global_number<S: Into<string::StringRef>>(&self, name: S) -> DMResult<f32> {
 		unsafe { Value::new(ValueTag::World, ValueData { id: 1 }).get_number(name) }
 	}
 
@@ -46,7 +46,7 @@ impl DMContext {
 	pub fn get_global_string<S: Into<string::StringRef>>(
 		&self,
 		name: S,
-	) -> ConversionResult<String> {
+	) -> DMResult<String> {
 		unsafe { Value::new(ValueTag::World, ValueData { id: 1 }).get_string(name) }
 	}
 
@@ -56,7 +56,7 @@ impl DMContext {
 	pub fn get_global_list<S: Into<string::StringRef>>(
 		&self,
 		name: S,
-	) -> ConversionResult<list::List> {
+	) -> DMResult<list::List> {
 		let globals = Value::globals();
 		let list = globals.get_list(name)?;
 		Ok(list)

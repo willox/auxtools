@@ -2,7 +2,7 @@ use super::raw_types;
 use super::string;
 use crate::list;
 use crate::runtime;
-use crate::runtime::{ConversionResult, DMResult};
+use crate::runtime::{DMResult};
 use std::ffi::CString;
 use std::fmt;
 use std::marker::PhantomData;
@@ -171,17 +171,17 @@ impl Value {
 	}
 
 	/// Gets a variable by name and safely casts it to a float.
-	pub fn get_number<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<f32> {
+	pub fn get_number<S: Into<string::StringRef>>(&self, name: S) -> DMResult<f32> {
 		self.get(name)?.as_number()
 	}
 
 	/// Gets a variable by name and safely casts it to a string.
-	pub fn get_string<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<String> {
+	pub fn get_string<S: Into<string::StringRef>>(&self, name: S) -> DMResult<String> {
 		self.get(name)?.as_string()
 	}
 
 	/// Gets a variable by name and safely casts it to a [list::List].
-	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> ConversionResult<list::List> {
+	pub fn get_list<S: Into<string::StringRef>>(&self, name: S) -> DMResult<list::List> {
 		let var = self.get(name)?;
 		var.as_list()
 	}
@@ -196,7 +196,7 @@ impl Value {
 	}
 
 	/// Check if the current value is a number and casts it.
-	pub fn as_number(&self) -> ConversionResult<f32> {
+	pub fn as_number(&self) -> DMResult<f32> {
 		match self.raw.tag {
 			raw_types::values::ValueTag::Number => unsafe { Ok(self.raw.data.number) },
 			_ => Err(runtime!("Attempt to interpret non-number value as number")),
@@ -204,7 +204,7 @@ impl Value {
 	}
 
 	/// Check if the current value is a string and casts it.
-	pub fn as_string(&self) -> ConversionResult<String> {
+	pub fn as_string(&self) -> DMResult<String> {
 		match self.raw.tag {
 			raw_types::values::ValueTag::String => unsafe {
 				Ok(string::StringRef::from_id(self.raw.data.string).into())
@@ -214,7 +214,7 @@ impl Value {
 	}
 
 	/// Check if the current value is a list and casts it.
-	pub fn as_list(&self) -> ConversionResult<list::List> {
+	pub fn as_list(&self) -> DMResult<list::List> {
 		list::List::from_value(self)
 	}
 
@@ -262,7 +262,7 @@ impl Value {
 	}
 
 	// ugh
-	pub fn to_dmstring(&self) -> ConversionResult<string::StringRef> {
+	pub fn to_dmstring(&self) -> DMResult<string::StringRef> {
 		match self.raw.tag {
 			raw_types::values::ValueTag::Null
 			| raw_types::values::ValueTag::Number
@@ -283,7 +283,7 @@ impl Value {
 		}
 	}
 
-	pub fn to_string(&self) -> ConversionResult<String> {
+	pub fn to_string(&self) -> DMResult<String> {
 		match self.raw.tag {
 			raw_types::values::ValueTag::Null
 			| raw_types::values::ValueTag::Number
