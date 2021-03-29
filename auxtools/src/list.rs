@@ -1,8 +1,4 @@
-use crate::raw_types;
-use crate::raw_types::values::ValueTag;
-use crate::runtime;
-use crate::value::Value;
-use crate::DMResult;
+use crate::*;
 use std::iter::FromIterator;
 
 /// A wrapper around [Values](struct.Value.html) that make working with lists a little easier
@@ -107,24 +103,24 @@ impl List {
 
 	pub fn is_list(value: &Value) -> bool {
 		match value.raw.tag {
-			ValueTag::List
-			| ValueTag::MobVars
-			| ValueTag::ObjVars
-			| ValueTag::TurfVars
-			| ValueTag::AreaVars
-			| ValueTag::ClientVars
-			| ValueTag::Vars
-			| ValueTag::MobOverlays
-			| ValueTag::MobUnderlays
-			| ValueTag::ObjOverlays
-			| ValueTag::ObjUnderlays
-			| ValueTag::TurfOverlays
-			| ValueTag::TurfUnderlays
-			| ValueTag::AreaOverlays
-			| ValueTag::AreaUnderlays
-			| ValueTag::ImageVars
-			| ValueTag::WorldVars
-			| ValueTag::GlobalVars => true,
+			raw_types::values::ValueTag::List
+			| raw_types::values::ValueTag::MobVars
+			| raw_types::values::ValueTag::ObjVars
+			| raw_types::values::ValueTag::TurfVars
+			| raw_types::values::ValueTag::AreaVars
+			| raw_types::values::ValueTag::ClientVars
+			| raw_types::values::ValueTag::Vars
+			| raw_types::values::ValueTag::MobOverlays
+			| raw_types::values::ValueTag::MobUnderlays
+			| raw_types::values::ValueTag::ObjOverlays
+			| raw_types::values::ValueTag::ObjUnderlays
+			| raw_types::values::ValueTag::TurfOverlays
+			| raw_types::values::ValueTag::TurfUnderlays
+			| raw_types::values::ValueTag::AreaOverlays
+			| raw_types::values::ValueTag::AreaUnderlays
+			| raw_types::values::ValueTag::ImageVars
+			| raw_types::values::ValueTag::WorldVars
+			| raw_types::values::ValueTag::GlobalVars => true,
 			_ => false,
 		}
 	}
