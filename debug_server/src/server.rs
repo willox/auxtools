@@ -129,7 +129,15 @@ impl Server {
 							.help("Id of the proc to disassemble (for when multiple procs are defined with the same path)")
 							.takes_value(true),
 					)
-		)
+			)
+			.subcommand(
+				App::new("guest_override")
+					.about("Override the CKey used by guest connections")
+					.arg(
+						Arg::with_name("ckey")
+							.takes_value(true),
+					)
+			)
 	}
 
 	pub fn connect(addr: &SocketAddr) -> std::io::Result<Server> {
@@ -742,6 +750,18 @@ impl Server {
 							"no execution frame selected".to_owned()
 						}
 					}
+
+					("guest_override", Some(matches)) => match matches.value_of("ckey") {
+						Some(ckey) => match crate::ckey_override::override_guest_ckey(ckey) {
+							Ok(()) => "Success".to_owned(),
+
+							Err(e) => {
+								format!("Failed: {:?}", e)
+							}
+						},
+
+						None => "no ckey provided".to_owned(),
+					},
 
 					_ => "unknown command".to_owned(),
 				}
