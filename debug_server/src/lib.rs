@@ -5,6 +5,7 @@ mod instruction_hooking;
 mod server;
 mod server_types;
 mod stddef;
+mod mem_profiler;
 
 #[cfg(windows)]
 mod crash_handler_windows;
