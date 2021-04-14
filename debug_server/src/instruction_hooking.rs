@@ -260,6 +260,8 @@ fn handle_runtime(error: &str) {
 	}
 }
 
+static mut DID_CREATE_LIST: bool = false;
+
 // Handles any instruction BYOND tries to execute.
 // This function has to leave `*CURRENT_EXECUTION_CONTEXT` in EAX, so make sure to return it.
 #[no_mangle]
@@ -276,6 +278,17 @@ extern "C" fn handle_instruction(
 	}
 
 	unsafe {
+		if DID_CREATE_LIST {
+			DID_CREATE_LIST = false;
+
+			let stack = (*ctx).stack;
+			let list = stack.offset((*ctx).stack_size as isize - 1);
+
+			crate::list_allocs::on_allocated(&*list);
+		}
+	}
+
+	unsafe {
 		if let Some(server) = &mut *DEBUG_SERVER.get() {
 			if server.process() {
 				CURRENT_ACTION = DebuggerAction::Pause;
@@ -285,6 +298,13 @@ extern "C" fn handle_instruction(
 
 	let opcode_ptr = unsafe { (*ctx).bytecode.add((*ctx).bytecode_offset as usize) };
 	let opcode = unsafe { *opcode_ptr };
+
+	if opcode == 0x19 || opcode == 0x1A || opcode == 0xB8 || opcode == 0xC8 {
+		unsafe {
+			// obj won't work right if there is a runtime
+			DID_CREATE_LIST = true;
+		}
+	}
 
 	// This lets us ignore any actual breakpoints we hit if we've already paused for another reason
 	let mut did_breakpoint = false;

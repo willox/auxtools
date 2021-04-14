@@ -2,6 +2,7 @@ mod assemble_env;
 mod ckey_override;
 mod disassemble_env;
 mod instruction_hooking;
+mod list_allocs;
 mod server;
 mod server_types;
 mod stddef;
