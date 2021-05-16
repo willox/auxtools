@@ -782,28 +782,22 @@ impl Server {
 						None => "no ckey provided".to_owned(),
 					},
 
-					("mem_profiler", Some(matches)) => {
-						match matches.subcommand() {
-							("begin", Some(matches)) => {
-								match matches.value_of("path") {
-									Some(path) => {
-										mem_profiler::begin(path)
-											.map(|_| "Memory profiler enabled".to_owned())
-											.unwrap_or_else(|e| format!("Failed: {}", e))
-									}
+					("mem_profiler", Some(matches)) => match matches.subcommand() {
+						("begin", Some(matches)) => match matches.value_of("path") {
+							Some(path) => mem_profiler::begin(path)
+								.map(|_| "Memory profiler enabled".to_owned())
+								.unwrap_or_else(|e| format!("Failed: {}", e)),
 
-									None => "no path provided".to_owned(),
-								}
-							}
+							None => "no path provided".to_owned(),
+						},
 
-							("end", Some(_)) => {
-								mem_profiler::end();
-								"Memory profiler disabled".to_owned()
-							}
-
-							_ => "unknown memory profiler sub-command".to_owned(),
+						("end", Some(_)) => {
+							mem_profiler::end();
+							"Memory profiler disabled".to_owned()
 						}
-					}
+
+						_ => "unknown memory profiler sub-command".to_owned(),
+					},
 
 					_ => "unknown command".to_owned(),
 				}

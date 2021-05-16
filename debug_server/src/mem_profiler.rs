@@ -1,26 +1,15 @@
-use std::{cell::UnsafeCell, collections::HashMap, fs::File, io};
+use detour::RawDetour;
 use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
-use detour::RawDetour;
+use std::{cell::UnsafeCell, collections::HashMap, fs::File, io};
 
-use auxtools::{*, raw_types::procs::ProcId};
+use auxtools::{raw_types::procs::ProcId, *};
 
-#[cfg(windows)]
 static mut THREAD_ID: u32 = 0;
-
-#[cfg(windows)]
 static MALLOC_SYMBOL: &[u8] = b"malloc\0";
-
-#[cfg(windows)]
 static REALLOC_SYMBOL: &[u8] = b"realloc\0";
-
-#[cfg(windows)]
 static FREE_SYMBOL: &[u8] = b"free\0";
-
-#[cfg(windows)]
 static NEW_SYMBOL: &[u8] = b"??2@YAPAXI@Z\0";
-
-#[cfg(windows)]
 static DELETE_SYMBOL: &[u8] = b"??3@YAXPAX@Z\0";
 
 fn setup_hooks() {
@@ -33,7 +22,6 @@ fn setup_hooks() {
 
 		DONE = true;
 
-		#[cfg(windows)]
 		{
 			use winapi::um::libloaderapi;
 
@@ -45,23 +33,26 @@ fn setup_hooks() {
 				return;
 			}
 
-			let malloc = libloaderapi::GetProcAddress(module, MALLOC_SYMBOL.as_ptr() as *const c_char);
-			let realloc = libloaderapi::GetProcAddress(module, REALLOC_SYMBOL.as_ptr() as *const c_char);
+			let malloc =
+				libloaderapi::GetProcAddress(module, MALLOC_SYMBOL.as_ptr() as *const c_char);
+			let realloc =
+				libloaderapi::GetProcAddress(module, REALLOC_SYMBOL.as_ptr() as *const c_char);
 			let free = libloaderapi::GetProcAddress(module, FREE_SYMBOL.as_ptr() as *const c_char);
 			let new = libloaderapi::GetProcAddress(module, NEW_SYMBOL.as_ptr() as *const c_char);
-			let delete = libloaderapi::GetProcAddress(module, DELETE_SYMBOL.as_ptr() as *const c_char);
+			let delete =
+				libloaderapi::GetProcAddress(module, DELETE_SYMBOL.as_ptr() as *const c_char);
 
 			// ¯\_(ツ)_/¯
-			if malloc.is_null() || realloc.is_null() || free.is_null() || new.is_null() || delete.is_null() {
+			if malloc.is_null()
+				|| realloc.is_null()
+				|| free.is_null()
+				|| new.is_null() || delete.is_null()
+			{
 				return;
 			}
 
 			{
-				let hook = RawDetour::new(
-					malloc as _,
-					malloc_hook as _,
-				)
-				.unwrap();
+				let hook = RawDetour::new(malloc as _, malloc_hook as _).unwrap();
 
 				hook.enable().unwrap();
 				MALLOC_ORIGINAL = Some(std::mem::transmute(hook.trampoline()));
@@ -69,11 +60,7 @@ fn setup_hooks() {
 			}
 
 			{
-				let hook = RawDetour::new(
-					realloc as _,
-					realloc_hook as _,
-				)
-				.unwrap();
+				let hook = RawDetour::new(realloc as _, realloc_hook as _).unwrap();
 
 				hook.enable().unwrap();
 				REALLOC_ORIGINAL = Some(std::mem::transmute(hook.trampoline()));
@@ -81,11 +68,7 @@ fn setup_hooks() {
 			}
 
 			{
-				let hook = RawDetour::new(
-					new as _,
-					new_hook as _,
-				)
-				.unwrap();
+				let hook = RawDetour::new(new as _, new_hook as _).unwrap();
 
 				hook.enable().unwrap();
 				NEW_ORIGINAL = Some(std::mem::transmute(hook.trampoline()));
@@ -93,11 +76,7 @@ fn setup_hooks() {
 			}
 
 			{
-				let hook = RawDetour::new(
-					free as _,
-					free_hook as _,
-				)
-				.unwrap();
+				let hook = RawDetour::new(free as _, free_hook as _).unwrap();
 
 				hook.enable().unwrap();
 				FREE_ORIGINAL = Some(std::mem::transmute(hook.trampoline()));
@@ -105,19 +84,13 @@ fn setup_hooks() {
 			}
 
 			{
-				let hook = RawDetour::new(
-					delete as _,
-					delete_hook as _,
-				)
-				.unwrap();
+				let hook = RawDetour::new(delete as _, delete_hook as _).unwrap();
 
 				hook.enable().unwrap();
 				DELETE_ORIGINAL = Some(std::mem::transmute(hook.trampoline()));
 				std::mem::forget(hook);
 			}
 		}
-
-
 	}
 }
 
@@ -129,9 +102,7 @@ static mut NEW_ORIGINAL: Option<extern "cdecl" fn(usize) -> *mut c_void> = None;
 static mut DELETE_ORIGINAL: Option<extern "cdecl" fn(*mut c_void)> = None;
 
 extern "cdecl" fn malloc_hook(size: usize) -> *mut c_void {
-	let ptr = unsafe {
-		(MALLOC_ORIGINAL.unwrap())(size)
-	};
+	let ptr = unsafe { (MALLOC_ORIGINAL.unwrap())(size) };
 
 	unsafe {
 		if THREAD_ID == winapi::um::processthreadsapi::GetCurrentThreadId() {
@@ -145,9 +116,7 @@ extern "cdecl" fn malloc_hook(size: usize) -> *mut c_void {
 }
 
 extern "cdecl" fn realloc_hook(ptr: *mut c_void, size: usize) -> *mut c_void {
-	let new_ptr = unsafe {
-		(REALLOC_ORIGINAL.unwrap())(ptr, size)
-	};
+	let new_ptr = unsafe { (REALLOC_ORIGINAL.unwrap())(ptr, size) };
 
 	unsafe {
 		if THREAD_ID == winapi::um::processthreadsapi::GetCurrentThreadId() {
@@ -162,9 +131,7 @@ extern "cdecl" fn realloc_hook(ptr: *mut c_void, size: usize) -> *mut c_void {
 }
 
 extern "cdecl" fn new_hook(size: usize) -> *mut c_void {
-	let ptr = unsafe {
-		(NEW_ORIGINAL.unwrap())(size)
-	};
+	let ptr = unsafe { (NEW_ORIGINAL.unwrap())(size) };
 
 	unsafe {
 		if THREAD_ID == winapi::um::processthreadsapi::GetCurrentThreadId() {
@@ -222,10 +189,7 @@ impl State {
 
 	fn allocate(&mut self, ptr: *const c_void, size: usize) {
 		if let Some(proc) = Self::current_proc_id() {
-			self.live_allocs.insert(ptr, Allocation {
-				proc,
-				size
-			});
+			self.live_allocs.insert(ptr, Allocation { proc, size });
 		}
 	}
 
@@ -238,7 +202,7 @@ impl State {
 
 		let mut totals: Vec<(ProcId, u64)> = vec![];
 
-		for (_ptr, Allocation {proc, size}) in self.live_allocs {
+		for (_ptr, Allocation { proc, size }) in self.live_allocs {
 			let proc_idx = proc.0 as usize;
 
 			if totals.len() <= proc_idx {
@@ -291,9 +255,7 @@ pub fn begin(path: &str) -> io::Result<()> {
 }
 
 pub fn end() {
-	let state = unsafe {
-		STATE.get_mut().take()
-	};
+	let state = unsafe { STATE.get_mut().take() };
 
 	if let Some(state) = state {
 		State::dump(state);
