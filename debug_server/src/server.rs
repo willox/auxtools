@@ -1,3 +1,5 @@
+use crate::mem_profiler;
+
 use super::instruction_hooking::{get_hooked_offsets, hook_instruction, unhook_instruction};
 use std::io::{Read, Write};
 use std::sync::mpsc;
@@ -136,6 +138,23 @@ impl Server {
 					.arg(
 						Arg::with_name("ckey")
 							.takes_value(true),
+					)
+			)
+			.subcommand(
+				App::new("mem_profiler")
+					.about("Memory profiler")
+					.subcommand(
+						App::new("begin")
+							.about("Begins memory profiling. Output goes to the specified file path")
+							.arg(
+								Arg::with_name("path")
+									.help("Where to output memory profiler results")
+									.takes_value(true),
+							)
+					)
+					.subcommand(
+						App::new("end")
+							.about("Finishes current memory profiler.")
 					)
 			)
 	}
@@ -761,6 +780,23 @@ impl Server {
 						},
 
 						None => "no ckey provided".to_owned(),
+					},
+
+					("mem_profiler", Some(matches)) => match matches.subcommand() {
+						("begin", Some(matches)) => match matches.value_of("path") {
+							Some(path) => mem_profiler::begin(path)
+								.map(|_| "Memory profiler enabled".to_owned())
+								.unwrap_or_else(|e| format!("Failed: {}", e)),
+
+							None => "no path provided".to_owned(),
+						},
+
+						("end", Some(_)) => {
+							mem_profiler::end();
+							"Memory profiler disabled".to_owned()
+						}
+
+						_ => "unknown memory profiler sub-command".to_owned(),
 					},
 
 					_ => "unknown command".to_owned(),
