@@ -1,3 +1,6 @@
+/datum
+	var/__auxtools_weakref_id
+
 /proc/auxtools_test_dll()
 	. = world.GetConfig("env", "AUXTEST_DLL")
 
@@ -13,11 +16,24 @@
 /proc/concat_strings(a, b)
 	return addtext(a, b)
 
+/proc/delete_value(v)
+	del v
+
+// We create a new datum after del'ing the one we passed into the test function.
+// This causes the new datum to take on the internal ID of the old one, and we can test if auxtools
+// can properly deal with this situation.
+var/datum/weak_test_datum
+/proc/create_datum_for_weak()
+	weak_test_datum = new
+
 // Tests
 /proc/auxtest_lists()
 	CRASH()
 
 /proc/auxtest_strings()
+	CRASH()
+
+/proc/auxtest_weak_values()
 	CRASH()
 
 /proc/do_tests()
