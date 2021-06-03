@@ -16,7 +16,7 @@
 /proc/concat_strings(a, b)
 	return addtext(a, b)
 
-/proc/delete_value(v)
+/proc/del_value(v)
 	del v
 
 // We create a new datum after del'ing the one we passed into the test function.
@@ -43,6 +43,10 @@ var/datum/weak_test_datum
 	// Tests
 	ASSERT(auxtest_lists() == TRUE)
 	ASSERT(auxtest_strings() == TRUE)
+
+	var/datum/weak_test = new
+	ASSERT(auxtest_weak_values(weak_test) == TRUE)
+	ASSERT(weak_test == null)
 
 	// Stop testing after the 8th reboot
 	if (auxtest_inc_counter() == 8)
