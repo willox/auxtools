@@ -3,6 +3,7 @@ use super::string;
 use crate::list;
 use crate::runtime;
 use crate::runtime::DMResult;
+use crate::weak_value::WeakValue;
 use std::ffi::CString;
 use std::fmt;
 use std::marker::PhantomData;
@@ -363,6 +364,11 @@ impl Value {
 				raw_types::values::ValueData { string: id },
 			))
 		}
+	}
+
+	/// Creates a [`WeakValue`] referencing this datum.
+	pub fn as_weak(&self) -> DMResult<WeakValue> {
+		WeakValue::new(self)
 	}
 
 	/// blah blah lifetime is not verified with this so use at your peril
