@@ -34,6 +34,10 @@ use std::{
 
 static EMPTY_STRING: c_char = 0;
 thread_local! {
+	// It is actually theoretically possible for this to be grabbed from another thread--
+	// byond_ffi! functions have nothing stopping them from being called elsewhere,
+	// unlike the static muts we have, which are only referenced from functions
+	// callable only from a byond context (i.e. DIRECTLY from byond)
 	static RETURN_STRING: RefCell<CString> = RefCell::new(CString::default());
 }
 
