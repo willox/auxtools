@@ -1,7 +1,6 @@
 use crate::*;
-use dashmap::mapref::entry::Entry;
-use dashmap::DashMap;
-use std::cell::RefCell;
+use fxhash::FxBuildHasher;
+use std::collections::{hash_map::Entry, HashMap};
 use std::fmt;
 
 //
@@ -143,10 +142,9 @@ impl Proc {
 	}
 
 	pub fn override_id(&self) -> u32 {
-		PROC_OVERRIDE_IDS.with(|override_ids| match override_ids.borrow().get(&self.id) {
-			Some(id) => *id,
-			None => 0,
-		})
+		unsafe { PROC_OVERRIDE_IDS.as_ref() }
+			.and_then(|override_ids| override_ids.get(&self.id))
+			.map_or(0, |id| *id)
 	}
 }
 
@@ -157,8 +155,8 @@ impl fmt::Debug for Proc {
 	}
 }
 
-thread_local!(static PROCS_BY_NAME: RefCell<DashMap<String, Vec<Proc>>> = RefCell::new(DashMap::new()));
-thread_local!(static PROC_OVERRIDE_IDS: RefCell<DashMap<raw_types::procs::ProcId, u32>> = RefCell::new(DashMap::new()));
+static mut PROCS_BY_NAME: Option<HashMap<String, Vec<Proc>, FxBuildHasher>> = None;
+static mut PROC_OVERRIDE_IDS: Option<HashMap<raw_types::procs::ProcId, u32, FxBuildHasher>> = None;
 
 fn strip_path(p: String) -> String {
 	p.replace("/proc/", "/").replace("/verb/", "/")
@@ -166,46 +164,45 @@ fn strip_path(p: String) -> String {
 
 pub fn populate_procs() {
 	let mut i: u32 = 0;
+	let override_ids =
+		unsafe { PROC_OVERRIDE_IDS.get_or_insert_with(|| HashMap::with_hasher(FxBuildHasher::default())) };
+	let h = unsafe { PROCS_BY_NAME .get_or_insert_with(|| HashMap::with_hasher(FxBuildHasher::default())) };
 	loop {
 		let proc = Proc::from_id(raw_types::procs::ProcId(i));
 		if proc.is_none() {
 			break;
 		}
 		let proc = proc.unwrap();
-
-		PROC_OVERRIDE_IDS.with(|override_ids| {
-			let override_ids = override_ids.borrow_mut();
-
-			PROCS_BY_NAME.with(|h| {
-				match h.borrow_mut().entry(proc.path.clone()) {
-					Entry::Occupied(mut o) => {
-						let vec = o.get_mut();
-						override_ids.insert(proc.id, vec.len() as u32);
-						vec.push(proc);
-					}
-					Entry::Vacant(v) => {
-						override_ids.insert(proc.id, 0);
-						v.insert(vec![proc]);
-					}
-				};
-			});
-		});
+		 // "why not use the fancy methods and_modify and or_insert_with"?
+		 // closure moving non-Copy `proc` is why
+		match h.entry(proc.path.clone()) {
+			Entry::Occupied(mut o) => {
+				let vec = o.get_mut();
+				override_ids.insert(proc.id, vec.len() as u32);
+				vec.push(proc);
+			}
+			Entry::Vacant(v) => {
+				override_ids.insert(proc.id, 0);
+				v.insert(vec![proc]);
+			}
+		};
 
 		i += 1;
 	}
 }
 
 pub fn clear_procs() {
-	PROCS_BY_NAME.with(|h| h.borrow_mut().clear());
-	PROC_OVERRIDE_IDS.with(|override_ids| override_ids.borrow_mut().clear());
+	unsafe {
+		PROCS_BY_NAME = None;
+		PROC_OVERRIDE_IDS = None;
+	}
 }
 
 pub fn get_proc_override<S: Into<String>>(path: S, override_id: u32) -> Option<Proc> {
 	let s = strip_path(path.into());
-	PROCS_BY_NAME.with(|h| match h.borrow().get(&s)?.get(override_id as usize) {
-		Some(p) => Some(p.clone()),
-		None => None,
-	})
+	unsafe { PROCS_BY_NAME.as_ref() }
+		.and_then(|h| h.get(&s)?.get(override_id as usize))
+		.map(|p| p.clone())
 }
 
 /// Retrieves the 0th override of a proc.

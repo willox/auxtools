@@ -2,12 +2,11 @@ use super::proc::Proc;
 use super::raw_types;
 use super::value::Value;
 use crate::runtime::DMResult;
-use dashmap::mapref::entry::Entry;
-use dashmap::DashMap;
 use detour::RawDetour;
+use std::collections::{hash_map::Entry, HashMap};
 use std::ffi::c_void;
+use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::{cell::RefCell, ffi::CStr};
 
 #[doc(hidden)]
 pub struct CompileTimeHook {
@@ -92,26 +91,25 @@ pub fn init() -> Result<(), String> {
 
 pub type ProcHook = fn(&Value, &Value, &mut Vec<Value>) -> DMResult;
 
-thread_local! {
-	static PROC_HOOKS: RefCell<DashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(DashMap::new());
-}
+static mut PROC_HOOKS: Option<HashMap<raw_types::procs::ProcId, ProcHook, fxhash::FxBuildHasher>> =
+	None;
 
 fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFailure> {
-	PROC_HOOKS.with(|h| {
-		let map = h.borrow();
-		let entry = map.entry(id);
-		match entry {
-			Entry::Vacant(v) => {
-				v.insert(hook);
-				Ok(())
-			}
-			Entry::Occupied(_) => Err(HookFailure::AlreadyHooked),
+	match unsafe {
+		PROC_HOOKS.get_or_insert_with(|| HashMap::with_hasher(fxhash::FxBuildHasher::default()))
+	}
+	.entry(id)
+	{
+		Entry::Vacant(v) => {
+			v.insert(hook);
+			Ok(())
 		}
-	})
+		Entry::Occupied(_) => Err(HookFailure::AlreadyHooked),
+	}
 }
 
 pub fn clear_hooks() {
-	PROC_HOOKS.with(|h| h.borrow().clear());
+	unsafe { PROC_HOOKS = None };
 }
 
 pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure> {
@@ -149,8 +147,9 @@ extern "C" fn call_proc_by_id_hook(
 	_unknown2: u32,
 	_unknown3: u32,
 ) -> u8 {
-	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
-		Some(hook) => {
+	unsafe { PROC_HOOKS.as_ref() }
+		.and_then(|hooks| hooks.get(&proc_id))
+		.map(|hook| {
 			let src;
 			let usr;
 			let mut args: Vec<Value>;
@@ -173,7 +172,7 @@ extern "C" fn call_proc_by_id_hook(
 					let result_raw = (&r).raw;
 					// Stealing our reference out of the Value
 					std::mem::forget(r);
-					Some(result_raw)
+					result_raw
 				}
 				Err(e) => {
 					// TODO: Some info about the hook would be useful (as the hook is never part of byond's stack, the runtime won't show it.)
@@ -181,18 +180,14 @@ extern "C" fn call_proc_by_id_hook(
 						.unwrap()
 						.call(&[&Value::from_string(e.message.as_str()).unwrap()])
 						.unwrap();
-					Some(Value::null().raw)
+					Value::null().raw
 				}
 			}
-		}
-		None => None,
-	}) {
-		Some(result) => {
+		})
+		.map_or(0, |result| {
 			unsafe {
 				*ret = result;
 			}
 			1
-		}
-		None => 0,
-	}
+		})
 }
