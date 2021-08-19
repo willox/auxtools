@@ -20,6 +20,9 @@
 /proc/auxtest_strings()
 	CRASH()
 
+/proc/auxtest_value_from()
+	CRASH()
+
 /proc/do_tests()
 	var/auxtest_dll = auxtools_test_dll()
 	ASSERT(call(auxtest_dll, "auxtools_init")() == "SUCCESS")
@@ -27,6 +30,7 @@
 	// Tests
 	ASSERT(auxtest_lists() == TRUE)
 	ASSERT(auxtest_strings() == TRUE)
+	ASSERT(auxtest_value_from() == TRUE)
 
 	// Stop testing after the 8th reboot
 	if (auxtest_inc_counter() == 8)
