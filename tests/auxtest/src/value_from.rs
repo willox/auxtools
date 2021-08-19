@@ -33,7 +33,7 @@ fn test_value_from() {
 	// The simplest case: Value -> Value
 	let mut hashmap: HashMap<Value, Value> = HashMap::new();
 	hashmap.insert(Value::from_string("meow")?, 1.into());
-	let value = Value::from(&hashmap);
+	let value = Value::try_from(&hashmap)?;
 	assert_meow_equals_one(value)?;
 
 	// Slightly more complicated: String -> Value

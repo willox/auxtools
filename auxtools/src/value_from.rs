@@ -85,16 +85,18 @@ impl<T: Into<Value> + Clone> TryFrom<&HashMap<String, T>> for Value {
 	}
 }
 
-impl<A: Into<Value> + Clone, B: Into<Value> + Clone> From<&HashMap<A, B>> for Value {
-	fn from(hashmap: &HashMap<A, B>) -> Self {
+impl<A: Into<Value> + Clone, B: Into<Value> + Clone> TryFrom<&HashMap<A, B>> for Value {
+	type Error = Runtime;
+	fn try_from(hashmap: &HashMap<A, B>) -> Result<Self, Self::Error> {
 		let res = List::new();
 
 		for (k, v) in hashmap {
-			// Safety: This can't possibly fail with the trait bounds specifying both A and B are Into<Value>
-			res.set(k.clone(), v.clone()).unwrap();
+			// This can fail for basically any reason that BYOND decides,
+			// because in the end this just ends up calling into BYOND with the Value's.
+			res.set(k.clone(), v.clone())?;
 		}
 
-		res.into()
+		Ok(res.into())
 	}
 }
 
