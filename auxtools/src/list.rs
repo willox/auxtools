@@ -56,7 +56,11 @@ impl List {
 		}
 	}
 
-	pub fn set<K: Into<Value>, V: Into<Value>>(&self, index: K, value: V) -> Result<(), runtime::Runtime> {
+	pub fn set<K: Into<Value>, V: Into<Value>>(
+		&self,
+		index: K,
+		value: V,
+	) -> Result<(), runtime::Runtime> {
 		let index = index.into();
 		let value = value.into();
 
