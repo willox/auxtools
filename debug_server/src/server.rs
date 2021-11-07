@@ -94,6 +94,7 @@ pub struct Server {
 	in_eval: bool,
 	eval_error: Option<String>,
 	conditional_breakpoints: HashMap<(raw_types::procs::ProcId, u16), String>,
+	logpoint_breakpoints: HashMap<(raw_types::procs::ProcId, u16), String>,
 	app: App<'static, 'static>,
 }
 
@@ -181,6 +182,7 @@ impl Server {
 			in_eval: false,
 			eval_error: None,
 			conditional_breakpoints: HashMap::new(),
+			logpoint_breakpoints: HashMap::new(),
 			app: Self::setup_app(),
 		};
 
@@ -206,6 +208,7 @@ impl Server {
 			in_eval: false,
 			eval_error: None,
 			conditional_breakpoints: HashMap::new(),
+			logpoint_breakpoints: HashMap::new(),
 			app: Self::setup_app(),
 		})
 	}
@@ -517,7 +520,12 @@ impl Server {
 		}
 	}
 
-	fn handle_breakpoint_set(&mut self, instruction: InstructionRef, condition: Option<String>) {
+	fn handle_breakpoint_set(
+		&mut self,
+		instruction: InstructionRef,
+		condition: Option<String>,
+		log_message: Option<String>
+	) {
 		let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
 
 		let proc = match auxtools::Proc::find_override(
@@ -535,7 +543,10 @@ impl Server {
 
 		match hook_instruction(&proc, instruction.offset) {
 			Ok(()) => {
-				if let Some(condition) = condition {
+				if let Some(log_message) = log_message {
+					self.logpoint_breakpoints
+						.insert((proc.id, instruction.offset as u16), log_message);
+				} else if let Some(condition) = condition {
 					self.conditional_breakpoints
 						.insert((proc.id, instruction.offset as u16), condition);
 				}
@@ -567,6 +578,8 @@ impl Server {
 			}
 		};
 
+		self.logpoint_breakpoints
+			.remove(&(proc.id, instruction.offset as u16));
 		self.conditional_breakpoints
 			.remove(&(proc.id, instruction.offset as u16));
 
@@ -1039,7 +1052,8 @@ impl Server {
 			Request::BreakpointSet {
 				instruction,
 				condition,
-			} => self.handle_breakpoint_set(instruction, condition),
+				log_message,
+			} => self.handle_breakpoint_set(instruction, condition, log_message),
 			Request::BreakpointUnset { instruction } => self.handle_breakpoint_unset(instruction),
 			Request::Stacks => self.handle_stacks(),
 			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
@@ -1141,6 +1155,48 @@ impl Server {
 		self.send_or_disconnect(Response::Notification { message });
 	}
 
+	fn parse_log_message(string: &str) -> Vec<String> {
+		let mut expressions: Vec<String> = Vec::new();
+		let mut buffer = Vec::new();
+		let mut is_expression = false;
+
+		for c in string.chars() {
+			match (c, is_expression) {
+				('{', _) => is_expression = true,
+				('}', _) => {
+					is_expression = false;
+					expressions.push(buffer.into_iter().collect());
+					buffer = Vec::new();
+				},
+				(_, true) => {
+					buffer.push(c)
+				},
+				_ => ()
+			}
+		}
+
+		return expressions;
+	}
+
+	fn handle_logpoint_breakpoint(&mut self, log_message: &String) -> String {
+		let mut output_message = log_message.clone();
+		let args = Self::parse_log_message(log_message.as_str());
+
+		for arg in args {
+			let result = self.eval_expr(Some(0), &arg);
+
+			if result.is_none() {
+				continue;
+			}
+
+			let expression_arg = format!("{{{}}}", arg.as_str());
+			let evaluated = Self::stringify(&result.unwrap());
+			output_message = output_message.replace(expression_arg.as_str(), evaluated.as_str());
+		}
+
+		return output_message;
+	}
+
 	pub fn handle_breakpoint(
 		&mut self,
 		_ctx: *mut raw_types::procs::ExecutionContext,
@@ -1167,8 +1223,18 @@ impl Server {
 				.conditional_breakpoints
 				.get(&(proc, offset))
 				.map(|x| x.clone());
+			
+			let log_message = self
+				.logpoint_breakpoints
+				.get(&(proc, offset))
+				.map(|x| x.clone());
 
-			if let Some(condition) = condition {
+			if let Some(log_message) = log_message {
+				let message = self.handle_logpoint_breakpoint(&log_message);
+				println!("{}", message);
+
+				return ContinueKind::Continue;
+			} else if let Some(condition) = condition {
 				if let Some(result) = self.eval_expr(Some(0), &condition) {
 					if !result.is_truthy() {
 						self.state = None;
