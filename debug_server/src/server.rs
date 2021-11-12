@@ -524,7 +524,7 @@ impl Server {
 		&mut self,
 		instruction: InstructionRef,
 		condition: Option<String>,
-		log_message: Option<String>
+		log_message: Option<String>,
 	) {
 		let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
 
@@ -1155,46 +1155,44 @@ impl Server {
 		self.send_or_disconnect(Response::Notification { message });
 	}
 
-	fn parse_log_message(string: &str) -> Vec<String> {
-		let mut expressions: Vec<String> = Vec::new();
-		let mut buffer = Vec::new();
+	fn handle_logpoint_breakpoint(&mut self, log_message: &String) {
+		use std::fmt::Write;
+
+		let mut output_message = String::with_capacity(log_message.len());
 		let mut is_expression = false;
+		let mut start_index = 0;
 
-		for c in string.chars() {
+		for (position, c) in log_message.char_indices() {
 			match (c, is_expression) {
-				('{', _) => is_expression = true,
-				('}', _) => {
+				// Here we found the start of an expression and remember his position.
+				('{', false) => {
+					is_expression = true;
+					// Add offset to exclude the bracket symbol.
+					// The bracket symbol has the size of 1 byte, so it should be fine.
+					start_index = position + 1;
+				}
+				// The first closing bracket will be the end of an expression.
+				('}', true) => {
 					is_expression = false;
-					expressions.push(buffer.into_iter().collect());
-					buffer = Vec::new();
-				},
-				(_, true) => {
-					buffer.push(c)
-				},
-				_ => ()
-			}
+					let expression_range = start_index..position;
+					let evaluated = match self.eval_expr(Some(0), &log_message[expression_range]) {
+						None => return,
+						Some(v) => v,
+					};
+
+					output_message
+						.write_str(Self::stringify(&evaluated).as_str())
+						.unwrap();
+				}
+				// Write chars which not belong to an expression content.
+				(_, false) => {
+					output_message.write_char(c).unwrap();
+				}
+				_ => (),
+			};
 		}
 
-		return expressions;
-	}
-
-	fn handle_logpoint_breakpoint(&mut self, log_message: &String) -> String {
-		let mut output_message = log_message.clone();
-		let args = Self::parse_log_message(log_message.as_str());
-
-		for arg in args {
-			let result = self.eval_expr(Some(0), &arg);
-
-			if result.is_none() {
-				continue;
-			}
-
-			let expression_arg = format!("{{{}}}", arg.as_str());
-			let evaluated = Self::stringify(&result.unwrap());
-			output_message = output_message.replace(expression_arg.as_str(), evaluated.as_str());
-		}
-
-		return output_message;
+		println!("{}", output_message);
 	}
 
 	pub fn handle_breakpoint(
@@ -1223,16 +1221,14 @@ impl Server {
 				.conditional_breakpoints
 				.get(&(proc, offset))
 				.map(|x| x.clone());
-			
+
 			let log_message = self
 				.logpoint_breakpoints
 				.get(&(proc, offset))
 				.map(|x| x.clone());
 
 			if let Some(log_message) = log_message {
-				let message = self.handle_logpoint_breakpoint(&log_message);
-				println!("{}", message);
-
+				self.handle_logpoint_breakpoint(&log_message);
 				return ContinueKind::Continue;
 			} else if let Some(condition) = condition {
 				if let Some(result) = self.eval_expr(Some(0), &condition) {
