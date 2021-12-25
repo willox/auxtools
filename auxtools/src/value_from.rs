@@ -1,10 +1,5 @@
-use crate::raw_types;
-use crate::runtime::Runtime;
-use crate::string;
-use crate::List;
-use crate::Value;
-use std::collections::HashMap;
-use std::convert::TryFrom;
+use crate::{raw_types, runtime::Runtime, string, List, Value};
+use std::{collections::HashMap, convert::TryFrom};
 
 impl From<f32> for Value {
 	fn from(num: f32) -> Self {
@@ -71,9 +66,9 @@ impl From<&Value> for Value {
 // }
 
 // Specialized for ease-of-use due to the above not being possible
-impl<T: Into<Value> + Clone> TryFrom<&HashMap<String, T>> for Value {
+impl<T: Into<Value> + Clone, S> TryFrom<&HashMap<String, T, S>> for Value {
 	type Error = Runtime;
-	fn try_from(hashmap: &HashMap<String, T>) -> Result<Self, Self::Error> {
+	fn try_from(hashmap: &HashMap<String, T, S>) -> Result<Self, Self::Error> {
 		let res = List::new();
 
 		for (k, v) in hashmap {
@@ -85,9 +80,9 @@ impl<T: Into<Value> + Clone> TryFrom<&HashMap<String, T>> for Value {
 	}
 }
 
-impl<A: Into<Value> + Clone, B: Into<Value> + Clone> TryFrom<&HashMap<A, B>> for Value {
+impl<A: Into<Value> + Clone, B: Into<Value> + Clone, S> TryFrom<&HashMap<A, B, S>> for Value {
 	type Error = Runtime;
-	fn try_from(hashmap: &HashMap<A, B>) -> Result<Self, Self::Error> {
+	fn try_from(hashmap: &HashMap<A, B, S>) -> Result<Self, Self::Error> {
 		let res = List::new();
 
 		for (k, v) in hashmap {

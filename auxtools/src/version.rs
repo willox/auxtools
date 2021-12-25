@@ -1,6 +1,5 @@
 use super::*;
-use std::ffi::CString;
-use std::os::raw::c_char;
+use std::{ffi::CString, os::raw::c_char};
 
 pub static mut BYOND_VERSION_MAJOR: u32 = 0;
 pub static mut BYOND_VERSION_MINOR: u32 = 0;

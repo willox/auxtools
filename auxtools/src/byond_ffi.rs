@@ -26,7 +26,7 @@
 
 use std::{
 	borrow::Cow,
-	cell::RefCell,
+	cell::UnsafeCell,
 	ffi::{CStr, CString},
 	os::raw::{c_char, c_int},
 	slice,
@@ -34,7 +34,7 @@ use std::{
 
 static EMPTY_STRING: c_char = 0;
 thread_local! {
-	static RETURN_STRING: RefCell<CString> = RefCell::new(CString::default());
+	static RETURN_STRING: UnsafeCell<CString> = UnsafeCell::new(CString::default());
 }
 
 pub unsafe fn parse_args<'a>(argc: c_int, argv: *const *const c_char) -> Vec<Cow<'a, str>> {
@@ -60,8 +60,9 @@ pub fn byond_return(value: Option<Vec<u8>>) -> *const c_char {
 					CString::new(vec).unwrap_or_default()
 				}
 			};
-			cell.replace(cstring);
-			cell.borrow().as_ptr()
+			let s = unsafe { &mut *cell.get() };
+			*s = cstring;
+			s.as_ptr()
 		}),
 	}
 }

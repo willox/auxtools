@@ -1,16 +1,8 @@
 [workspace]
-members = [
-	"auxtools",
-	"auxtools-impl",
-	"debug_server",
-	"tests/auxtest",
-	"tests/byond_get",
-	"tests/test_runner",
-]
+members = ["auxtools", "auxtools-impl", "debug_server", "tests/auxtest", "tests/byond_get", "tests/test_runner"]
 
 [profile.release]
 opt-level = 3
-lto = 'thin'
+lto = true
 codegen-units = 1
 incremental = true
-debug = true

@@ -204,12 +204,9 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 		if let syn::Pat::Ident(p) = &*arg.pat {
 			arg_names.push(p.ident.clone());
 			let index = arg_names.len() - 1;
-			proc_arg_unpacker.push(
-				(quote! {
-					&args[#index]
-				})
-				.into(),
-			);
+			proc_arg_unpacker.push(quote! {
+				&args[#index]
+			});
 		}
 	}
 	let _default_null = quote! {

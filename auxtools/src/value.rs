@@ -1,11 +1,5 @@
-use super::raw_types;
-use super::string;
-use crate::list;
-use crate::runtime;
-use crate::runtime::DMResult;
-use std::ffi::CString;
-use std::fmt;
-use std::marker::PhantomData;
+use crate::{list, raw_types, runtime, runtime::DMResult, string};
+use std::{ffi::CString, fmt, marker::PhantomData};
 
 /// `Value` represents any value a DM variable can hold, such as numbers, strings, datums, etc.
 ///
@@ -269,7 +263,7 @@ impl Value {
 			raw_types::values::ValueTag::Null
 			| raw_types::values::ValueTag::Number
 			| raw_types::values::ValueTag::String => {
-				return Ok(string::StringRef::new(format!("{}", self.raw).as_str())?)
+				return string::StringRef::new(format!("{}", self.raw).as_str())
 			}
 
 			_ => {}

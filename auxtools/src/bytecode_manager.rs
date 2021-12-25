@@ -4,31 +4,29 @@
 // It may be possible to avoid the leaks but it really doesn't matter.
 
 use crate::{debug, raw_types, *};
-use std::convert::TryFrom;
-use std::{
-	cell::UnsafeCell,
-	collections::{HashMap, HashSet},
-};
+use ahash::{AHashMap, AHashSet};
+use std::{cell::UnsafeCell, collections::HashSet, convert::TryFrom, hash::BuildHasher};
 
 static mut BYTECODE_ALLOCATIONS: UnsafeCell<Option<State>> = UnsafeCell::new(None);
 
 struct State {
-	allocations: HashSet<Vec<u32>>,
-	original: HashMap<raw_types::procs::ProcId, (*mut u32, u16)>,
+	allocations: AHashSet<Vec<u32>>,
+	original: AHashMap<raw_types::procs::ProcId, (*mut u32, u16)>,
 }
 
 pub fn init() {
 	unsafe {
 		let ptr = BYTECODE_ALLOCATIONS.get();
 		*ptr = Some(State {
-			allocations: HashSet::new(),
-			original: HashMap::new(),
+			allocations: AHashSet::new(),
+			original: AHashMap::new(),
 		});
 	}
 }
 
-fn get_active_bytecode_ptrs() -> HashSet<*mut u32> {
-	fn visit(dst: &mut HashSet<*mut u32>, frames: Vec<debug::StackFrame>) {
+fn get_active_bytecode_ptrs() -> AHashSet<*mut u32> {
+	#[allow(clippy::mutable_key_type)]
+	fn visit<S: BuildHasher>(dst: &mut HashSet<*mut u32, S>, frames: Vec<debug::StackFrame>) {
 		for frame in frames {
 			let ptr = unsafe { (*frame.context).bytecode };
 
@@ -38,7 +36,7 @@ fn get_active_bytecode_ptrs() -> HashSet<*mut u32> {
 
 	let stacks = debug::CallStacks::new();
 
-	let mut ptrs = HashSet::new();
+	let mut ptrs = AHashSet::new();
 	visit(&mut ptrs, stacks.active);
 	for stack in stacks.suspended {
 		visit(&mut ptrs, stack);

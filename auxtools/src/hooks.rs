@@ -1,13 +1,13 @@
-use super::proc::Proc;
-use super::raw_types;
-use super::value::Value;
-use crate::runtime::DMResult;
-use dashmap::mapref::entry::Entry;
-use dashmap::DashMap;
+use super::{proc::Proc, raw_types, value::Value};
+use crate::DMResult;
+use ahash::AHashMap;
 use detour::RawDetour;
-use std::ffi::c_void;
-use std::os::raw::c_char;
-use std::{cell::RefCell, ffi::CStr};
+use std::{
+	cell::UnsafeCell,
+	collections::hash_map::Entry,
+	ffi::{c_void, CStr},
+	os::raw::c_char,
+};
 
 #[doc(hidden)]
 pub struct CompileTimeHook {
@@ -93,12 +93,12 @@ pub fn init() -> Result<(), String> {
 pub type ProcHook = fn(&Value, &Value, &mut Vec<Value>) -> DMResult;
 
 thread_local! {
-	static PROC_HOOKS: RefCell<DashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(DashMap::new());
+	static PROC_HOOKS: UnsafeCell<AHashMap<raw_types::procs::ProcId, ProcHook>> = UnsafeCell::new(AHashMap::default());
 }
 
 fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFailure> {
 	PROC_HOOKS.with(|h| {
-		let map = h.borrow();
+		let map = unsafe { &mut *h.get() };
 		let entry = map.entry(id);
 		match entry {
 			Entry::Vacant(v) => {
@@ -111,7 +111,7 @@ fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFa
 }
 
 pub fn clear_hooks() {
-	PROC_HOOKS.with(|h| h.borrow().clear());
+	PROC_HOOKS.with(|h| unsafe { &mut *h.get() }.clear());
 }
 
 pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure> {
@@ -149,7 +149,7 @@ extern "C" fn call_proc_by_id_hook(
 	_unknown2: u32,
 	_unknown3: u32,
 ) -> u8 {
-	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
+	match PROC_HOOKS.with(|h| match unsafe { &*h.get() }.get(&proc_id) {
 		Some(hook) => {
 			let src;
 			let usr;
@@ -170,7 +170,7 @@ extern "C" fn call_proc_by_id_hook(
 
 			match result {
 				Ok(r) => {
-					let result_raw = (&r).raw;
+					let result_raw = r.raw;
 					// Stealing our reference out of the Value
 					std::mem::forget(r);
 					Some(result_raw)

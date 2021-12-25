@@ -1,7 +1,5 @@
+use crate::{inventory, StringRef};
 use std::cell::UnsafeCell;
-
-use crate::inventory;
-use crate::StringRef;
 
 #[macro_export]
 macro_rules! byond_string {

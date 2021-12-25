@@ -17,7 +17,7 @@ impl List {
 
 	/// Creates a new empty list.
 	pub fn new() -> Self {
-		Self::with_size(0)
+		Self::default()
 	}
 
 	/// Creates a new list filled with `capacity` nulls.
@@ -105,28 +105,38 @@ impl List {
 		length
 	}
 
+	pub fn is_empty(&self) -> bool {
+		self.len() == 0
+	}
+
 	pub fn is_list(value: &Value) -> bool {
-		match value.raw.tag {
+		matches!(
+			value.raw.tag,
 			raw_types::values::ValueTag::List
-			| raw_types::values::ValueTag::MobVars
-			| raw_types::values::ValueTag::ObjVars
-			| raw_types::values::ValueTag::TurfVars
-			| raw_types::values::ValueTag::AreaVars
-			| raw_types::values::ValueTag::ClientVars
-			| raw_types::values::ValueTag::Vars
-			| raw_types::values::ValueTag::MobOverlays
-			| raw_types::values::ValueTag::MobUnderlays
-			| raw_types::values::ValueTag::ObjOverlays
-			| raw_types::values::ValueTag::ObjUnderlays
-			| raw_types::values::ValueTag::TurfOverlays
-			| raw_types::values::ValueTag::TurfUnderlays
-			| raw_types::values::ValueTag::AreaOverlays
-			| raw_types::values::ValueTag::AreaUnderlays
-			| raw_types::values::ValueTag::ImageVars
-			| raw_types::values::ValueTag::WorldVars
-			| raw_types::values::ValueTag::GlobalVars => true,
-			_ => false,
-		}
+				| raw_types::values::ValueTag::MobVars
+				| raw_types::values::ValueTag::ObjVars
+				| raw_types::values::ValueTag::TurfVars
+				| raw_types::values::ValueTag::AreaVars
+				| raw_types::values::ValueTag::ClientVars
+				| raw_types::values::ValueTag::Vars
+				| raw_types::values::ValueTag::MobOverlays
+				| raw_types::values::ValueTag::MobUnderlays
+				| raw_types::values::ValueTag::ObjOverlays
+				| raw_types::values::ValueTag::ObjUnderlays
+				| raw_types::values::ValueTag::TurfOverlays
+				| raw_types::values::ValueTag::TurfUnderlays
+				| raw_types::values::ValueTag::AreaOverlays
+				| raw_types::values::ValueTag::AreaUnderlays
+				| raw_types::values::ValueTag::ImageVars
+				| raw_types::values::ValueTag::WorldVars
+				| raw_types::values::ValueTag::GlobalVars
+		)
+	}
+}
+
+impl Default for List {
+	fn default() -> Self {
+		List::with_size(0)
 	}
 }
 

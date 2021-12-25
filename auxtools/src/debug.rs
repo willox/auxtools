@@ -40,10 +40,7 @@ impl StackFrame {
 		// Make sure to handle arguments/locals with no names (when there are more values than names)
 		let args = (0..(*instance).args_count)
 			.map(|i| {
-				let name = match param_names.get(i as usize) {
-					Some(name) => Some(name.clone()),
-					None => None,
-				};
+				let name = param_names.get(i as usize).cloned();
 				(name, Value::from_raw(*((*instance).args).add(i as usize)))
 			})
 			.collect();
@@ -92,27 +89,7 @@ enum CallStackKind {
 
 impl CallStacks {
 	pub fn new() -> CallStacks {
-		let mut suspended = vec![];
-
-		unsafe {
-			let buffer = (*funcs::SUSPENDED_PROCS_BUFFER).buffer;
-			let procs = funcs::SUSPENDED_PROCS;
-			let front = (*procs).front;
-			let back = (*procs).back;
-
-			for x in front..back {
-				let instance = *buffer.add(x);
-				let context = (*instance).context;
-				suspended.push(CallStacks::from_context(context, CallStackKind::Suspended));
-			}
-		}
-
-		CallStacks {
-			active: unsafe {
-				CallStacks::from_context(*funcs::CURRENT_EXECUTION_CONTEXT, CallStackKind::Active)
-			},
-			suspended,
-		}
+		CallStacks::default()
 	}
 
 	fn from_context(
@@ -136,6 +113,32 @@ impl CallStacks {
 		match kind {
 			CallStackKind::Active => frames,
 			CallStackKind::Suspended => frames.into_iter().rev().collect(),
+		}
+	}
+}
+
+impl Default for CallStacks {
+	fn default() -> Self {
+		let mut suspended = vec![];
+
+		unsafe {
+			let buffer = (*funcs::SUSPENDED_PROCS_BUFFER).buffer;
+			let procs = funcs::SUSPENDED_PROCS;
+			let front = (*procs).front;
+			let back = (*procs).back;
+
+			for x in front..back {
+				let instance = *buffer.add(x);
+				let context = (*instance).context;
+				suspended.push(CallStacks::from_context(context, CallStackKind::Suspended));
+			}
+		}
+
+		CallStacks {
+			active: unsafe {
+				CallStacks::from_context(*funcs::CURRENT_EXECUTION_CONTEXT, CallStackKind::Active)
+			},
+			suspended,
 		}
 	}
 }

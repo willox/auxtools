@@ -1,8 +1,6 @@
 use crate::*;
-use dashmap::mapref::entry::Entry;
-use dashmap::DashMap;
-use std::cell::RefCell;
-use std::fmt;
+use ahash::AHashMap;
+use std::{cell::UnsafeCell, collections::hash_map::Entry, fmt};
 
 //
 // ### A note on Override IDs
@@ -59,9 +57,9 @@ impl Proc {
 		}
 		let proc_name = strip_path(unsafe { StringRef::from_id((*proc_entry).path).into() });
 		Some(Proc {
-			id: id,
+			id,
 			entry: proc_entry,
-			path: proc_name.clone(),
+			path: proc_name,
 		})
 	}
 
@@ -143,10 +141,12 @@ impl Proc {
 	}
 
 	pub fn override_id(&self) -> u32 {
-		PROC_OVERRIDE_IDS.with(|override_ids| match override_ids.borrow().get(&self.id) {
-			Some(id) => *id,
-			None => 0,
-		})
+		PROC_OVERRIDE_IDS.with(
+			|override_ids| match unsafe { &*override_ids.get() }.get(&self.id) {
+				Some(id) => *id,
+				None => 0,
+			},
+		)
 	}
 }
 
@@ -157,8 +157,8 @@ impl fmt::Debug for Proc {
 	}
 }
 
-thread_local!(static PROCS_BY_NAME: RefCell<DashMap<String, Vec<Proc>>> = RefCell::new(DashMap::new()));
-thread_local!(static PROC_OVERRIDE_IDS: RefCell<DashMap<raw_types::procs::ProcId, u32>> = RefCell::new(DashMap::new()));
+thread_local!(static PROCS_BY_NAME: UnsafeCell<AHashMap<String, Vec<Proc>>> = UnsafeCell::new(AHashMap::new()));
+thread_local!(static PROC_OVERRIDE_IDS: UnsafeCell<AHashMap<raw_types::procs::ProcId, u32>> = UnsafeCell::new(AHashMap::new()));
 
 fn strip_path(p: String) -> String {
 	p.replace("/proc/", "/").replace("/verb/", "/")
@@ -174,10 +174,10 @@ pub fn populate_procs() {
 		let proc = proc.unwrap();
 
 		PROC_OVERRIDE_IDS.with(|override_ids| {
-			let override_ids = override_ids.borrow_mut();
+			let override_ids = unsafe { &mut *override_ids.get() };
 
 			PROCS_BY_NAME.with(|h| {
-				match h.borrow_mut().entry(proc.path.clone()) {
+				match unsafe { &mut *h.get() }.entry(proc.path.clone()) {
 					Entry::Occupied(mut o) => {
 						let vec = o.get_mut();
 						override_ids.insert(proc.id, vec.len() as u32);
@@ -196,15 +196,17 @@ pub fn populate_procs() {
 }
 
 pub fn clear_procs() {
-	PROCS_BY_NAME.with(|h| h.borrow_mut().clear());
-	PROC_OVERRIDE_IDS.with(|override_ids| override_ids.borrow_mut().clear());
+	PROCS_BY_NAME.with(|h| unsafe { &mut *h.get() }.clear());
+	PROC_OVERRIDE_IDS.with(|override_ids| unsafe { &mut *override_ids.get() }.clear());
 }
 
 pub fn get_proc_override<S: Into<String>>(path: S, override_id: u32) -> Option<Proc> {
 	let s = strip_path(path.into());
-	PROCS_BY_NAME.with(|h| match h.borrow().get(&s)?.get(override_id as usize) {
-		Some(p) => Some(p.clone()),
-		None => None,
+	PROCS_BY_NAME.with(|h| {
+		unsafe { &*h.get() }
+			.get(&s)?
+			.get(override_id as usize)
+			.cloned()
 	})
 }
 

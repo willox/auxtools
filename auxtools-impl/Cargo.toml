@@ -11,10 +11,10 @@ edition = "2018"
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1.0"
-quote = "1.0"
-hex = "0.4"
+proc-macro2 = "1.0.34"
+quote = "1.0.10"
+hex = "0.4.3"
 
 [dependencies.syn]
-version = "1.0"
+version = "1.0.83"
 features = ["full"]
