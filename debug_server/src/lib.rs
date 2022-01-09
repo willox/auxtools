@@ -9,6 +9,15 @@ mod stddef;
 #[cfg(windows)]
 mod crash_handler_windows;
 
+#[cfg(windows)]
+mod mem_profiler;
+
+#[cfg(not(windows))]
+mod mem_profiler_stub;
+
+#[cfg(not(windows))]
+use mem_profiler_stub as mem_profiler;
+
 pub(crate) use disassemble_env::DisassembleEnv;
 
 use std::{

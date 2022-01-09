@@ -36,6 +36,9 @@ var/datum/weak_test_datum
 /proc/auxtest_weak_values()
 	CRASH()
 
+/proc/auxtest_value_from()
+	CRASH()
+
 /proc/do_tests()
 	var/auxtest_dll = auxtools_test_dll()
 	ASSERT(call(auxtest_dll, "auxtools_init")() == "SUCCESS")
@@ -43,6 +46,7 @@ var/datum/weak_test_datum
 	// Tests
 	ASSERT(auxtest_lists() == TRUE)
 	ASSERT(auxtest_strings() == TRUE)
+	ASSERT(auxtest_value_from() == TRUE)
 
 	var/datum/weak_test = new
 	ASSERT(auxtest_weak_values(weak_test) == TRUE)

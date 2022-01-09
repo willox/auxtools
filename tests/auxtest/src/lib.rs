@@ -2,6 +2,7 @@ use auxtools::*;
 
 mod lists;
 mod strings;
+mod value_from;
 mod weak;
 
 #[hook("/proc/auxtest_inc_counter")]

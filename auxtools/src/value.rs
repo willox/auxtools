@@ -3,7 +3,6 @@ use super::string;
 use crate::list;
 use crate::runtime;
 use crate::runtime::DMResult;
-use crate::weak_value::WeakValue;
 use std::ffi::CString;
 use std::fmt;
 use std::marker::PhantomData;
@@ -366,11 +365,6 @@ impl Value {
 		}
 	}
 
-	/// Creates a [`WeakValue`] referencing this datum.
-	pub fn as_weak(&self) -> DMResult<WeakValue> {
-		WeakValue::new(self)
-	}
-
 	/// blah blah lifetime is not verified with this so use at your peril
 	pub unsafe fn from_raw(v: raw_types::values::Value) -> Self {
 		Value::new(v.tag, v.data)
@@ -400,57 +394,5 @@ impl fmt::Display for Value {
 impl fmt::Debug for Value {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(f, "{:?}", self.raw)
-	}
-}
-
-impl From<f32> for Value {
-	fn from(num: f32) -> Self {
-		unsafe {
-			Value::new(
-				raw_types::values::ValueTag::Number,
-				raw_types::values::ValueData { number: num },
-			)
-		}
-	}
-}
-
-impl From<i32> for Value {
-	fn from(num: i32) -> Self {
-		unsafe {
-			Value::new(
-				raw_types::values::ValueTag::Number,
-				raw_types::values::ValueData { number: num as f32 },
-			)
-		}
-	}
-}
-
-impl From<u32> for Value {
-	fn from(num: u32) -> Self {
-		unsafe {
-			Value::new(
-				raw_types::values::ValueTag::Number,
-				raw_types::values::ValueData { number: num as f32 },
-			)
-		}
-	}
-}
-
-impl From<bool> for Value {
-	fn from(b: bool) -> Self {
-		unsafe {
-			Value::new(
-				raw_types::values::ValueTag::Number,
-				raw_types::values::ValueData {
-					number: if b { 1.0 } else { 0.0 },
-				},
-			)
-		}
-	}
-}
-
-impl From<&Value> for Value {
-	fn from(val: &Value) -> Self {
-		val.to_owned()
 	}
 }

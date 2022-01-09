@@ -90,3 +90,10 @@ impl WeakValue {
 		}
 	}
 }
+
+impl Value {
+	/// Creates a [`WeakValue`] referencing this datum.
+	pub fn as_weak(&self) -> DMResult<WeakValue> {
+		WeakValue::new(self)
+	}
+}
