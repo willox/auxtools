@@ -20,6 +20,7 @@ mod string_intern;
 mod value;
 mod value_from;
 mod version;
+mod weak_value;
 
 use init::{get_init_level, set_init_level, InitLevel};
 
@@ -34,6 +35,7 @@ use std::ffi::c_void;
 pub use string::StringRef;
 pub use string_intern::InternedString;
 pub use value::Value;
+pub use weak_value::WeakValue;
 
 /// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
 pub use inventory;
@@ -430,9 +432,3 @@ byond_ffi_fn! { auxtools_shutdown(_input) {
 	set_init_level(InitLevel::Partial);
 	Some("SUCCESS".to_owned())
 } }
-
-#[cfg(test)]
-mod tests {
-	#[test]
-	fn test() {}
-}
