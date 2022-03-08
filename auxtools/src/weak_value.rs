@@ -49,6 +49,7 @@ fn get_next_id() -> f32 {
 ///		thing.call("callback", &[])?;
 /// }
 /// ```
+#[derive(Copy, Clone)]
 pub struct WeakValue {
 	inner: raw_types::values::Value,
 	id: f32,
