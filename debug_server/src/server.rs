@@ -94,6 +94,7 @@ pub struct Server {
 	in_eval: bool,
 	eval_error: Option<String>,
 	conditional_breakpoints: HashMap<(raw_types::procs::ProcId, u16), String>,
+	logpoint_breakpoints: HashMap<(raw_types::procs::ProcId, u16), String>,
 	app: App<'static, 'static>,
 }
 
@@ -181,6 +182,7 @@ impl Server {
 			in_eval: false,
 			eval_error: None,
 			conditional_breakpoints: HashMap::new(),
+			logpoint_breakpoints: HashMap::new(),
 			app: Self::setup_app(),
 		};
 
@@ -206,6 +208,7 @@ impl Server {
 			in_eval: false,
 			eval_error: None,
 			conditional_breakpoints: HashMap::new(),
+			logpoint_breakpoints: HashMap::new(),
 			app: Self::setup_app(),
 		})
 	}
@@ -517,7 +520,12 @@ impl Server {
 		}
 	}
 
-	fn handle_breakpoint_set(&mut self, instruction: InstructionRef, condition: Option<String>) {
+	fn handle_breakpoint_set(
+		&mut self,
+		instruction: InstructionRef,
+		condition: Option<String>,
+		log_message: Option<String>,
+	) {
 		let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
 
 		let proc = match auxtools::Proc::find_override(
@@ -535,7 +543,10 @@ impl Server {
 
 		match hook_instruction(&proc, instruction.offset) {
 			Ok(()) => {
-				if let Some(condition) = condition {
+				if let Some(log_message) = log_message {
+					self.logpoint_breakpoints
+						.insert((proc.id, instruction.offset as u16), log_message);
+				} else if let Some(condition) = condition {
 					self.conditional_breakpoints
 						.insert((proc.id, instruction.offset as u16), condition);
 				}
@@ -567,6 +578,8 @@ impl Server {
 			}
 		};
 
+		self.logpoint_breakpoints
+			.remove(&(proc.id, instruction.offset as u16));
 		self.conditional_breakpoints
 			.remove(&(proc.id, instruction.offset as u16));
 
@@ -1039,7 +1052,8 @@ impl Server {
 			Request::BreakpointSet {
 				instruction,
 				condition,
-			} => self.handle_breakpoint_set(instruction, condition),
+				log_message,
+			} => self.handle_breakpoint_set(instruction, condition, log_message),
 			Request::BreakpointUnset { instruction } => self.handle_breakpoint_unset(instruction),
 			Request::Stacks => self.handle_stacks(),
 			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
@@ -1141,6 +1155,46 @@ impl Server {
 		self.send_or_disconnect(Response::Notification { message });
 	}
 
+	fn handle_logpoint_breakpoint(&mut self, log_message: &String) {
+		use std::fmt::Write;
+
+		let mut output_message = String::with_capacity(log_message.len());
+		let mut is_expression = false;
+		let mut start_index = 0;
+
+		for (position, c) in log_message.char_indices() {
+			match (c, is_expression) {
+				// Here we found the start of an expression and remember his position.
+				('{', false) => {
+					is_expression = true;
+					// Add offset to exclude the bracket symbol.
+					// The bracket symbol has the size of 1 byte, so it should be fine.
+					start_index = position + 1;
+				}
+				// The first closing bracket will be the end of an expression.
+				('}', true) => {
+					is_expression = false;
+					let expression_range = start_index..position;
+					let evaluated = match self.eval_expr(Some(0), &log_message[expression_range]) {
+						None => return,
+						Some(v) => v,
+					};
+
+					output_message
+						.write_str(Self::stringify(&evaluated).as_str())
+						.unwrap();
+				}
+				// Write chars which not belong to an expression content.
+				(_, false) => {
+					output_message.write_char(c).unwrap();
+				}
+				_ => (),
+			};
+		}
+
+		println!("{}", output_message);
+	}
+
 	pub fn handle_breakpoint(
 		&mut self,
 		_ctx: *mut raw_types::procs::ExecutionContext,
@@ -1168,7 +1222,15 @@ impl Server {
 				.get(&(proc, offset))
 				.map(|x| x.clone());
 
-			if let Some(condition) = condition {
+			let log_message = self
+				.logpoint_breakpoints
+				.get(&(proc, offset))
+				.map(|x| x.clone());
+
+			if let Some(log_message) = log_message {
+				self.handle_logpoint_breakpoint(&log_message);
+				return ContinueKind::Continue;
+			} else if let Some(condition) = condition {
 				if let Some(result) = self.eval_expr(Some(0), &condition) {
 					if !result.is_truthy() {
 						self.state = None;

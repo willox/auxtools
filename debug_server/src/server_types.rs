@@ -22,6 +22,7 @@ pub enum Request {
 	BreakpointSet {
 		instruction: InstructionRef,
 		condition: Option<String>,
+		log_message: Option<String>
 	},
 	BreakpointUnset {
 		instruction: InstructionRef,
