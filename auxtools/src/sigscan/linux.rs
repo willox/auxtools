@@ -1,7 +1,9 @@
+use std::collections::HashSet;
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::{c_char, c_int};
 
 use libc::{dl_iterate_phdr, dl_phdr_info, Elf32_Phdr, PT_LOAD};
+use crate::signature;
 
 #[repr(C)]
 struct CallbackData {
@@ -52,6 +54,14 @@ impl Scanner {
 	}
 
 	pub fn find(&self, signature: &[Option<u8>]) -> Option<*mut u8> {
+		let all = self.find_all(signature);
+		if all.len() == 1 {
+			return all.into_iter().next();
+		}
+		return None;
+	}
+
+	pub fn find_all(&self, signature: &[Option<u8>]) -> Vec<*mut u8> {
 		let module_name = CString::new(self.module_name.clone()).unwrap();
 		let module_name_ptr = module_name.as_ptr();
 		let data = CallbackData {
@@ -65,7 +75,7 @@ impl Scanner {
 		let mut data_current = data.memory_start as *mut u8;
 		let data_end = (data.memory_start + data.memory_len) as *mut u8;
 		let mut signature_offset = 0;
-		let mut result: Option<*mut u8> = None;
+		let mut result = Vec::new();
 
 		unsafe {
 			while data_current <= data_end {
@@ -73,11 +83,7 @@ impl Scanner {
 					|| signature[signature_offset] == Some(*data_current)
 				{
 					if signature.len() <= signature_offset + 1 {
-						if result.is_some() {
-							// Found two matches.
-							return None;
-						}
-						result = Some(data_current.offset(-(signature_offset as isize)));
+						result.push(data_current.offset(-(signature_offset as isize)));
 						data_current = data_current.offset(-(signature_offset as isize));
 						signature_offset = 0;
 					} else {
