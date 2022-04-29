@@ -11,7 +11,7 @@ use std::{
 	thread::JoinHandle,
 };
 
-use clap::{App, AppSettings, Arg};
+use clap::{Command, Arg};
 
 use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
@@ -94,7 +94,7 @@ pub struct Server {
 	in_eval: bool,
 	eval_error: Option<String>,
 	conditional_breakpoints: HashMap<(raw_types::procs::ProcId, u16), String>,
-	app: App<'static, 'static>,
+	app: Command<'static>,
 }
 
 struct ServerThread {
@@ -102,58 +102,53 @@ struct ServerThread {
 }
 
 impl Server {
-	pub fn setup_app() -> App<'static, 'static> {
-		App::new("Auxtools Debug Server")
-			.version(clap::crate_version!())
-			.settings(&[
-				AppSettings::SubcommandRequired,
-			])
-			.global_settings(&[
-				AppSettings::NoBinaryName,
-				AppSettings::ColorNever,
-				AppSettings::DisableVersion,
-				AppSettings::VersionlessSubcommands,
-				AppSettings::DisableHelpFlags,
-			])
-			.usage("#<SUBCOMMAND>")
+	pub fn setup_app() -> Command<'static> {
+		Command::new("Auxtools Debug Server")
+			.version("2.2.2")
+			.subcommand_required(true)
+			.no_binary_name(true)
+			.color(clap::ColorChoice::Never)
+			.disable_version_flag(true)
+			.disable_help_flag(true)
+			.override_usage("#<SUBCOMMAND>")
 			.subcommand(
-				App::new("disassemble")
+				Command::new("disassemble")
 					.alias("dis")
 					.about("Disassembles a proc and displays its bytecode in an assembly-like format")
 					.after_help("If no parameters are provided, the proc executing in the currently debugged stack frame will be disassembled")
 					.arg(
-						Arg::with_name("proc")
+						Arg::new("proc")
 							.help("Path of the proc to disassemble (e.g. /proc/do_stuff)")
 							.takes_value(true),
 					)
 					.arg(
-						Arg::with_name("id")
+						Arg::new("id")
 							.help("Id of the proc to disassemble (for when multiple procs are defined with the same path)")
 							.takes_value(true),
 					)
 			)
 			.subcommand(
-				App::new("guest_override")
+				Command::new("guest_override")
 					.about("Override the CKey used by guest connections")
 					.arg(
-						Arg::with_name("ckey")
+						Arg::new("ckey")
 							.takes_value(true),
 					)
 			)
 			.subcommand(
-				App::new("mem_profiler")
+				Command::new("mem_profiler")
 					.about("Memory profiler")
 					.subcommand(
-						App::new("begin")
+						Command::new("begin")
 							.about("Begins memory profiling. Output goes to the specified file path")
 							.arg(
-								Arg::with_name("path")
+								Arg::new("path")
 									.help("Where to output memory profiler results")
 									.takes_value(true),
 							)
 					)
 					.subcommand(
-						App::new("end")
+						Command::new("end")
 							.about("Finishes current memory profiler.")
 					)
 			)
@@ -744,11 +739,11 @@ impl Server {
 		// How many matches variables can you spot? It could be better...
 		let response = match self
 			.app
-			.get_matches_from_safe_borrow(command.split_ascii_whitespace())
+			.try_get_matches_from_mut(command.split_ascii_whitespace())
 		{
 			Ok(matches) => {
 				match matches.subcommand() {
-					("disassemble", Some(matches)) => {
+					Some(("disassemble", matches)) => {
 						if let Some(proc) = matches.value_of("proc") {
 							// Default id to 0 in the worst way possible
 							let id = matches
@@ -770,7 +765,7 @@ impl Server {
 						}
 					}
 
-					("guest_override", Some(matches)) => match matches.value_of("ckey") {
+					Some(("guest_override", matches)) => match matches.value_of("ckey") {
 						Some(ckey) => match crate::ckey_override::override_guest_ckey(ckey) {
 							Ok(()) => "Success".to_owned(),
 
@@ -782,8 +777,8 @@ impl Server {
 						None => "no ckey provided".to_owned(),
 					},
 
-					("mem_profiler", Some(matches)) => match matches.subcommand() {
-						("begin", Some(matches)) => match matches.value_of("path") {
+					Some(("mem_profiler", matches)) => match matches.subcommand() {
+						Some(("begin", matches)) => match matches.value_of("path") {
 							Some(path) => mem_profiler::begin(path)
 								.map(|_| "Memory profiler enabled".to_owned())
 								.unwrap_or_else(|e| format!("Failed: {}", e)),
@@ -791,7 +786,7 @@ impl Server {
 							None => "no path provided".to_owned(),
 						},
 
-						("end", Some(_)) => {
+					Some(("end", _)) => {
 							mem_profiler::end();
 							"Memory profiler disabled".to_owned()
 						}
@@ -802,7 +797,7 @@ impl Server {
 					_ => "unknown command".to_owned(),
 				}
 			}
-			Err(e) => e.message,
+			Err(e) => e.to_string(),
 		};
 
 		response
