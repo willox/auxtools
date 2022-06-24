@@ -16,10 +16,9 @@ pub struct CompileTimeHook {
 
 inventory::collect!(CompileTimeHook);
 
-// TODO: This is super deceptively named
 #[doc(hidden)]
-pub struct RuntimeHook(pub fn(&str));
-inventory::collect!(RuntimeHook);
+pub struct RuntimeErrorHook(pub fn(&str));
+inventory::collect!(RuntimeErrorHook);
 
 extern "C" {
 	static mut call_proc_by_id_original: *const c_void;
@@ -126,7 +125,7 @@ impl Proc {
 extern "C" fn on_runtime(error: *const c_char) {
 	let str = unsafe { CStr::from_ptr(error) }.to_string_lossy();
 
-	for func in inventory::iter::<RuntimeHook> {
+	for func in inventory::iter::<RuntimeErrorHook> {
 		func.0(&str);
 	}
 }

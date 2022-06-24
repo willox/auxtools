@@ -95,7 +95,7 @@ pub fn runtime_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 	let inventory_define = quote! {
 		auxtools::inventory::submit!(
-			auxtools::RuntimeHook(#func_name)
+			auxtools::RuntimeErrorHook(#func_name)
 		);
 	};
 

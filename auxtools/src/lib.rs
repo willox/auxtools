@@ -25,7 +25,7 @@ mod weak_value;
 use init::{get_init_level, set_init_level, InitLevel};
 
 pub use auxtools_impl::{hook, init, runtime_handler, shutdown};
-pub use hooks::{CompileTimeHook, RuntimeHook};
+pub use hooks::{CompileTimeHook, RuntimeErrorHook};
 pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
 pub use list::List;
 pub use proc::Proc;
