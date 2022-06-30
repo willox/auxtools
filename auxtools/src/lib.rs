@@ -24,9 +24,9 @@ mod weak_value;
 
 use init::{get_init_level, set_init_level, InitLevel};
 
-pub use auxtools_impl::{hook, init, runtime_handler, shutdown};
+pub use auxtools_impl::{hook, init, runtime_handler, shutdown, full_shutdown};
 pub use hooks::{CompileTimeHook, RuntimeHook};
-pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
+pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc, FullShutdownFunc};
 pub use list::List;
 pub use proc::Proc;
 pub use raw_types::variables::VariableNameIdTable;
@@ -139,12 +139,19 @@ fn pin_dll() -> Result<(), ()> {
 	unsafe {
 		use winapi::um::libloaderapi::{
 			GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-			GET_MODULE_HANDLE_EX_FLAG_PIN,
 		};
+		#[cfg(not(feature = "unpinned-dll"))]
+		use winapi::um::libloaderapi::GET_MODULE_HANDLE_EX_FLAG_PIN;
 		let mut module = std::ptr::null_mut();
 
+		#[cfg(not(feature = "unpinned-dll"))]
+		let flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN;
+
+		#[cfg(feature = "unpinned-dll")]
+		let flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS;
+
 		let res = GetModuleHandleExW(
-			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+			flags,
 			pin_dll as *const _,
 			&mut module,
 		);
@@ -430,5 +437,23 @@ byond_ffi_fn! { auxtools_shutdown(_input) {
 	}
 
 	set_init_level(InitLevel::Partial);
+	Some("SUCCESS".to_owned())
+} }
+
+byond_ffi_fn! { auxtools_full_shutdown(_input) {
+	init::run_partial_shutdown();
+	string_intern::destroy_interned_strings();
+	bytecode_manager::shutdown();
+
+	hooks::clear_hooks();
+	hooks::shutdown();
+	proc::clear_procs();
+
+	unsafe {
+		raw_types::funcs::VARIABLE_NAMES = std::ptr::null();
+	}
+
+	set_init_level(InitLevel::Full);
+	init::run_full_shutdown();
 	Some("SUCCESS".to_owned())
 } }

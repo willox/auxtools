@@ -129,6 +129,26 @@ pub fn shutdown(_: TokenStream, item: TokenStream) -> TokenStream {
 	code.into()
 }
 
+#[proc_macro_attribute]
+pub fn full_shutdown(_: TokenStream, item: TokenStream) -> TokenStream {
+	let func = syn::parse_macro_input!(item as syn::ItemFn);
+	let func_name = &func.sig.ident;
+
+	let inventory_define = quote! {
+		auxtools::inventory::submit!(
+			#![crate = auxtools]
+			auxtools::FullShutdownFunc(#func_name)
+		);
+	};
+
+	let code = quote! {
+		#func
+		#inventory_define
+	};
+
+	code.into()
+}
+
 /// The `hook` attribute is used to define functions that may be used as proc hooks,
 /// and to optionally hook those procs upon library initialization.
 ///
