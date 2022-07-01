@@ -458,5 +458,28 @@ byond_ffi_fn! { auxtools_full_shutdown(_input) {
 
 	set_init_level(InitLevel::Full);
 	init::run_full_shutdown();
+
+	if !PIN_DLL.load(Ordering::Relaxed) {
+		#[cfg(windows)]
+		unsafe {
+			use winapi::um::libloaderapi::{
+				FreeLibrary, GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+				GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			};
+			let mut module = std::ptr::null_mut();
+
+			let get_handle_res = GetModuleHandleExW(
+				GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+				auxtools_full_shutdown as *const _,
+				&mut module,
+			);
+
+			if get_handle_res == 0 {
+				return Some("FAILED (Could not unpin the library from memory.)".to_owned())
+			}
+
+			FreeLibrary(module);
+		}
+	};
 	Some("SUCCESS".to_owned())
 } }
