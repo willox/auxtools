@@ -24,7 +24,7 @@ mod weak_value;
 
 use init::{get_init_level, set_init_level, InitLevel};
 
-pub use auxtools_impl::{hook, init, runtime_handler, shutdown, full_shutdown};
+pub use auxtools_impl::{hook, init, runtime_handler, shutdown, full_shutdown, pin_dll};
 pub use hooks::{CompileTimeHook, RuntimeHook};
 pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc, FullShutdownFunc};
 pub use list::List;
@@ -36,9 +36,11 @@ pub use string::StringRef;
 pub use string_intern::InternedString;
 pub use value::Value;
 pub use weak_value::WeakValue;
-
+use std::sync::atomic::{AtomicBool, Ordering};
 /// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
 pub use inventory;
+/// Used by the [pin_dll] macro to set dll pinning
+pub use ctor;
 
 // We need winapi to call GetModuleHandleExW which lets us prevent our DLL from unloading.
 #[cfg(windows)]
@@ -132,23 +134,24 @@ macro_rules! with_scanner_by_call {
 	};
 }
 
+pub static PIN_DLL: AtomicBool = AtomicBool::new(true);
+
 // This strange section of code retrieves our DLL using the init function's address.
 // This increments the DLL reference count, which prevents unloading.
 #[cfg(windows)]
 fn pin_dll() -> Result<(), ()> {
 	unsafe {
+
 		use winapi::um::libloaderapi::{
 			GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+			GET_MODULE_HANDLE_EX_FLAG_PIN,
 		};
-		#[cfg(not(feature = "unpinned-dll"))]
-		use winapi::um::libloaderapi::GET_MODULE_HANDLE_EX_FLAG_PIN;
 		let mut module = std::ptr::null_mut();
 
-		#[cfg(not(feature = "unpinned-dll"))]
-		let flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN;
-
-		#[cfg(feature = "unpinned-dll")]
-		let flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS;
+		let flags = match PIN_DLL.load(Ordering::Relaxed) {
+			true => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+			false => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+		};
 
 		let res = GetModuleHandleExW(
 			flags,

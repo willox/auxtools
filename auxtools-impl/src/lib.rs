@@ -149,6 +149,22 @@ pub fn full_shutdown(_: TokenStream, item: TokenStream) -> TokenStream {
 	code.into()
 }
 
+#[proc_macro]
+pub fn pin_dll(attr: TokenStream) -> TokenStream {
+	let flag = syn::parse_macro_input!(attr as syn::LitBool);
+	let code = quote! {
+		use std::sync::atomic::{AtomicBool, Ordering};
+
+		#[auxtools::ctor::ctor]
+		#[cfg(windows)]
+		fn set_pin_dll() {
+			auxtools::PIN_DLL.store(#flag, Ordering::Relaxed);
+		}
+	};
+
+	code.into()
+}
+
 /// The `hook` attribute is used to define functions that may be used as proc hooks,
 /// and to optionally hook those procs upon library initialization.
 ///
