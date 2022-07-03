@@ -76,7 +76,6 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 	let inventory_define = quote! {
 		auxtools::inventory::submit!(
-			#![crate = auxtools]
 			#func_type(#func_name)
 		);
 	};
@@ -96,8 +95,7 @@ pub fn runtime_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 	let inventory_define = quote! {
 		auxtools::inventory::submit!(
-			#![crate = auxtools]
-			auxtools::RuntimeHook(#func_name)
+			auxtools::RuntimeErrorHook(#func_name)
 		);
 	};
 
@@ -116,7 +114,6 @@ pub fn shutdown(_: TokenStream, item: TokenStream) -> TokenStream {
 
 	let inventory_define = quote! {
 		auxtools::inventory::submit!(
-			#![crate = auxtools]
 			auxtools::PartialShutdownFunc(#func_name)
 		);
 	};
@@ -177,19 +174,28 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	}
 
 	let cthook_prelude = match proc {
-		Some(p) => quote! {
-			auxtools::inventory::submit!(
-				#![crate = auxtools]
-				auxtools::CompileTimeHook::new(#p, #func_name)
-			);
-		},
+		Some(Lit::Str(p)) => {
+			quote! {
+				auxtools::inventory::submit!({
+					auxtools::CompileTimeHook{ proc_path: #p, hook: #func_name }
+				});
+			}
+		}
+		Some(other_literal) => {
+			return syn::Error::new(
+				other_literal.span(),
+				"Hook attributes must be a string literal",
+			)
+			.to_compile_error()
+			.into()
+		}
 		None => quote! {},
 	};
 	let signature = quote! {
 		fn #func_name(
 			src: &auxtools::Value,
 			usr: &auxtools::Value,
-			args: &mut Vec<auxtools::Value>,
+			mut args: Vec<auxtools::Value>,
 		) -> auxtools::DMResult
 	};
 
@@ -200,6 +206,7 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 		proc_macro2::TokenStream,
 		syn::Token![,],
 	> = syn::punctuated::Punctuated::new();
+
 	for arg in args.iter().map(extract_args) {
 		if let syn::Pat::Ident(p) = &*arg.pat {
 			arg_names.push(p.ident.clone());

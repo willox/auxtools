@@ -11,7 +11,7 @@ use std::{
 	thread::JoinHandle,
 };
 
-use clap::{Command, Arg};
+use clap::{Arg, Command};
 
 use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
@@ -786,7 +786,7 @@ impl Server {
 							None => "no path provided".to_owned(),
 						},
 
-					Some(("end", _)) => {
+						Some(("end", _)) => {
 							mem_profiler::end();
 							"Memory profiler disabled".to_owned()
 						}

@@ -3,10 +3,10 @@ use super::raw_types;
 use super::value::Value;
 use crate::runtime::DMResult;
 use detour::RawDetour;
+use fxhash::FxHashMap;
 use std::ffi::c_void;
 use std::os::raw::c_char;
 use std::{cell::RefCell, ffi::CStr};
-use fxhash::FxHashMap;
 
 #[doc(hidden)]
 pub struct CompileTimeHook {
@@ -14,18 +14,11 @@ pub struct CompileTimeHook {
 	pub hook: ProcHook,
 }
 
-impl CompileTimeHook {
-	pub fn new(proc_path: &'static str, hook: ProcHook) -> Self {
-		CompileTimeHook { proc_path, hook }
-	}
-}
-
 inventory::collect!(CompileTimeHook);
 
-// TODO: This is super deceptively named
 #[doc(hidden)]
-pub struct RuntimeHook(pub fn(&str));
-inventory::collect!(RuntimeHook);
+pub struct RuntimeErrorHook(pub fn(&str));
+inventory::collect!(RuntimeErrorHook);
 
 extern "C" {
 	static mut call_proc_by_id_original: *const c_void;
@@ -89,19 +82,23 @@ pub fn init() -> Result<(), String> {
 	Ok(())
 }
 
-pub type ProcHook = fn(&Value, &Value, &mut Vec<Value>) -> DMResult;
+pub type ProcHook = fn(&Value, &Value, Vec<Value>) -> DMResult;
 
 thread_local! {
-	static PROC_HOOKS: RefCell<FxHashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(FxHashMap::default());
+	static PROC_HOOKS: RefCell<FxHashMap<raw_types::procs::ProcId, (ProcHook, String)>> = RefCell::new(FxHashMap::default());
 }
 
-fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFailure> {
+fn hook_by_id(
+	id: raw_types::procs::ProcId,
+	hook: ProcHook,
+	hook_path: String,
+) -> Result<(), HookFailure> {
 	PROC_HOOKS.with(|h| {
 		let mut map = h.borrow_mut();
 		if map.contains_key(&id) {
 			return Err(HookFailure::AlreadyHooked);
 		} else {
-			map.insert(id, hook);
+			map.insert(id, (hook, hook_path));
 			Ok(())
 		}
 	})
@@ -113,14 +110,14 @@ pub fn clear_hooks() {
 
 pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure> {
 	match super::proc::get_proc(name) {
-		Some(p) => hook_by_id(p.id, hook),
+		Some(p) => hook_by_id(p.id, hook, p.path.to_owned()),
 		None => Err(HookFailure::ProcNotFound),
 	}
 }
 
 impl Proc {
 	pub fn hook(&self, func: ProcHook) -> Result<(), HookFailure> {
-		hook_by_id(self.id, func)
+		hook_by_id(self.id, func, self.path.to_owned())
 	}
 }
 
@@ -128,7 +125,7 @@ impl Proc {
 extern "C" fn on_runtime(error: *const c_char) {
 	let str = unsafe { CStr::from_ptr(error) }.to_string_lossy();
 
-	for func in inventory::iter::<RuntimeHook> {
+	for func in inventory::iter::<RuntimeErrorHook> {
 		func.0(&str);
 	}
 }
@@ -147,23 +144,20 @@ extern "C" fn call_proc_by_id_hook(
 	_unknown3: u32,
 ) -> u8 {
 	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
-		Some(hook) => {
-			let src;
-			let usr;
-			let mut args: Vec<Value>;
+		Some((hook, path)) => {
+			let (src, usr, args) = unsafe {
+				(
+					Value::from_raw(src_raw),
+					Value::from_raw(usr_raw),
+					// Taking ownership of args here
+					std::slice::from_raw_parts(args_ptr, num_args)
+						.iter()
+						.map(|v| Value::from_raw_owned(*v))
+						.collect(),
+				)
+			};
 
-			unsafe {
-				src = Value::from_raw(src_raw);
-				usr = Value::from_raw(usr_raw);
-
-				// Taking ownership of args here
-				args = std::slice::from_raw_parts(args_ptr, num_args)
-					.iter()
-					.map(|v| Value::from_raw_owned(*v))
-					.collect();
-			}
-
-			let result = hook(&src, &usr, &mut args);
+			let result = hook(&src, &usr, args);
 
 			match result {
 				Ok(r) => {
@@ -173,10 +167,14 @@ extern "C" fn call_proc_by_id_hook(
 					Some(result_raw)
 				}
 				Err(e) => {
-					// TODO: Some info about the hook would be useful (as the hook is never part of byond's stack, the runtime won't show it.)
 					Proc::find("/proc/auxtools_stack_trace")
 						.unwrap()
-						.call(&[&Value::from_string(e.message.as_str()).unwrap()])
+						.call(&[&Value::from_string(format!(
+							"{} HookPath: {}",
+							e.message.as_str(),
+							path.as_str()
+						))
+						.unwrap()])
 						.unwrap();
 					Some(Value::null().raw)
 				}
