@@ -16,6 +16,9 @@ macro_rules! byond_string {
 	};
 }
 
+//hack
+unsafe impl Sync for InternedString {}
+
 #[doc(hidden)]
 pub struct InternedString(pub &'static str, pub UnsafeCell<Option<StringRef>>);
 

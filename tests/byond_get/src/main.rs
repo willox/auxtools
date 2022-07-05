@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use clap::{Command, Arg};
+use clap::{Arg, Command};
 
 fn get_zip_url(major: u32, minor: u32) -> reqwest::Url {
 	reqwest::Url::parse(&format!(
