@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use clap::{App, AppSettings, Arg};
+use clap::{Command, Arg};
 
 fn get_zip_url(major: u32, minor: u32) -> reqwest::Url {
 	reqwest::Url::parse(&format!(
@@ -11,22 +11,22 @@ fn get_zip_url(major: u32, minor: u32) -> reqwest::Url {
 }
 
 fn main() {
-	let matches = App::new("byond_get")
-		.global_setting(AppSettings::DisableVersion)
+	let matches = Command::new("byond_get")
+		.disable_version_flag(true)
 		.arg(
-			Arg::with_name("major")
+			Arg::new("major")
 				.help("major BYOND version to fetch (e.g. 513)")
 				.required(true)
 				.takes_value(true),
 		)
 		.arg(
-			Arg::with_name("minor")
+			Arg::new("minor")
 				.help("minor BYOND version to fetch (e.g. 1539)")
 				.required(true)
 				.takes_value(true),
 		)
 		.arg(
-			Arg::with_name("destination")
+			Arg::new("destination")
 				.help("directory to extract the BYOND build into")
 				.required(true)
 				.takes_value(true),

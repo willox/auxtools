@@ -74,7 +74,8 @@ signatures! {
 pub const BYONDCORE: &str = "libbyond.so";
 #[cfg(unix)]
 signatures! {
-	get_proc_array_entry => "E8 ?? ?? ?? ?? 8B 00 89 04 24 E8 ?? ?? ?? ?? 8B 00 89 44 24 ?? 8D 45 ??",
+	get_proc_array_entry_1583 => "E8 ?? ?? ?? ?? 8B 00 89 04 24 E8 ?? ?? ?? ?? 8B 00 89 44 24 ?? 8D 45 ??",
+	get_proc_array_entry_1584 => "E8 ?? ?? ?? ?? 0F B7 F6 89 C7 89 B5 ?? ?? ?? ?? 89 34 24 E8 ?? ?? ?? ??",
 	get_string_id => "55 89 E5 57 56 89 CE 53 89 D3 83 EC 5C 8B 55 ?? 85 C0 88 55 ?? 0F 84 ?? ?? ?? ??",
 	call_proc_by_id => "E8 ?? ?? ?? ?? 8B 45 ?? 8B 55 ?? 89 45 ?? 89 55 ?? 8B 55 ?? 8B 4D ?? 8B 5D ??",
 	get_variable => "55 89 E5 81 EC C8 00 00 00 8B 55 ?? 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ??",
@@ -208,7 +209,6 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 		with_scanner_by_call! { byondcore,
 			call_proc_by_id,
-			get_proc_array_entry,
 			inc_ref_count,
 			get_misc_by_id,
 			runtime
@@ -217,32 +217,49 @@ byond_ffi_fn! { auxtools_init(_input) {
 		#[cfg(windows)]
 		{
 			with_scanner_by_call! { byondcore,
-				dec_ref_count
+				dec_ref_count,
+				get_proc_array_entry
 			}
 
 			unsafe {
 				raw_types::funcs::dec_ref_count_byond = dec_ref_count;
+				raw_types::funcs::get_proc_array_entry_byond = get_proc_array_entry;
 			}
 		}
 
 		#[cfg(unix)]
 		{
-			if version::get().1 >= 1543 {
+			let dec_ref_count = if version::get().1 >= 1543 {
 				with_scanner_by_call! { byondcore,
 					dec_ref_count_514
 				}
 
-				unsafe {
-					raw_types::funcs::dec_ref_count_byond = dec_ref_count_514;
-				}
+				dec_ref_count_514
 			} else {
 				with_scanner_by_call! { byondcore,
 					dec_ref_count_513
 				}
 
-				unsafe {
-					raw_types::funcs::dec_ref_count_byond = dec_ref_count_513;
+				dec_ref_count_513
+			};
+
+			let get_proc_array_entry = if version::get().1 >= 1584 {
+				with_scanner_by_call! { byondcore,
+					get_proc_array_entry_1584
 				}
+
+				get_proc_array_entry_1584
+			} else {
+				with_scanner_by_call! { byondcore,
+					get_proc_array_entry_1583
+				}
+
+				get_proc_array_entry_1583
+			};
+
+			unsafe {
+				raw_types::funcs::dec_ref_count_byond = dec_ref_count;
+				raw_types::funcs::get_proc_array_entry_byond = get_proc_array_entry;
 			}
 		}
 
@@ -250,7 +267,9 @@ byond_ffi_fn! { auxtools_init(_input) {
 		{
 			if cfg!(windows) {
 				let res =
-					if version::get().1 >= 1561 {
+					if version::get().1 >= 1585 {
+						byondcore.find(signature!("55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC ?? 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 1D ?? ?? ?? ??"))
+					} else if version::get().1 >= 1561 {
 						byondcore.find(signature!("55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC 18 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 4D ?? 0F B6 C1"))
 					} else if version::get().1 >= 1543 {
 						byondcore.find(signature!("55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC 14 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 4D ??"))
@@ -334,7 +353,6 @@ byond_ffi_fn! { auxtools_init(_input) {
 			raw_types::funcs::SUSPENDED_PROCS_BUFFER = *(suspended_procs_buffer.add(2) as *mut *mut raw_types::procs::SuspendedProcsBuffer);
 			raw_types::funcs::call_proc_by_id_byond = call_proc_by_id;
 			raw_types::funcs::call_datum_proc_by_name_byond = call_datum_proc_by_name;
-			raw_types::funcs::get_proc_array_entry_byond = get_proc_array_entry;
 			raw_types::funcs::get_string_id_byond = get_string_id;
 			raw_types::funcs::get_variable_byond = get_variable;
 			raw_types::funcs::set_variable_byond = set_variable;

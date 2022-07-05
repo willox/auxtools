@@ -2,12 +2,11 @@ use super::proc::Proc;
 use super::raw_types;
 use super::value::Value;
 use crate::runtime::DMResult;
-use dashmap::mapref::entry::Entry;
-use dashmap::DashMap;
 use detour::RawDetour;
 use std::ffi::c_void;
 use std::os::raw::c_char;
 use std::{cell::RefCell, ffi::CStr};
+use fxhash::FxHashMap;
 
 #[doc(hidden)]
 pub struct CompileTimeHook {
@@ -122,25 +121,23 @@ pub fn shutdown(){
 pub type ProcHook = fn(&Value, &Value, &mut Vec<Value>) -> DMResult;
 
 thread_local! {
-	static PROC_HOOKS: RefCell<DashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(DashMap::new());
+	static PROC_HOOKS: RefCell<FxHashMap<raw_types::procs::ProcId, ProcHook>> = RefCell::new(FxHashMap::default());
 }
 
 fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook) -> Result<(), HookFailure> {
 	PROC_HOOKS.with(|h| {
-		let map = h.borrow();
-		let entry = map.entry(id);
-		match entry {
-			Entry::Vacant(v) => {
-				v.insert(hook);
-				Ok(())
-			}
-			Entry::Occupied(_) => Err(HookFailure::AlreadyHooked),
+		let mut map = h.borrow_mut();
+		if map.contains_key(&id) {
+			return Err(HookFailure::AlreadyHooked);
+		} else {
+			map.insert(id, hook);
+			Ok(())
 		}
 	})
 }
 
 pub fn clear_hooks() {
-	PROC_HOOKS.with(|h| h.borrow().clear());
+	PROC_HOOKS.with(|h| h.borrow_mut().clear());
 }
 
 pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure> {

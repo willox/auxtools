@@ -1,6 +1,7 @@
 use crate::*;
-use dashmap::mapref::entry::Entry;
-use dashmap::DashMap;
+use ahash::RandomState;
+use fxhash::FxHashMap;
+use std::collections::{HashMap, hash_map::Entry};
 use std::cell::RefCell;
 use std::fmt;
 
@@ -157,8 +158,8 @@ impl fmt::Debug for Proc {
 	}
 }
 
-thread_local!(static PROCS_BY_NAME: RefCell<DashMap<String, Vec<Proc>>> = RefCell::new(DashMap::new()));
-thread_local!(static PROC_OVERRIDE_IDS: RefCell<DashMap<raw_types::procs::ProcId, u32>> = RefCell::new(DashMap::new()));
+thread_local!(static PROCS_BY_NAME: RefCell<HashMap<String, Vec<Proc>, RandomState>> = RefCell::new(HashMap::with_hasher(RandomState::default())));
+thread_local!(static PROC_OVERRIDE_IDS: RefCell<FxHashMap<raw_types::procs::ProcId, u32>> = RefCell::new(FxHashMap::default()));
 
 fn strip_path(p: String) -> String {
 	p.replace("/proc/", "/").replace("/verb/", "/")
@@ -174,7 +175,7 @@ pub fn populate_procs() {
 		let proc = proc.unwrap();
 
 		PROC_OVERRIDE_IDS.with(|override_ids| {
-			let override_ids = override_ids.borrow_mut();
+			let mut override_ids = override_ids.borrow_mut();
 
 			PROCS_BY_NAME.with(|h| {
 				match h.borrow_mut().entry(proc.path.clone()) {
