@@ -462,18 +462,19 @@ byond_ffi_fn! { auxtools_shutdown(_input) {
 } }
 
 byond_ffi_fn! { auxtools_full_shutdown(_input) {
-	init::run_partial_shutdown();
-	string_intern::destroy_interned_strings();
-	bytecode_manager::shutdown();
+	if get_init_level() == InitLevel::None {
+		init::run_partial_shutdown();
+		string_intern::destroy_interned_strings();
+		bytecode_manager::shutdown();
 
-	hooks::clear_hooks();
-	hooks::shutdown();
-	proc::clear_procs();
+		hooks::clear_hooks();
+		proc::clear_procs();
 
-	unsafe {
-		raw_types::funcs::VARIABLE_NAMES = std::ptr::null();
+		unsafe {
+			raw_types::funcs::VARIABLE_NAMES = std::ptr::null();
+		}
 	}
-
+	hooks::shutdown();
 	set_init_level(InitLevel::Full);
 	init::run_full_shutdown();
 
