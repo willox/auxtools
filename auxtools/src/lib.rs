@@ -446,6 +446,9 @@ byond_ffi_fn! { auxtools_init(_input) {
 } }
 
 byond_ffi_fn! { auxtools_shutdown(_input) {
+	if get_init_level() != InitLevel::None {
+		Some("FAILED (already shut down)".to_owned())
+	}
 	init::run_partial_shutdown();
 	string_intern::destroy_interned_strings();
 	bytecode_manager::shutdown();
@@ -462,6 +465,9 @@ byond_ffi_fn! { auxtools_shutdown(_input) {
 } }
 
 byond_ffi_fn! { auxtools_full_shutdown(_input) {
+	if get_init_level() == InitLevel::Full {
+		Some("FAILED (already shut down)".to_owned())
+	}
 	if get_init_level() == InitLevel::None {
 		init::run_partial_shutdown();
 		string_intern::destroy_interned_strings();
