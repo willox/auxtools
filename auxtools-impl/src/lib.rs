@@ -146,6 +146,19 @@ pub fn full_shutdown(_: TokenStream, item: TokenStream) -> TokenStream {
 	code.into()
 }
 
+/// The `pin_dll!` macro is used to determine whether the dll handle auxtools
+/// takes on Windows is pinned. For reference, a dll with a pinned handle cannot
+/// be unloaded during execution of the host process - termination of the host is
+/// the only way to unload the dll and release the lock on the corresponding file.
+///
+/// This has very limited use cases - for instance, if a .dmb is hosted on a live
+/// server whose Dream Daemon process is kept running between runs, keeping a pinned
+/// handle to the dll will prevent the corresponding file from being updated by
+/// automatic updaters such as tgs. You shouldn't use this unless you very specifically
+/// need it for your particular use case.
+///
+/// Libraries that unpin the dll using this macro should ensure that no spawned threads
+/// are running when calling `auxtools_full_shutdown` from DM, or else Dream Daemon will crash.
 #[proc_macro]
 pub fn pin_dll(attr: TokenStream) -> TokenStream {
 	let flag = syn::parse_macro_input!(attr as syn::LitBool);
