@@ -39,6 +39,19 @@ extern "C" {
 	) -> raw_types::values::Value;
 }
 
+struct Detours {
+	pub runtime_detour: Option<RawDetour>,
+	pub call_proc_detour: Option<RawDetour>
+}
+
+impl Detours {
+	pub fn new() -> Self {
+		Self{ runtime_detour: None, call_proc_detour: None }
+	}
+}
+
+thread_local!(static DETOURS: RefCell<Detours> = RefCell::new(Detours::new()));
+
 pub enum HookFailure {
 	NotInitialized,
 	ProcNotFound,
@@ -67,7 +80,6 @@ pub fn init() -> Result<(), String> {
 
 		runtime_hook.enable().unwrap();
 		runtime_original = std::mem::transmute(runtime_hook.trampoline());
-		std::mem::forget(runtime_hook);
 
 		let call_hook = RawDetour::new(
 			raw_types::funcs::call_proc_by_id_byond as *const (),
@@ -77,9 +89,26 @@ pub fn init() -> Result<(), String> {
 
 		call_hook.enable().unwrap();
 		call_proc_by_id_original = std::mem::transmute(call_hook.trampoline());
-		std::mem::forget(call_hook);
+
+		DETOURS.with(|detours_cell| {
+			let mut detours = detours_cell.borrow_mut();
+			detours.runtime_detour = Some(runtime_hook);
+			detours.call_proc_detour = Some(call_hook);
+		});
 	}
 	Ok(())
+}
+
+pub fn shutdown(){
+	unsafe {
+		DETOURS.with(|detours_cell| {
+			let detours = detours_cell.borrow();
+			let runtime_hook = detours.runtime_detour.as_ref().unwrap();
+			let call_proc_hook = detours.call_proc_detour.as_ref().unwrap();
+			runtime_hook.disable().unwrap();
+			call_proc_hook.disable().unwrap();
+		});
+	}
 }
 
 pub type ProcHook = fn(&Value, &Value, Vec<Value>) -> DMResult;

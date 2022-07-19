@@ -31,9 +31,13 @@ pub struct PartialInitFunc(pub InitFunc);
 #[doc(hidden)]
 pub struct PartialShutdownFunc(pub fn());
 
+#[doc(hidden)]
+pub struct FullShutdownFunc(pub fn());
+
 inventory::collect!(FullInitFunc);
 inventory::collect!(PartialInitFunc);
 inventory::collect!(PartialShutdownFunc);
+inventory::collect!(FullShutdownFunc);
 
 pub fn run_full_init() -> Result<(), String> {
 	for func in inventory::iter::<FullInitFunc> {
@@ -53,6 +57,12 @@ pub fn run_partial_init() -> Result<(), String> {
 
 pub fn run_partial_shutdown() {
 	for func in inventory::iter::<PartialShutdownFunc> {
+		func.0();
+	}
+}
+
+pub fn run_full_shutdown() {
+	for func in inventory::iter::<FullShutdownFunc> {
 		func.0();
 	}
 }

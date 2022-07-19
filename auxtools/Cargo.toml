@@ -15,8 +15,10 @@ auxtools-impl = { path = "../auxtools-impl", version = "0.1.0", package = "auxto
 once_cell = "1.10.0"
 inventory = "0.2.3"
 lazy_static = "1.4.0"
+dashmap = "3.11.10"
 ahash = "0.7.6"
 fxhash = "0.2.1"
+ctor = "0.1.22"
 
 [dependencies.detour]
 version = "0.8.1"
