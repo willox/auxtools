@@ -6,25 +6,29 @@
 use crate::{debug, raw_types, *};
 use std::convert::TryFrom;
 use std::{
-	cell::UnsafeCell,
+	cell::RefCell,
 	collections::{HashMap, HashSet},
 };
 
-static mut BYTECODE_ALLOCATIONS: UnsafeCell<Option<State>> = UnsafeCell::new(None);
+use ahash::RandomState;
+use fxhash::FxBuildHasher;
+
+thread_local! {
+	static BYTECODE_ALLOCATIONS: RefCell<Option<State>> = RefCell::new(None);
+}
 
 struct State {
-	allocations: HashSet<Vec<u32>>,
-	original: HashMap<raw_types::procs::ProcId, (*mut u32, u16)>,
+	allocations: HashSet<Vec<u32>, RandomState>,
+	original: HashMap<raw_types::procs::ProcId, (*mut u32, u16), FxBuildHasher>,
 }
 
 pub fn init() {
-	unsafe {
-		let ptr = BYTECODE_ALLOCATIONS.get();
-		*ptr = Some(State {
-			allocations: HashSet::new(),
-			original: HashMap::new(),
+	BYTECODE_ALLOCATIONS.with(|cell| {
+		*cell.borrow_mut() = Some(State {
+			allocations: Default::default(),
+			original: Default::default(),
 		});
-	}
+	})
 }
 
 fn get_active_bytecode_ptrs() -> HashSet<*mut u32> {
@@ -50,7 +54,7 @@ fn get_active_bytecode_ptrs() -> HashSet<*mut u32> {
 pub fn shutdown() {
 	let active_ptrs = get_active_bytecode_ptrs();
 
-	let state = unsafe { (*BYTECODE_ALLOCATIONS.get()).take().unwrap() };
+	let state = BYTECODE_ALLOCATIONS.with(|cell| cell.borrow_mut().take().unwrap());
 
 	for (id, (ptr, len)) in state.original {
 		let proc = Proc::from_id(id).unwrap();
@@ -69,38 +73,38 @@ pub fn shutdown() {
 }
 
 pub fn set_bytecode(proc: &Proc, mut bytecode: Vec<u32>) {
-	let state = unsafe {
-		let ptr = BYTECODE_ALLOCATIONS.get();
-		(*ptr).as_mut().unwrap()
-	};
+	BYTECODE_ALLOCATIONS.with(|cell| {
+		let mut state_ref = cell.borrow_mut();
+		let state = state_ref.as_mut().unwrap();
 
-	if !state.original.contains_key(&proc.id) {
-		let (ptr, len) = unsafe { proc.bytecode_mut_ptr() };
+		if !state.original.contains_key(&proc.id) {
+			let (ptr, len) = unsafe { proc.bytecode_mut_ptr() };
 
-		state.original.insert(proc.id, (ptr, len));
-	}
+			state.original.insert(proc.id, (ptr, len));
+		}
 
-	let (ptr, len) = {
-		let len = bytecode.len();
+		let (ptr, len) = {
+			let len = bytecode.len();
 
-		let ptr = match state.allocations.get(&bytecode) {
-			Some(bytecode) => {
-				bytecode.as_ptr() as *mut u32 // don't @ me
-			}
+			let ptr = match state.allocations.get(&bytecode) {
+				Some(bytecode) => {
+					bytecode.as_ptr() as *mut u32 // don't @ me
+				}
 
-			None => {
-				let ptr = bytecode.as_mut_ptr();
-				state.allocations.insert(bytecode);
-				ptr
-			}
+				None => {
+					let ptr = bytecode.as_mut_ptr();
+					state.allocations.insert(bytecode);
+					ptr
+				}
+			};
+
+			(ptr, len)
 		};
 
-		(ptr, len)
-	};
+		let len = u16::try_from(len).unwrap();
 
-	let len = u16::try_from(len).unwrap();
-
-	unsafe {
-		raw_types::misc::set_bytecode((*proc.entry).bytecode, ptr, len);
-	}
+		unsafe {
+			raw_types::misc::set_bytecode((*proc.entry).bytecode, ptr, len);
+		}
+	});
 }

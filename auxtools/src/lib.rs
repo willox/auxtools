@@ -16,7 +16,7 @@ pub mod raw_types;
 mod runtime;
 pub mod sigscan;
 mod string;
-mod string_intern;
+pub mod string_intern;
 mod value;
 mod value_from;
 mod version;

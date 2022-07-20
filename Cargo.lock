@@ -338,7 +338,7 @@ dependencies = [
 
 [[package]]
 name = "debug_server"
-version = "2.2.2"
+version = "2.2.3"
 dependencies = [
  "auxtools",
  "bincode",
@@ -752,9 +752,9 @@ source = "git+https://github.com/willox/SpacemanDMM?branch=fixes#6e6620cabc9e1cb
 
 [[package]]
 name = "inventory"
-version = "0.2.3"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84344c6e0b90a9e2b6f3f9abe5cc74402684e348df7b32adca28747e0cef091a"
+checksum = "e0257e268c91daba296499206db5dd5a058875936bec3d8429b5f3e20ec9dc9a"
 dependencies = [
  "ctor",
  "ghost",
