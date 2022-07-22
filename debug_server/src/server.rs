@@ -1,12 +1,11 @@
 use crate::mem_profiler;
 
 use super::instruction_hooking::{get_hooked_offsets, hook_instruction, unhook_instruction};
+use flume::{Receiver, Sender};
 use std::io::{Read, Write};
-use std::sync::mpsc;
 use std::thread;
 use std::{cell::RefCell, error::Error};
 use std::{
-	collections::HashMap,
 	net::{SocketAddr, TcpListener, TcpStream},
 	thread::JoinHandle,
 };
@@ -16,6 +15,8 @@ use clap::{Arg, Command};
 use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
 use auxtools::*;
+
+use ahash::AHashMap;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 enum Variables {
@@ -29,7 +30,7 @@ enum Variables {
 struct State {
 	stacks: debug::CallStacks,
 	variables: RefCell<Vec<Variables>>,
-	variables_to_refs: RefCell<HashMap<Variables, VariablesRef>>,
+	variables_to_refs: RefCell<AHashMap<Variables, VariablesRef>>,
 }
 
 impl State {
@@ -37,7 +38,7 @@ impl State {
 		Self {
 			stacks: debug::CallStacks::new(),
 			variables: RefCell::new(vec![]),
-			variables_to_refs: RefCell::new(HashMap::new()),
+			variables_to_refs: RefCell::new(AHashMap::new()),
 		}
 	}
 
@@ -77,7 +78,7 @@ impl State {
 
 enum ServerStream {
 	// The server is waiting for a Stream to be sent on the connection channel
-	Waiting(mpsc::Receiver<TcpStream>),
+	Waiting(Receiver<TcpStream>),
 
 	Connected(TcpStream),
 
@@ -86,19 +87,19 @@ enum ServerStream {
 }
 
 pub struct Server {
-	requests: mpsc::Receiver<Request>,
+	requests: Receiver<Request>,
 	stream: ServerStream,
 	_thread: JoinHandle<()>,
 	should_catch_runtimes: bool,
 	state: Option<State>,
 	in_eval: bool,
 	eval_error: Option<String>,
-	conditional_breakpoints: HashMap<(raw_types::procs::ProcId, u16), String>,
+	conditional_breakpoints: AHashMap<(raw_types::procs::ProcId, u16), String>,
 	app: Command<'static>,
 }
 
 struct ServerThread {
-	requests: mpsc::Sender<Request>,
+	requests: Sender<Request>,
 }
 
 impl Server {
@@ -156,7 +157,7 @@ impl Server {
 
 	pub fn connect(addr: &SocketAddr) -> std::io::Result<Server> {
 		let stream = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))?;
-		let (requests_sender, requests_receiver) = mpsc::channel();
+		let (requests_sender, requests_receiver) = flume::unbounded();
 
 		let server_thread = ServerThread {
 			requests: requests_sender,
@@ -175,7 +176,7 @@ impl Server {
 			state: None,
 			in_eval: false,
 			eval_error: None,
-			conditional_breakpoints: HashMap::new(),
+			conditional_breakpoints: AHashMap::new(),
 			app: Self::setup_app(),
 		};
 
@@ -184,8 +185,8 @@ impl Server {
 	}
 
 	pub fn listen(addr: &SocketAddr) -> std::io::Result<Server> {
-		let (connection_sender, connection_receiver) = mpsc::channel();
-		let (requests_sender, requests_receiver) = mpsc::channel();
+		let (connection_sender, connection_receiver) = flume::unbounded();
+		let (requests_sender, requests_receiver) = flume::unbounded();
 
 		let thread = ServerThread {
 			requests: requests_sender,
@@ -200,7 +201,7 @@ impl Server {
 			state: None,
 			in_eval: false,
 			eval_error: None,
-			conditional_breakpoints: HashMap::new(),
+			conditional_breakpoints: AHashMap::new(),
 			app: Self::setup_app(),
 		})
 	}
@@ -1290,7 +1291,7 @@ impl ServerThread {
 	fn spawn_listener(
 		self,
 		listener: TcpListener,
-		connection_sender: mpsc::Sender<TcpStream>,
+		connection_sender: Sender<TcpStream>,
 	) -> JoinHandle<()> {
 		thread::spawn(move || match listener.accept() {
 			Ok((stream, _)) => {

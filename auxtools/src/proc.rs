@@ -48,6 +48,10 @@ impl Proc {
 	}
 
 	pub fn from_id(id: raw_types::procs::ProcId) -> Option<Self> {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let mut proc_entry: *mut raw_types::procs::ProcEntry = std::ptr::null_mut();
 		unsafe {
 			assert_eq!(
@@ -110,6 +114,10 @@ impl Proc {
 	/// }
 	/// ```
 	pub fn call(&self, args: &[&Value]) -> runtime::DMResult {
+		if CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let mut ret = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },

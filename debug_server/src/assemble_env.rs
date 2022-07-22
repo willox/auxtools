@@ -1,6 +1,8 @@
 use auxtools::*;
 use dmasm;
 
+use crate::VARIABLE_NAMES;
+
 pub struct AssembleEnv;
 
 impl dmasm::assembler::AssembleEnv for AssembleEnv {
@@ -18,9 +20,9 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 		let id = self.get_string_index(name)?;
 
 		unsafe {
-			let mut names = (*raw_types::funcs::VARIABLE_NAMES).entries;
+			let mut names = (*VARIABLE_NAMES.with(|cell| cell.get())).entries;
 
-			for i in 0..(*raw_types::funcs::VARIABLE_NAMES).count {
+			for i in 0..(*VARIABLE_NAMES.with(|cell| cell.get())).count {
 				if (*names).0 == id {
 					return Some(i);
 				}

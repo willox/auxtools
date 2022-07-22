@@ -1,7 +1,9 @@
-use crate::raw_types::{funcs, procs};
+use crate::raw_types::procs;
 use crate::Proc;
 use crate::StringRef;
 use crate::Value;
+
+use crate::{CURRENT_EXECUTION_CONTEXT, SUSPENDED_PROCS, SUSPENDED_PROCS_BUFFER};
 
 pub struct StackFrame {
 	pub context: *mut procs::ExecutionContext,
@@ -95,8 +97,9 @@ impl CallStacks {
 		let mut suspended = vec![];
 
 		unsafe {
-			let buffer = (*funcs::SUSPENDED_PROCS_BUFFER).buffer;
-			let procs = funcs::SUSPENDED_PROCS;
+			let buffer_raw = SUSPENDED_PROCS_BUFFER.with(|cell| cell.get());
+			let buffer = (*buffer_raw).buffer;
+			let procs = SUSPENDED_PROCS.with(|cell| cell.get());
 			let front = (*procs).front;
 			let back = (*procs).back;
 
@@ -109,7 +112,10 @@ impl CallStacks {
 
 		CallStacks {
 			active: unsafe {
-				CallStacks::from_context(*funcs::CURRENT_EXECUTION_CONTEXT, CallStackKind::Active)
+				CallStacks::from_context(
+					*CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get()),
+					CallStackKind::Active,
+				)
 			},
 			suspended,
 		}

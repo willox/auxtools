@@ -7,16 +7,16 @@ use winapi::{
 };
 
 extern "system" fn exception_filter(_: *mut EXCEPTION_POINTERS) -> LONG {
-	unsafe {
-		if let Some(dbg) = &mut *DEBUG_SERVER.get() {
-			let ctx = *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
-
-			dbg.handle_breakpoint(
+	DEBUG_SERVER.with(|cell| {
+		let mut serber = cell.borrow_mut();
+		if let Some(server) = serber.as_mut() {
+			let ctx = unsafe { *CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get()) };
+			server.handle_breakpoint(
 				ctx,
 				BreakpointReason::Runtime("native exception".to_owned()),
 			);
 		}
-	}
+	});
 
 	return EXCEPTION_EXECUTE_HANDLER;
 }

@@ -41,7 +41,7 @@ impl StringRef {
 	}
 
 	pub unsafe fn from_variable_id(id: raw_types::strings::VariableId) -> Self {
-		let string_id = *((*raw_types::funcs::VARIABLE_NAMES)
+		let string_id = *((*VARIABLE_NAMES.with(|cell| cell.get()))
 			.entries
 			.add(id.0 as usize));
 
@@ -58,6 +58,10 @@ impl StringRef {
 	}
 
 	pub fn data(&self) -> &[u8] {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		unsafe {
 			let id = self.value.raw.data.string;
 			let mut entry: *mut raw_types::strings::StringEntry = std::ptr::null_mut();
@@ -172,6 +176,10 @@ impl From<&StringRef> for StringRef {
 
 impl From<&StringRef> for String {
 	fn from(string: &StringRef) -> String {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		unsafe {
 			let id = string.value.raw.data.string;
 			let mut entry: *mut raw_types::strings::StringEntry = std::ptr::null_mut();

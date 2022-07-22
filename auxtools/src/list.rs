@@ -22,6 +22,10 @@ impl List {
 
 	/// Creates a new list filled with `capacity` nulls.
 	pub fn with_size(capacity: u32) -> Self {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let mut id: raw_types::lists::ListId = raw_types::lists::ListId(0);
 		unsafe {
 			assert_eq!(raw_types::funcs::create_list(&mut id, capacity), 1);
@@ -37,6 +41,10 @@ impl List {
 	}
 
 	pub fn get<I: Into<Value>>(&self, index: I) -> runtime::DMResult {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let index = index.into();
 
 		let mut value = raw_types::values::Value {
@@ -61,6 +69,10 @@ impl List {
 		index: K,
 		value: V,
 	) -> Result<(), runtime::Runtime> {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let index = index.into();
 		let value = value.into();
 
@@ -76,6 +88,10 @@ impl List {
 	}
 
 	pub fn append<V: Into<Value>>(&self, value: V) {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let value = value.into();
 
 		unsafe {
@@ -87,6 +103,10 @@ impl List {
 	}
 
 	pub fn remove<V: Into<Value>>(&self, value: V) {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let value = value.into();
 
 		unsafe {
@@ -98,6 +118,10 @@ impl List {
 	}
 
 	pub fn len(&self) -> u32 {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let mut length: u32 = 0;
 		unsafe {
 			assert_eq!(raw_types::funcs::get_length(&mut length, self.value.raw), 1);

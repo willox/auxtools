@@ -31,11 +31,13 @@ pub use list::List;
 pub use proc::Proc;
 pub use raw_types::variables::VariableNameIdTable;
 pub use runtime::{DMResult, Runtime};
-use std::ffi::c_void;
 pub use string::StringRef;
 pub use string_intern::InternedString;
 pub use value::Value;
 pub use weak_value::WeakValue;
+
+use std::cell::Cell;
+use std::ffi::c_void;
 
 /// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
 pub use inventory;
@@ -159,6 +161,13 @@ fn pin_dll() -> Result<(), ()> {
 #[cfg(unix)]
 fn pin_dll() -> Result<(), ()> {
 	Ok(())
+}
+
+thread_local! {
+	pub static CURRENT_EXECUTION_CONTEXT: Cell<*mut *mut raw_types::procs::ExecutionContext> = Cell::new(std::ptr::null_mut());
+	pub static SUSPENDED_PROCS_BUFFER: Cell<*mut raw_types::procs::SuspendedProcsBuffer> = Cell::new(std::ptr::null_mut());
+	pub static SUSPENDED_PROCS: Cell<*mut raw_types::procs::SuspendedProcs> = Cell::new(std::ptr::null_mut());
+	pub static VARIABLE_NAMES: Cell<*const raw_types::variables::VariableNameIdTable> = Cell::new(std::ptr::null());
 }
 
 byond_ffi_fn! { auxtools_init(_input) {
@@ -337,10 +346,12 @@ byond_ffi_fn! { auxtools_init(_input) {
 			}
 		}
 
+		CURRENT_EXECUTION_CONTEXT.with(|cell| cell.set(current_execution_context) );
+
 		unsafe {
-			raw_types::funcs::CURRENT_EXECUTION_CONTEXT = current_execution_context;
-			raw_types::funcs::SUSPENDED_PROCS = *(suspended_procs.add(1) as *mut *mut raw_types::procs::SuspendedProcs);
-			raw_types::funcs::SUSPENDED_PROCS_BUFFER = *(suspended_procs_buffer.add(2) as *mut *mut raw_types::procs::SuspendedProcsBuffer);
+			SUSPENDED_PROCS.with(|cell| cell.set(*(suspended_procs.add(1) as *mut *mut raw_types::procs::SuspendedProcs)));
+			SUSPENDED_PROCS_BUFFER.with(|cell| cell.set(*(suspended_procs_buffer.add(2) as *mut *mut raw_types::procs::SuspendedProcsBuffer)));
+
 			raw_types::funcs::call_proc_by_id_byond = call_proc_by_id;
 			raw_types::funcs::call_datum_proc_by_name_byond = call_datum_proc_by_name;
 			raw_types::funcs::get_string_id_byond = get_string_id;
@@ -400,9 +411,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 			}
 		}
 
-		unsafe {
-			raw_types::funcs::VARIABLE_NAMES = variable_names;
-		}
+		VARIABLE_NAMES.with(|cell| cell.set(variable_names));
 
 		proc::populate_procs();
 
@@ -443,9 +452,7 @@ byond_ffi_fn! { auxtools_shutdown(_input) {
 	hooks::clear_hooks();
 	proc::clear_procs();
 
-	unsafe {
-		raw_types::funcs::VARIABLE_NAMES = std::ptr::null();
-	}
+	VARIABLE_NAMES.with(|cell| cell.set(std::ptr::null()));
 
 	set_init_level(InitLevel::Partial);
 	Some("SUCCESS".to_owned())

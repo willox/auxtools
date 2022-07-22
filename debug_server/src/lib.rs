@@ -21,19 +21,19 @@ use mem_profiler_stub as mem_profiler;
 pub(crate) use disassemble_env::DisassembleEnv;
 
 use std::{
-	cell::UnsafeCell,
+	cell::RefCell,
 	net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
 use auxtools::*;
 
-pub static mut DEBUG_SERVER: UnsafeCell<Option<server::Server>> = UnsafeCell::new(None);
+thread_local! {
+	pub static DEBUG_SERVER: RefCell<Option<server::Server>> = RefCell::new(None);
+}
 
 #[shutdown]
 fn debugger_shutdown() {
-	unsafe {
-		*DEBUG_SERVER.get() = None;
-	}
+	DEBUG_SERVER.with(|cell| *cell.borrow_mut() = None);
 }
 
 fn get_default_mode() -> String {
@@ -83,9 +83,7 @@ fn enable_debugging(mode: Value, port: Value) {
 		}
 	};
 
-	unsafe {
-		*DEBUG_SERVER.get() = Some(server);
-	}
+	DEBUG_SERVER.with(|cell| *cell.borrow_mut() = Some(server));
 
 	Ok(Value::null())
 }

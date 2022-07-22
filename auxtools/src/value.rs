@@ -34,6 +34,10 @@ impl std::hash::Hash for Value {
 
 impl Drop for Value {
 	fn drop(&mut self) {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		unsafe {
 			raw_types::funcs::dec_ref_count(self.raw);
 		}
@@ -47,6 +51,10 @@ impl Value {
 		tag: raw_types::values::ValueTag,
 		data: raw_types::values::ValueData,
 	) -> Value {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let raw = raw_types::values::Value { tag, data };
 		raw_types::funcs::inc_ref_count(raw);
 
@@ -134,6 +142,10 @@ impl Value {
 	}
 
 	fn get_by_id(&self, name_id: raw_types::strings::StringId) -> DMResult {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let mut val = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
@@ -154,6 +166,10 @@ impl Value {
 		name_id: raw_types::strings::StringId,
 		new_value: raw_types::values::Value,
 	) -> Result<(), runtime::Runtime> {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		unsafe {
 			if raw_types::funcs::set_variable(self.raw, name_id, new_value) != 1 {
 				let varname: String = string::StringRef::from_id(name_id).into();
@@ -229,6 +245,10 @@ impl Value {
 	/// src.call("explode", &[&Value::from(3.0)]);
 	/// ```
 	pub fn call<S: AsRef<str>>(&self, procname: S, args: &[&Value]) -> DMResult {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let mut ret = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
 			data: raw_types::values::ValueData { id: 0 },
@@ -265,6 +285,10 @@ impl Value {
 
 	// ugh
 	pub fn to_dmstring(&self) -> DMResult<string::StringRef> {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		match self.raw.tag {
 			raw_types::values::ValueTag::Null
 			| raw_types::values::ValueTag::Number
@@ -286,6 +310,10 @@ impl Value {
 	}
 
 	pub fn to_string(&self) -> DMResult<String> {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		match self.raw.tag {
 			raw_types::values::ValueTag::Null
 			| raw_types::values::ValueTag::Number
@@ -334,6 +362,10 @@ impl Value {
 	/// let my_string = Value::from_string("Testing!");
 	/// ```
 	pub fn from_string<S: AsRef<str>>(data: S) -> DMResult {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let string = CString::new(data.as_ref())
 			.map_err(|_| runtime!("tried to create string containing NUL"))?;
 
@@ -350,6 +382,10 @@ impl Value {
 	}
 
 	pub fn from_string_raw(data: &[u8]) -> DMResult {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		let string =
 			CString::new(data).map_err(|_| runtime!("tried to create string containing NUL"))?;
 

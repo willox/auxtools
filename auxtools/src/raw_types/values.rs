@@ -53,6 +53,10 @@ pub enum ValueTag {
 
 impl fmt::Display for Value {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		unsafe {
 			match self.tag {
 				ValueTag::Null => write!(f, "{}", "null"),
@@ -71,6 +75,10 @@ impl fmt::Display for Value {
 
 impl fmt::Debug for Value {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		if crate::CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get().is_null()) {
+			panic!("Do not call byond-interacting functions from outside the execution context, this is UB")
+		}
+
 		unsafe {
 			match self.tag {
 				ValueTag::Null => write!(f, "{}", "null"),

@@ -75,7 +75,9 @@ pub fn shutdown() {
 pub fn set_bytecode(proc: &Proc, mut bytecode: Vec<u32>) {
 	BYTECODE_ALLOCATIONS.with(|cell| {
 		let mut state_ref = cell.borrow_mut();
-		let state = state_ref.as_mut().unwrap();
+		let state = state_ref
+			.as_mut()
+			.expect("BYTECODE_ALLOCATIONS is only valid on the main thread?");
 
 		if !state.original.contains_key(&proc.id) {
 			let (ptr, len) = unsafe { proc.bytecode_mut_ptr() };

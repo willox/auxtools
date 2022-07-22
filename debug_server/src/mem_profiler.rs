@@ -3,6 +3,7 @@ use std::ffi::{c_void, CString};
 use std::os::raw::c_char;
 use std::{cell::UnsafeCell, collections::HashMap, fs::File, io};
 
+use auxtools::CURRENT_EXECUTION_CONTEXT;
 use auxtools::{raw_types::procs::ProcId, *};
 
 static mut THREAD_ID: u32 = 0;
@@ -224,7 +225,7 @@ impl State {
 
 	fn current_proc_id() -> Option<ProcId> {
 		unsafe {
-			let ctx = *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
+			let ctx = *CURRENT_EXECUTION_CONTEXT.with(|cell| cell.get());
 			if ctx.is_null() {
 				return None;
 			}
