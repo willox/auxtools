@@ -479,9 +479,8 @@ byond_ffi_fn! { auxtools_full_shutdown(_input) {
 		hooks::clear_hooks();
 		proc::clear_procs();
 
-		unsafe {
-			raw_types::funcs::VARIABLE_NAMES = std::ptr::null();
-		}
+
+		VARIABLE_NAMES.with(|cell| cell.set(std::ptr::null()));
 	}
 	hooks::shutdown();
 	set_init_level(InitLevel::Full);
