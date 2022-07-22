@@ -24,9 +24,9 @@ mod weak_value;
 
 use init::{get_init_level, set_init_level, InitLevel};
 
-pub use auxtools_impl::{hook, init, runtime_handler, shutdown};
+pub use auxtools_impl::{full_shutdown, hook, init, pin_dll, runtime_handler, shutdown};
 pub use hooks::{CompileTimeHook, RuntimeErrorHook};
-pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc};
+pub use init::{FullInitFunc, FullShutdownFunc, PartialInitFunc, PartialShutdownFunc};
 pub use list::List;
 pub use proc::Proc;
 pub use raw_types::variables::VariableNameIdTable;
@@ -39,8 +39,11 @@ pub use weak_value::WeakValue;
 use std::cell::Cell;
 use std::ffi::c_void;
 
+/// Used by the [pin_dll] macro to set dll pinning
+pub use ctor;
 /// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
 pub use inventory;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 // We need winapi to call GetModuleHandleExW which lets us prevent our DLL from unloading.
 #[cfg(windows)]
@@ -135,6 +138,8 @@ macro_rules! with_scanner_by_call {
 	};
 }
 
+pub static PIN_DLL: AtomicBool = AtomicBool::new(true);
+
 // This strange section of code retrieves our DLL using the init function's address.
 // This increments the DLL reference count, which prevents unloading.
 #[cfg(windows)]
@@ -146,11 +151,12 @@ fn pin_dll() -> Result<(), ()> {
 		};
 		let mut module = std::ptr::null_mut();
 
-		let res = GetModuleHandleExW(
-			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-			pin_dll as *const _,
-			&mut module,
-		);
+		let flags = match PIN_DLL.load(Ordering::Relaxed) {
+			true => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+			false => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+		};
+
+		let res = GetModuleHandleExW(flags, pin_dll as *const _, &mut module);
 
 		if res == 0 {
 			return Err(());
@@ -445,6 +451,9 @@ byond_ffi_fn! { auxtools_init(_input) {
 } }
 
 byond_ffi_fn! { auxtools_shutdown(_input) {
+	if get_init_level() != InitLevel::None {
+		return Some("FAILED (already shut down)".to_owned())
+	};
 	init::run_partial_shutdown();
 	string_intern::destroy_interned_strings();
 	bytecode_manager::shutdown();
@@ -455,5 +464,50 @@ byond_ffi_fn! { auxtools_shutdown(_input) {
 	VARIABLE_NAMES.with(|cell| cell.set(std::ptr::null()));
 
 	set_init_level(InitLevel::Partial);
+	Some("SUCCESS".to_owned())
+} }
+
+byond_ffi_fn! { auxtools_full_shutdown(_input) {
+	if get_init_level() == InitLevel::Full {
+		return Some("FAILED (already shut down)".to_owned())
+	};
+	if get_init_level() == InitLevel::None {
+		init::run_partial_shutdown();
+		string_intern::destroy_interned_strings();
+		bytecode_manager::shutdown();
+
+		hooks::clear_hooks();
+		proc::clear_procs();
+
+		unsafe {
+			raw_types::funcs::VARIABLE_NAMES = std::ptr::null();
+		}
+	}
+	hooks::shutdown();
+	set_init_level(InitLevel::Full);
+	init::run_full_shutdown();
+
+	if !PIN_DLL.load(Ordering::Relaxed) {
+		#[cfg(windows)]
+		unsafe {
+			use winapi::um::libloaderapi::{
+				FreeLibrary, GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+				GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			};
+			let mut module = std::ptr::null_mut();
+
+			let get_handle_res = GetModuleHandleExW(
+				GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+				auxtools_full_shutdown as *const _,
+				&mut module,
+			);
+
+			if get_handle_res == 0 {
+				return Some("FAILED (Could not unpin the library from memory.)".to_owned())
+			}
+
+			FreeLibrary(module);
+		}
+	};
 	Some("SUCCESS".to_owned())
 } }
