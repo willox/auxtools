@@ -1,15 +1,13 @@
-use std::ffi::c_void;
+use std::{cell::UnsafeCell, ffi::c_void};
 
 use crate::disassemble_env::DisassembleEnv;
 use crate::server_types::{BreakpointReason, ContinueKind};
-use crate::CURRENT_EXECUTION_CONTEXT;
 use crate::DEBUG_SERVER;
-use crate::SUSPENDED_PROCS;
-use crate::SUSPENDED_PROCS_BUFFER;
 use auxtools::*;
 use detour::RawDetour;
-use std::cell::{Cell, RefCell};
+use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 // Could move these to dmasm
 const OPCODE_DBGLINE: u32 = 0x85;
@@ -75,9 +73,11 @@ fn instruction_hooking_init() -> Result<(), String> {
 
 #[shutdown]
 fn instruction_hooking_shutdown() {
-	CURRENT_ACTION.with(|cell| cell.set(DebuggerAction::None));
-	DEFERRED_INSTRUCTION_REPLACE.with(|cell| *cell.borrow_mut() = None);
-	ORIGINAL_BYTECODE.with(|cell| cell.take());
+	unsafe {
+		CURRENT_ACTION = DebuggerAction::None;
+		*DEFERRED_INSTRUCTION_REPLACE.get() = None;
+		*ORIGINAL_BYTECODE.lock().unwrap() = HashMap::new();
+	}
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
@@ -108,12 +108,11 @@ enum DebuggerAction {
 	BreakOnNext,
 	StepOut { target: ProcInstanceRef },
 }
-thread_local! {
-	static CURRENT_ACTION: Cell<DebuggerAction> = Cell::new(DebuggerAction::None);
 
-	static DEFERRED_INSTRUCTION_REPLACE: RefCell<Option<(Vec<u32>, *mut u32)>> =
-		RefCell::new(None);
-}
+static mut CURRENT_ACTION: DebuggerAction = DebuggerAction::None;
+
+static mut DEFERRED_INSTRUCTION_REPLACE: UnsafeCell<Option<(Vec<u32>, *mut u32)>> =
+	UnsafeCell::new(None);
 
 #[derive(PartialEq, Eq, Hash)]
 struct PtrKey(usize);
@@ -124,8 +123,8 @@ impl PtrKey {
 	}
 }
 
-thread_local! {
-	static ORIGINAL_BYTECODE: RefCell<HashMap<PtrKey, Vec<u32>, fxhash::FxBuildHasher>> = Default::default();
+lazy_static! {
+	static ref ORIGINAL_BYTECODE: Mutex<HashMap<PtrKey, Vec<u32>>> = Mutex::new(HashMap::new());
 }
 
 fn is_generated_proc(ctx: *mut raw_types::procs::ExecutionContext) -> bool {
@@ -165,13 +164,12 @@ fn handle_breakpoint(
 	ctx: *mut raw_types::procs::ExecutionContext,
 	reason: BreakpointReason,
 ) -> DebuggerAction {
-	let action = DEBUG_SERVER.with(|cell| {
-		let mut serber = cell.borrow_mut();
-		match serber.as_mut() {
+	let action = unsafe {
+		match &mut *DEBUG_SERVER.get() {
 			Some(server) => server.handle_breakpoint(ctx, reason),
 			None => ContinueKind::Continue,
 		}
-	});
+	};
 
 	match action {
 		ContinueKind::Continue => DebuggerAction::None,
@@ -244,6 +242,7 @@ fn proc_instance_is_suspended(proc_ref: ProcInstanceRef) -> bool {
 	}
 }
 
+
 #[runtime_handler]
 fn handle_runtime(error: &str) {
 	unsafe {
@@ -251,27 +250,14 @@ fn handle_runtime(error: &str) {
 
 		// If this is eval code, don't catch the breakpoint
 		// TODO: Could try to make this work
-		let is_eval_err = DEBUG_SERVER.with(|cell| -> Result<(), ()> {
-			let mut serber = cell.borrow_mut();
-			if let Some(server) = serber.as_mut() {
-				if server.is_in_eval() {
-					server.set_eval_error(error.into());
-					return Err(());
-				}
+		if let Some(server) = &mut *DEBUG_SERVER.get() {
+			if server.is_in_eval() {
+				server.set_eval_error(error.into());
+				return;
 			}
-			return Ok(());
-		});
-
-		if is_eval_err.is_err() {
-			return;
 		}
 
-		CURRENT_ACTION.with(|cell| {
-			cell.set(handle_breakpoint(
-				ctx,
-				BreakpointReason::Runtime(error.to_string()),
-			))
-		});
+		CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Runtime(error.to_string()));
 	}
 }
 
@@ -282,22 +268,21 @@ extern "C" fn handle_instruction(
 	ctx: *mut raw_types::procs::ExecutionContext,
 ) -> *const raw_types::procs::ExecutionContext {
 	// Always handle the deferred instruction replacement first - everything else will depend on it
-	DEFERRED_INSTRUCTION_REPLACE.with(|cell| {
-		let mut deferred = cell.borrow_mut();
+	unsafe {
+		let deferred = DEFERRED_INSTRUCTION_REPLACE.get();
 		if let Some((src, dst)) = &*deferred {
-			unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), *dst, src.len()) };
+			std::ptr::copy_nonoverlapping(src.as_ptr(), *dst, src.len());
 			*deferred = None;
 		}
-	});
+	}
 
-	DEBUG_SERVER.with(|cell| {
-		let mut serber = cell.borrow_mut();
-		if let Some(server) = serber.as_mut() {
+	unsafe {
+		if let Some(server) = &mut *DEBUG_SERVER.get() {
 			if server.process() {
-				CURRENT_ACTION.with(|cell| cell.set(DebuggerAction::Pause))
+				CURRENT_ACTION = DebuggerAction::Pause;
 			}
 		}
-	});
+	}
 
 	let opcode_ptr = unsafe { (*ctx).bytecode.add((*ctx).bytecode_offset as usize) };
 	let opcode = unsafe { *opcode_ptr };
@@ -305,19 +290,19 @@ extern "C" fn handle_instruction(
 	// This lets us ignore any actual breakpoints we hit if we've already paused for another reason
 	let mut did_breakpoint = false;
 
-	CURRENT_ACTION.with(|cell| {
-		match cell.get() {
+	unsafe {
+		match CURRENT_ACTION {
 			DebuggerAction::None => {}
 
 			DebuggerAction::Pause => {
-				cell.set(DebuggerAction::None);
-				cell.set(handle_breakpoint(ctx, BreakpointReason::Pause));
+				CURRENT_ACTION = DebuggerAction::None;
+				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Pause);
 				did_breakpoint = true;
 			}
 
 			DebuggerAction::BreakOnNext => {
-				cell.set(DebuggerAction::None);
-				cell.set(handle_breakpoint(ctx, BreakpointReason::Step));
+				CURRENT_ACTION = DebuggerAction::None;
+				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 				did_breakpoint = true;
 			}
 
@@ -325,16 +310,16 @@ extern "C" fn handle_instruction(
 			// 1) The target context has disappeared - this means it has returned or runtimed
 			// 2) We're inside the target context and on a DbgLine instruction
 			DebuggerAction::StepOver { target } => {
-				if opcode == OPCODE_DBGLINE && unsafe { target.is((*ctx).proc_instance) } {
-					cell.set(DebuggerAction::BreakOnNext);
+				if opcode == OPCODE_DBGLINE && target.is((*ctx).proc_instance) {
+					CURRENT_ACTION = DebuggerAction::BreakOnNext;
 				} else {
 					// If the context isn't in any stacks, it has just returned. Break!
 					// TODO: Don't break if the context's stack is gone (returned to C)
 					if !proc_instance_is_in_stack(ctx, target)
 						&& !proc_instance_is_suspended(target)
 					{
-						cell.set(DebuggerAction::None);
-						cell.set(handle_breakpoint(ctx, BreakpointReason::Step));
+						CURRENT_ACTION = DebuggerAction::None;
+						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 						did_breakpoint = true;
 					}
 				}
@@ -347,10 +332,10 @@ extern "C" fn handle_instruction(
 			DebuggerAction::StepInto { parent } => {
 				if !is_generated_proc(ctx) {
 					let is_dbgline = opcode == OPCODE_DBGLINE;
-					let is_in_parent = unsafe { parent.is((*ctx).proc_instance) };
+					let is_in_parent = parent.is((*ctx).proc_instance);
 
 					if is_dbgline && is_in_parent {
-						cell.set(DebuggerAction::BreakOnNext);
+						CURRENT_ACTION = DebuggerAction::BreakOnNext;
 					} else if !is_in_parent {
 						let in_stack = proc_instance_is_in_stack(ctx, parent);
 						let is_suspended = proc_instance_is_suspended(parent);
@@ -358,11 +343,11 @@ extern "C" fn handle_instruction(
 						// If the context isn't in any stacks, it has just returned. Break!
 						// TODO: Don't break if the context's stack is gone (returned to C)
 						if !in_stack && !is_suspended {
-							cell.set(DebuggerAction::None);
-							cell.set(handle_breakpoint(ctx, BreakpointReason::Step));
+							CURRENT_ACTION = DebuggerAction::None;
+							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 							did_breakpoint = true;
 						} else if in_stack && is_dbgline {
-							cell.set(DebuggerAction::BreakOnNext);
+							CURRENT_ACTION = DebuggerAction::BreakOnNext;
 						}
 					}
 				}
@@ -371,9 +356,9 @@ extern "C" fn handle_instruction(
 			// Just breaks the moment we're in the target instance
 			DebuggerAction::StepOut { target } => {
 				if !is_generated_proc(ctx) {
-					if unsafe { target.is((*ctx).proc_instance) } {
-						cell.set(DebuggerAction::None);
-						cell.set(handle_breakpoint(ctx, BreakpointReason::Step));
+					if target.is((*ctx).proc_instance) {
+						CURRENT_ACTION = DebuggerAction::None;
+						CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 						did_breakpoint = true;
 					} else {
 						// If Our context disappeared, just stop the step
@@ -381,43 +366,38 @@ extern "C" fn handle_instruction(
 						let is_suspended = proc_instance_is_suspended(target);
 
 						if !in_stack && !is_suspended {
-							cell.set(DebuggerAction::None);
+							CURRENT_ACTION = DebuggerAction::None;
 						}
 					}
 				}
 			}
 		}
+	}
 
-		if opcode == OPCODE_DEBUG_BREAK {
-			// We don't want to break twice when stepping on to a breakpoint
-			if !did_breakpoint {
-				cell.set(DebuggerAction::None);
-				cell.set(handle_breakpoint(ctx, BreakpointReason::Breakpoint));
+	if opcode == OPCODE_DEBUG_BREAK {
+		// We don't want to break twice when stepping on to a breakpoint
+		if !did_breakpoint {
+			unsafe {
+				CURRENT_ACTION = DebuggerAction::None;
+				CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Breakpoint);
 			}
-
-			// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been removed
-			ORIGINAL_BYTECODE.with(|cell| {
-				let map = cell.borrow_mut();
-				if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
-					DEFERRED_INSTRUCTION_REPLACE.with(|cell| {
-						let mut deferred_replace = cell.borrow_mut();
-						assert_eq!(*deferred_replace, None);
-						unsafe {
-							*deferred_replace = Some((
-								std::slice::from_raw_parts(opcode_ptr, original.len()).to_vec(),
-								opcode_ptr,
-							));
-							std::ptr::copy_nonoverlapping(
-								original.as_ptr(),
-								opcode_ptr,
-								original.len(),
-							);
-						}
-					});
-				}
-			});
 		}
-	});
+
+		// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been removed
+		let map = ORIGINAL_BYTECODE.lock().unwrap();
+		if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
+			unsafe {
+				let deferred_replace = DEFERRED_INSTRUCTION_REPLACE.get();
+				assert_eq!(*deferred_replace, None);
+				*deferred_replace = Some((
+					std::slice::from_raw_parts(opcode_ptr, original.len()).to_vec(),
+					opcode_ptr,
+				));
+				std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
+			}
+		}
+	}
+
 	ctx
 }
 
@@ -471,13 +451,12 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 		return Ok(());
 	}
 
-	ORIGINAL_BYTECODE.with(|cell| {
-		let mut map = cell.borrow_mut();
-		map.insert(
+	unsafe {
+		ORIGINAL_BYTECODE.lock().unwrap().insert(
 			PtrKey::new(opcode_ptr),
-			unsafe { std::slice::from_raw_parts(opcode_ptr, instruction_length as usize) }.to_vec(),
+			std::slice::from_raw_parts(opcode_ptr, instruction_length as usize).to_vec(),
 		);
-	});
+	}
 
 	bytecode[offset as usize] = OPCODE_DEBUG_BREAK;
 	for i in (offset + 1)..(offset + instruction_length as u32) {
@@ -506,24 +485,20 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 	};
 
 	// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been removed
-	ORIGINAL_BYTECODE.with(|map_cell| {
-		let mut map = map_cell.borrow_mut();
-		if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
-			DEFERRED_INSTRUCTION_REPLACE.with(|cell| {
-				let mut deferred = cell.borrow_mut();
-				if let Some((_, dst)) = *deferred {
-					if dst == opcode_ptr {
-						*deferred = None;
-					}
+	let mut map = ORIGINAL_BYTECODE.lock().unwrap();
+	if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
+		unsafe {
+			let deferred = DEFERRED_INSTRUCTION_REPLACE.get();
+			if let Some((_, dst)) = *deferred {
+				if dst == opcode_ptr {
+					deferred.replace(None);
 				}
-				unsafe {
-					std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len())
-				};
-			});
-
-			map.remove(&PtrKey::new(opcode_ptr));
+			}
+			std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
 		}
-	});
+
+		map.remove(&PtrKey::new(opcode_ptr));
+	}
 
 	Ok(())
 }
