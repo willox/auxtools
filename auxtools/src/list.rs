@@ -108,6 +108,7 @@ impl List {
 	pub fn is_list(value: &Value) -> bool {
 		match value.raw.tag {
 			raw_types::values::ValueTag::List
+			| raw_types::values::ValueTag::ArgList
 			| raw_types::values::ValueTag::MobVars
 			| raw_types::values::ValueTag::ObjVars
 			| raw_types::values::ValueTag::TurfVars

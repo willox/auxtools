@@ -26,6 +26,7 @@ pub enum ValueTag {
 
 	// Lists
 	List = 0x0F,
+	ArgList = 0x10,
 	MobVars = 0x2C,
 	ObjVars = 0x2D,
 	TurfVars = 0x2E,
