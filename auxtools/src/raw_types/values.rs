@@ -45,6 +45,8 @@ pub enum ValueTag {
 	TurfUnderlays = 0x37,
 	AreaOverlays = 0x38,
 	AreaUnderlays = 0x39,
+	ImageOverlays = 0x40,
+	ImageUnderlays = 0x41,
 	ImageVars = 0x42,
 	TurfVisContents = 0x4B,
 	ObjVisContents = 0x4C,
@@ -54,6 +56,7 @@ pub enum ValueTag {
 	MobVisLocs = 0x50,
 	WorldVars = 0x51,
 	GlobalVars = 0x52,
+	ImageVisContents = 0x54,
 
 	Datum = 0x21,
 	SaveFile = 0x23,
