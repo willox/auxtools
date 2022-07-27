@@ -109,6 +109,10 @@ impl List {
 		match value.raw.tag {
 			raw_types::values::ValueTag::List
 			| raw_types::values::ValueTag::ArgList
+			| raw_types::values::ValueTag::MobContents
+			| raw_types::values::ValueTag::TurfContents
+			| raw_types::values::ValueTag::AreaContents
+			| raw_types::values::ValueTag::ObjContents
 			| raw_types::values::ValueTag::MobVars
 			| raw_types::values::ValueTag::ObjVars
 			| raw_types::values::ValueTag::TurfVars
@@ -124,6 +128,12 @@ impl List {
 			| raw_types::values::ValueTag::AreaOverlays
 			| raw_types::values::ValueTag::AreaUnderlays
 			| raw_types::values::ValueTag::ImageVars
+			| raw_types::values::ValueTag::TurfVisContents
+			| raw_types::values::ValueTag::ObjVisContents
+			| raw_types::values::ValueTag::MobVisContents
+			| raw_types::values::ValueTag::TurfVisLocs
+			| raw_types::values::ValueTag::ObjVisLocs
+			| raw_types::values::ValueTag::MobVisLocs
 			| raw_types::values::ValueTag::WorldVars
 			| raw_types::values::ValueTag::GlobalVars => true,
 			_ => false,

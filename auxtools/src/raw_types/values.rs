@@ -27,6 +27,10 @@ pub enum ValueTag {
 	// Lists
 	List = 0x0F,
 	ArgList = 0x10,
+	MobContents = 0x17,
+	TurfContents = 0x18,
+	AreaContents = 0x19,
+	ObjContents = 0x1C,
 	MobVars = 0x2C,
 	ObjVars = 0x2D,
 	TurfVars = 0x2E,
@@ -42,6 +46,12 @@ pub enum ValueTag {
 	AreaOverlays = 0x38,
 	AreaUnderlays = 0x39,
 	ImageVars = 0x42,
+	TurfVisContents = 0x4B,
+	ObjVisContents = 0x4C,
+	MobVisContents = 0x4D,
+	TurfVisLocs = 0x4E,
+	ObjVisLocs = 0x4F,
+	MobVisLocs = 0x50,
 	WorldVars = 0x51,
 	GlobalVars = 0x52,
 
