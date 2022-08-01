@@ -14,9 +14,9 @@ cc = "1.0"
 [dependencies]
 auxtools = { path = "../auxtools" }
 lazy_static = "1.4.0"
-serde = { version = "1.0.136", features = ["derive"] }
+serde = { version = "1.0.141", features = ["derive"] }
 bincode = "1.3.3"
-clap = "3.1.12"
+clap = "3.2.16"
 dmasm = { git = "https://github.com/willox/dmasm" }
 region = "3.0.0"
 fxhash = "0.2.1"
