@@ -112,6 +112,7 @@ impl List {
 			| raw_types::values::ValueTag::MobContents
 			| raw_types::values::ValueTag::TurfContents
 			| raw_types::values::ValueTag::AreaContents
+			| raw_types::values::ValueTag::WorldContents
 			| raw_types::values::ValueTag::ObjContents
 			| raw_types::values::ValueTag::MobVars
 			| raw_types::values::ValueTag::ObjVars

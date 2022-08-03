@@ -30,6 +30,7 @@ pub enum ValueTag {
 	MobContents = 0x17,
 	TurfContents = 0x18,
 	AreaContents = 0x19,
+	WorldContents = 0x1A,
 	ObjContents = 0x1C,
 	MobVars = 0x2C,
 	ObjVars = 0x2D,
