@@ -8,7 +8,7 @@
 mod byond_ffi;
 mod bytecode_manager;
 pub mod debug;
-mod hooks;
+pub mod hooks;
 mod init;
 mod list;
 mod proc;
