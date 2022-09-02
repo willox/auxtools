@@ -18,7 +18,7 @@ pub struct Scanner {
 extern "C" fn dl_phdr_callback(info: *mut dl_phdr_info, _size: usize, data: *mut c_void) -> c_int {
 	let info = unsafe { *info };
 	let module_name = unsafe { CStr::from_ptr(info.dlpi_name) }.to_str().unwrap();
-	let cb_data: &mut CallbackData = unsafe { std::mem::transmute(data) };
+	let cb_data = unsafe { &mut *(data as *mut CallbackData) };
 	let target_module_name = unsafe { CStr::from_ptr(cb_data.module_name_ptr as *mut c_char) }
 		.to_str()
 		.unwrap();
@@ -54,13 +54,13 @@ impl Scanner {
 	pub fn find(&self, signature: &[Option<u8>]) -> Option<*mut u8> {
 		let module_name = CString::new(self.module_name.clone()).unwrap();
 		let module_name_ptr = module_name.as_ptr();
-		let data = CallbackData {
+		let mut data = CallbackData {
 			module_name_ptr,
 			memory_start: 0,
 			memory_len: 0,
 			memory_area: None,
 		};
-		unsafe { dl_iterate_phdr(Some(dl_phdr_callback), std::mem::transmute(&data)) };
+		unsafe { dl_iterate_phdr(Some(dl_phdr_callback), &mut data as *mut CallbackData as *mut c_void) };
 
 		let mut data_current = data.memory_start as *mut u8;
 		let data_end = (data.memory_start + data.memory_len) as *mut u8;
