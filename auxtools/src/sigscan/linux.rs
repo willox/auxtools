@@ -64,6 +64,12 @@ impl Scanner {
 
 		let mut data_current = data.memory_start as *mut u8;
 		let data_end = (data.memory_start + data.memory_len) as *mut u8;
+
+		if data_current.is_null() || data_end == data_current {
+			// There's no more bytes to scan or the module wasn't found.
+			return None;
+		}
+
 		let mut signature_offset = 0;
 		let mut result: Option<*mut u8> = None;
 
