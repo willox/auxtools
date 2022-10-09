@@ -281,7 +281,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 				if let Some(ptr) = res {
 					ptr as *const std::ffi::c_void
 				} else {
-					std::ptr::null()
+					return Some("FAILED (Couldn't find to_string)".to_owned())
 				}
 			}
 
@@ -302,15 +302,11 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 					match result {
 						Some(ptr) => ptr as *const std::ffi::c_void,
-						None => std::ptr::null(),
+						None => return Some("FAILED (Couldn't find to_string)".to_owned()),
 					}
 				}
 			}
 		};
-
-		if to_string_byond.is_null() {
-			return Some("FAILED (Couldn't find to_string)".to_owned());
-		}
 
 		let mut set_variable = std::ptr::null();
 		{
