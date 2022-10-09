@@ -281,19 +281,36 @@ byond_ffi_fn! { auxtools_init(_input) {
 				if let Some(ptr) = res {
 					ptr as *const std::ffi::c_void
 				} else {
-					return Some("FAILED (Couldn't find to_string)".to_owned());
+					std::ptr::null()
 				}
 			}
 
 			#[cfg(unix)]
 			{
-				with_scanner_by_call! { byondcore,
-					to_string
-				}
+				if version::get().1 >= 1560 {
+					with_scanner_by_call! { byondcore,
+						to_string
+					}
 
-				to_string
+					to_string
+				} else {
+					let result = if version::get().1 >= 1543 {
+						byondcore.find(signature!("55 89 E5 83 EC 68 A1 ?? ?? ?? ?? 8B 15 ?? ?? ?? ?? 8B 0D ?? ?? ?? ?? 89 5D ??"))
+					} else {
+						byondcore.find(signature!("55 89 E5 83 EC 58 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ?? 89 7D ?? 80 FB 54"))
+					};
+
+					match result {
+						Some(ptr) => ptr as *const std::ffi::c_void,
+						None => std::ptr::null(),
+					}
+				}
 			}
 		};
+
+		if to_string_byond.is_null() {
+			return Some("FAILED (Couldn't find to_string)".to_owned());
+		}
 
 		let mut set_variable = std::ptr::null();
 		{
