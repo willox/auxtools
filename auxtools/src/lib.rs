@@ -93,7 +93,8 @@ signatures! {
 	get_misc_by_id => "E8 ?? ?? ?? ?? 0F B7 55 ?? 03 1F 0F B7 4B ?? 89 8D ?? ?? ?? ?? 0F B7 5B ??",
 	runtime => "E8 ?? ?? ?? ?? 31 C0 8D B4 26 00 00 00 00 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC",
 	suspended_procs => "A3 ?? ?? ?? ?? 8D 14 ?? 73 ?? 8D 74 26 00 83 C0 01 8B 14 ?? 39 C3 89 54 ?? ??",
-	suspended_procs_buffer => "89 35 ?? ?? ?? ?? C7 04 24 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 45 ?? 83 C0 08"
+	suspended_procs_buffer => "89 35 ?? ?? ?? ?? C7 04 24 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 45 ?? 83 C0 08",
+	to_string => "E8 ?? ?? ?? ?? 89 04 24 E8 ?? ?? ?? ?? 8B 00 8D 4D ?? 89 0C 24"
 }
 
 macro_rules! find_function {
@@ -263,9 +264,9 @@ byond_ffi_fn! { auxtools_init(_input) {
 			}
 		}
 
-		let mut to_string = std::ptr::null();
-		{
-			if cfg!(windows) {
+		let to_string_byond = {
+			#[cfg(windows)]
+			{
 				let res =
 					if version::get().1 >= 1585 {
 						byondcore.find(signature!("55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC ?? 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 1D ?? ?? ?? ??"))
@@ -278,27 +279,21 @@ byond_ffi_fn! { auxtools_init(_input) {
 					};
 
 				if let Some(ptr) = res {
-					to_string = ptr as *const std::ffi::c_void;
+					ptr as *const std::ffi::c_void
+				} else {
+					return Some("FAILED (Couldn't find to_string)".to_owned());
 				}
 			}
 
-			if cfg!(unix) {
-				let res =
-					if version::get().1 >= 1543 {
-						byondcore.find(signature!("55 89 E5 83 EC 68 A1 ?? ?? ?? ?? 8B 15 ?? ?? ?? ?? 8B 0D ?? ?? ?? ?? 89 5D ??"))
-					} else {
-						byondcore.find(signature!("55 89 E5 83 EC 58 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ?? 89 7D ?? 80 FB 54"))
-					};
-
-				if let Some(ptr) = res {
-					to_string = ptr as *const std::ffi::c_void;
+			#[cfg(unix)]
+			{
+				with_scanner_by_call! { byondcore,
+					to_string
 				}
-			}
 
-			if to_string.is_null() {
-				return Some("FAILED (Couldn't find to_string)".to_owned());
+				to_string
 			}
-		}
+		};
 
 		let mut set_variable = std::ptr::null();
 		{
@@ -365,7 +360,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 			raw_types::funcs::remove_from_list_byond = remove_from_list;
 			raw_types::funcs::get_length_byond = get_length;
 			raw_types::funcs::get_misc_by_id_byond = get_misc_by_id;
-			raw_types::funcs::to_string_byond = to_string;
+			raw_types::funcs::to_string_byond = to_string_byond;
 			raw_types::funcs::runtime_byond = runtime;
 		}
 
