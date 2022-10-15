@@ -315,7 +315,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 				let res = byondcore.find(signature!("55 8B EC 8B 4D 08 0F B6 C1 48 57 8B 7D 10 83 F8 53 0F ?? ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 18 FF 75 14 57 FF 75 0C E8 ?? ?? ?? ?? 83 C4 10 5F 5D C3"));
 
 				if let Some(ptr) = res {
-					ptr as *const std::ffi::c_void;
+					ptr as *const std::ffi::c_void
 				} else {
 					return Some("FAILED (Couldn't find set_variable)".to_owned());
 				}
