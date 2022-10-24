@@ -1,6 +1,4 @@
 use super::*;
-use std::ffi::CString;
-use std::os::raw::c_char;
 
 pub static mut BYOND_VERSION_MAJOR: u32 = 0;
 pub static mut BYOND_VERSION_MINOR: u32 = 0;
@@ -23,34 +21,35 @@ pub fn init() -> Result<(), String> {
 
 	#[cfg(windows)]
 	{
-		use winapi::um::libloaderapi;
+		use windows::Win32::Foundation;
+		use windows::Win32::System::LibraryLoader;
 
 		unsafe {
-			let mut module = std::ptr::null_mut();
-			let core_str = CString::new(BYONDCORE).unwrap();
-			if libloaderapi::GetModuleHandleExA(0, core_str.as_ptr(), &mut module) == 0 {
+			let mut module = Foundation::HINSTANCE::default();
+			let core_str = windows::core::PCSTR::from_raw(BYONDCORE.as_ptr());
+			if !LibraryLoader::GetModuleHandleExA(0, core_str, &mut module).as_bool() {
 				return Err("Couldn't get module handle for BYONDCORE".into());
 			}
 
-			let symbol = libloaderapi::GetProcAddress(
+			let symbol = LibraryLoader::GetProcAddress(
 				module,
-				GET_BYOND_VERSION_SYMBOL.as_ptr() as *const c_char,
+				windows::core::PCSTR::from_raw(GET_BYOND_VERSION_SYMBOL.as_ptr()),
 			);
-			if symbol.is_null() {
+			if symbol.is_none() {
 				return Err("Couldn't find get_byond_version in BYONDCORE".into());
 			}
 
-			get_byond_version = std::mem::transmute(symbol);
+			get_byond_version = std::mem::transmute(symbol.unwrap());
 
-			let symbol = libloaderapi::GetProcAddress(
+			let symbol = LibraryLoader::GetProcAddress(
 				module,
-				GET_BYOND_BUILD_SYMBOL.as_ptr() as *const c_char,
+				windows::core::PCSTR::from_raw(GET_BYOND_BUILD_SYMBOL.as_ptr()),
 			);
-			if symbol.is_null() {
+			if symbol.is_none() {
 				return Err("Couldn't find get_byond_build in BYONDCORE".into());
 			}
 
-			get_byond_build = std::mem::transmute(symbol);
+			get_byond_build = std::mem::transmute(symbol.unwrap());
 		}
 	}
 

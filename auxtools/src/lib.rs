@@ -24,27 +24,25 @@ mod weak_value;
 
 use init::{get_init_level, set_init_level, InitLevel};
 
-pub use auxtools_impl::{hook, init, runtime_handler, shutdown, full_shutdown, pin_dll};
+pub use auxtools_impl::{full_shutdown, hook, init, pin_dll, runtime_handler, shutdown};
+/// Used by the [pin_dll] macro to set dll pinning
+pub use ctor;
 pub use hooks::{CompileTimeHook, RuntimeErrorHook};
-pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc, FullShutdownFunc};
+pub use init::{FullInitFunc, FullShutdownFunc, PartialInitFunc, PartialShutdownFunc};
+/// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
+pub use inventory;
 pub use list::List;
 pub use proc::Proc;
 pub use raw_types::variables::VariableNameIdTable;
 pub use runtime::{DMResult, Runtime};
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, Ordering};
 pub use string::StringRef;
 pub use string_intern::InternedString;
 pub use value::Value;
 pub use weak_value::WeakValue;
-use std::sync::atomic::{AtomicBool, Ordering};
-/// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
-pub use inventory;
-/// Used by the [pin_dll] macro to set dll pinning
-pub use ctor;
 
-// We need winapi to call GetModuleHandleExW which lets us prevent our DLL from unloading.
-#[cfg(windows)]
-extern crate winapi;
+// We need LibraryLoader to call GetModuleHandleExW which lets us prevent our DLL from unloading.
 
 #[cfg(windows)]
 pub const BYONDCORE: &str = "byondcore.dll";
@@ -144,25 +142,20 @@ pub static PIN_DLL: AtomicBool = AtomicBool::new(true);
 #[cfg(windows)]
 fn pin_dll() -> Result<(), ()> {
 	unsafe {
-
-		use winapi::um::libloaderapi::{
+		use windows::Win32::System::LibraryLoader::{
 			GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
 			GET_MODULE_HANDLE_EX_FLAG_PIN,
 		};
-		let mut module = std::ptr::null_mut();
+		let mut module = windows::Win32::Foundation::HINSTANCE::default();
 
 		let flags = match PIN_DLL.load(Ordering::Relaxed) {
 			true => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-			false => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+			false => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
 		};
 
-		let res = GetModuleHandleExW(
-			flags,
-			pin_dll as *const _,
-			&mut module,
-		);
+		let res = GetModuleHandleExW(flags, None, &mut module);
 
-		if res == 0 {
+		if !res.as_bool() {
 			return Err(());
 		}
 	}
@@ -505,19 +498,18 @@ byond_ffi_fn! { auxtools_full_shutdown(_input) {
 	if !PIN_DLL.load(Ordering::Relaxed) {
 		#[cfg(windows)]
 		unsafe {
-			use winapi::um::libloaderapi::{
-				FreeLibrary, GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-				GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			use windows::Win32::System::LibraryLoader::{
+				FreeLibrary, GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 			};
-			let mut module = std::ptr::null_mut();
+			let mut module = windows::Win32::Foundation::HINSTANCE::default();
 
 			let get_handle_res = GetModuleHandleExW(
 				GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-				auxtools_full_shutdown as *const _,
+				None,
 				&mut module,
 			);
 
-			if get_handle_res == 0 {
+			if !get_handle_res.as_bool() {
 				return Some("FAILED (Could not unpin the library from memory.)".to_owned())
 			}
 

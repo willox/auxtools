@@ -16,40 +16,34 @@ fn main() {
 		.arg(
 			Arg::new("major")
 				.help("major BYOND version to fetch (e.g. 513)")
-				.required(true)
-				.takes_value(true),
+				.required(true),
 		)
 		.arg(
 			Arg::new("minor")
 				.help("minor BYOND version to fetch (e.g. 1539)")
-				.required(true)
-				.takes_value(true),
+				.required(true),
 		)
 		.arg(
 			Arg::new("destination")
 				.help("directory to extract the BYOND build into")
-				.required(true)
-				.takes_value(true),
+				.required(true),
 		)
 		.get_matches();
 
-	let major = matches.value_of("major").unwrap();
-	let minor = matches.value_of("minor").unwrap();
-	let destination = matches.value_of_os("destination").unwrap();
-
-	let major = major
-		.parse::<u32>()
-		.expect("major version must be an integer");
-	let minor = minor
-		.parse::<u32>()
-		.expect("minor version must be an integer");
+	let major = matches
+		.get_one::<u32>("major")
+		.expect("Major BYOND version must be an unsigned integer!");
+	let minor = matches
+		.get_one::<u32>("minor")
+		.expect("Minor BYOND version must be an unsigned integer!");
+	let destination = matches.get_one::<String>("destination").unwrap();
 	let destination = Path::new(destination);
 
 	if destination.exists() {
 		panic!("path {:?} already exists", destination);
 	}
 
-	let resp = reqwest::blocking::get(get_zip_url(major, minor))
+	let resp = reqwest::blocking::get(get_zip_url(*major, *minor))
 		.unwrap()
 		.bytes()
 		.unwrap();

@@ -94,7 +94,7 @@ pub struct Server {
 	in_eval: bool,
 	eval_error: Option<String>,
 	conditional_breakpoints: HashMap<(raw_types::procs::ProcId, u16), String>,
-	app: Command<'static>,
+	app: Command,
 }
 
 struct ServerThread {
@@ -102,7 +102,7 @@ struct ServerThread {
 }
 
 impl Server {
-	pub fn setup_app() -> Command<'static> {
+	pub fn setup_app() -> Command {
 		Command::new("Auxtools Debug Server")
 			.version("2.2.2")
 			.subcommand_required(true)
@@ -119,12 +119,10 @@ impl Server {
 					.arg(
 						Arg::new("proc")
 							.help("Path of the proc to disassemble (e.g. /proc/do_stuff)")
-							.takes_value(true),
 					)
 					.arg(
 						Arg::new("id")
 							.help("Id of the proc to disassemble (for when multiple procs are defined with the same path)")
-							.takes_value(true),
 					)
 			)
 			.subcommand(
@@ -132,7 +130,6 @@ impl Server {
 					.about("Override the CKey used by guest connections")
 					.arg(
 						Arg::new("ckey")
-							.takes_value(true),
 					)
 			)
 			.subcommand(
@@ -144,7 +141,6 @@ impl Server {
 							.arg(
 								Arg::new("path")
 									.help("Where to output memory profiler results")
-									.takes_value(true),
 							)
 					)
 					.subcommand(
@@ -744,12 +740,9 @@ impl Server {
 			Ok(matches) => {
 				match matches.subcommand() {
 					Some(("disassemble", matches)) => {
-						if let Some(proc) = matches.value_of("proc") {
+						if let Some(proc) = matches.get_one::<String>("proc") {
 							// Default id to 0 in the worst way possible
-							let id = matches
-								.value_of("id")
-								.and_then(|x| x.parse::<u32>().ok())
-								.unwrap_or(0);
+							let id = *matches.get_one::<u32>("id").unwrap_or(&0);
 
 							self.handle_disassemble(proc, id)
 						} else if let Some(frame_id) = frame_id {
@@ -765,7 +758,7 @@ impl Server {
 						}
 					}
 
-					Some(("guest_override", matches)) => match matches.value_of("ckey") {
+					Some(("guest_override", matches)) => match matches.get_one::<String>("ckey") {
 						Some(ckey) => match crate::ckey_override::override_guest_ckey(ckey) {
 							Ok(()) => "Success".to_owned(),
 
@@ -778,7 +771,7 @@ impl Server {
 					},
 
 					Some(("mem_profiler", matches)) => match matches.subcommand() {
-						Some(("begin", matches)) => match matches.value_of("path") {
+						Some(("begin", matches)) => match matches.get_one::<String>("path") {
 							Some(path) => mem_profiler::begin(path)
 								.map(|_| "Memory profiler enabled".to_owned())
 								.unwrap_or_else(|e| format!("Failed: {}", e)),

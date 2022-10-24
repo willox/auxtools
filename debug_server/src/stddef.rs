@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
 
 use auxtools::*;
@@ -17,22 +17,29 @@ fn stddef_init() -> Result<(), String> {
 
 	#[cfg(windows)]
 	{
-		use winapi::um::libloaderapi;
+		use windows::Win32::System::LibraryLoader;
 
 		unsafe {
-			let mut module = std::ptr::null_mut();
-			let core_str = CString::new(BYONDCORE).unwrap();
-			if libloaderapi::GetModuleHandleExA(0, core_str.as_ptr(), &mut module) == 0 {
+			let mut module = windows::Win32::Foundation::HINSTANCE::default();
+			if !LibraryLoader::GetModuleHandleExA(
+				0,
+				windows::core::PCSTR::from_raw(BYONDCORE.as_ptr()),
+				&mut module,
+			)
+			.as_bool()
+			{
 				return Err("Couldn't get module handle for BYONDCORE".into());
 			}
 
-			let symbol =
-				libloaderapi::GetProcAddress(module, STDDEF_FN_SYMBOL.as_ptr() as *const c_char);
-			if symbol.is_null() {
+			let symbol = LibraryLoader::GetProcAddress(
+				module,
+				windows::core::PCSTR::from_raw(STDDEF_FN_SYMBOL.as_ptr()),
+			);
+			if symbol.is_none() {
 				return Err("Couldn't find STDDEF_FN in BYONDCORE".into());
 			}
 
-			stddef_fn = std::mem::transmute(symbol);
+			stddef_fn = std::mem::transmute(symbol.unwrap());
 		}
 	}
 

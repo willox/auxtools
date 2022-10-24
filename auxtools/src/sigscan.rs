@@ -1,12 +1,12 @@
 #[cfg(unix)]
 mod linux;
 #[cfg(windows)]
-mod windows;
+mod win32;
 
 #[cfg(unix)]
 pub use linux::Scanner;
 #[cfg(windows)]
-pub use windows::Scanner;
+pub use win32::Scanner;
 
 pub use auxtools_impl::convert_signature;
 
