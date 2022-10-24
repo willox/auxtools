@@ -23,11 +23,9 @@ region = "3.0.0"
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.43.0", features = [ "Win32_System_Threading", "Win32_System_LibraryLoader", "Win32_Foundation"]}
 
-#= { version = "0.3.9", features = ["winuser", "libloaderapi", "errhandlingapi"] }
-
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-[dependencies.detour]
-version = "0.8.1"
+[dependencies.detour2]
+version = "0.9.0"
 default-features = false

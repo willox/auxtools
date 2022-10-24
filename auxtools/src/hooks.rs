@@ -2,7 +2,7 @@ use super::proc::Proc;
 use super::raw_types;
 use super::value::Value;
 use crate::runtime::DMResult;
-use detour::RawDetour;
+use detour2::RawDetour;
 use fxhash::FxHashMap;
 use std::ffi::c_void;
 use std::os::raw::c_char;
@@ -41,12 +41,15 @@ extern "C" {
 
 struct Detours {
 	pub runtime_detour: Option<RawDetour>,
-	pub call_proc_detour: Option<RawDetour>
+	pub call_proc_detour: Option<RawDetour>,
 }
 
 impl Detours {
 	pub fn new() -> Self {
-		Self{ runtime_detour: None, call_proc_detour: None }
+		Self {
+			runtime_detour: None,
+			call_proc_detour: None,
+		}
 	}
 }
 
@@ -99,7 +102,7 @@ pub fn init() -> Result<(), String> {
 	Ok(())
 }
 
-pub fn shutdown(){
+pub fn shutdown() {
 	unsafe {
 		DETOURS.with(|detours_cell| {
 			let detours = detours_cell.borrow();
