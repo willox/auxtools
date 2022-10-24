@@ -83,6 +83,7 @@ signatures! {
 	call_proc_by_id => "E8 ?? ?? ?? ?? 8B 45 ?? 8B 55 ?? 89 45 ?? 89 55 ?? 8B 55 ?? 8B 4D ?? 8B 5D ??",
 	get_variable => "55 89 E5 81 EC C8 00 00 00 8B 55 ?? 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ??",
 	get_string_table_entry => "55 89 E5 83 EC 18 8B 45 ?? 39 05 ?? ?? ?? ?? 76 ?? 8B 15 ?? ?? ?? ?? 8B 04 ??",
+	set_variable => "E8 ?? ?? ?? ?? 8B 45 ?? 8D 65 ?? 5B 5E 5F 5D C3 8D B4 26 00 00 00 00 8B 40 ??",
 	call_datum_proc_by_name => "55 89 E5 57 56 53 83 EC 5C 8B 55 ?? 0F B6 45 ?? 8B 4D ?? 8B 5D ?? 89 14 24 8B 55 ?? 88 45 ?? 0F B6 F8 8B 75 ?? 8D 45 ?? 89 44 24 ?? 89 F8 89 4C 24 ?? 31 C9 C6 45 ?? 00 C7 44 24 ?? 01 00 00 00",
 	dec_ref_count_513 => "E8 ?? ?? ?? ?? 8B 4D ?? C7 44 24 ?? 00 00 00 00 C7 44 24 ?? 00 00 00 00 89 0C 24",
 	dec_ref_count_514 => "E8 ?? ?? ?? ?? C7 06 00 00 00 00 C7 46 ?? 00 00 00 00 A1 ?? ?? ?? ?? 0F B7 50 ??",
@@ -96,7 +97,8 @@ signatures! {
 	get_misc_by_id => "E8 ?? ?? ?? ?? 0F B7 55 ?? 03 1F 0F B7 4B ?? 89 8D ?? ?? ?? ?? 0F B7 5B ??",
 	runtime => "E8 ?? ?? ?? ?? 31 C0 8D B4 26 00 00 00 00 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC",
 	suspended_procs => "A3 ?? ?? ?? ?? 8D 14 ?? 73 ?? 8D 74 26 00 83 C0 01 8B 14 ?? 39 C3 89 54 ?? ??",
-	suspended_procs_buffer => "89 35 ?? ?? ?? ?? C7 04 24 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 45 ?? 83 C0 08"
+	suspended_procs_buffer => "89 35 ?? ?? ?? ?? C7 04 24 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 45 ?? 83 C0 08",
+	to_string => "E8 ?? ?? ?? ?? 89 04 24 E8 ?? ?? ?? ?? 8B 00 8D 4D ?? 89 0C 24"
 }
 
 macro_rules! find_function {
@@ -268,9 +270,9 @@ byond_ffi_fn! { auxtools_init(_input) {
 			}
 		}
 
-		let mut to_string = std::ptr::null();
-		{
-			if cfg!(windows) {
+		let to_string_byond = {
+			#[cfg(windows)]
+			{
 				let res =
 					if version::get().1 >= 1585 {
 						byondcore.find(signature!("55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC ?? 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 1D ?? ?? ?? ??"))
@@ -283,55 +285,71 @@ byond_ffi_fn! { auxtools_init(_input) {
 					};
 
 				if let Some(ptr) = res {
-					to_string = ptr as *const std::ffi::c_void;
+					ptr as *const std::ffi::c_void
+				} else {
+					return Some("FAILED (Couldn't find to_string)".to_owned())
 				}
 			}
 
-			if cfg!(unix) {
-				let res =
-					if version::get().1 >= 1543 {
+			#[cfg(unix)]
+			{
+				if version::get().1 >= 1560 {
+					with_scanner_by_call! { byondcore,
+						to_string
+					}
+
+					to_string
+				} else {
+					let result = if version::get().1 >= 1543 {
 						byondcore.find(signature!("55 89 E5 83 EC 68 A1 ?? ?? ?? ?? 8B 15 ?? ?? ?? ?? 8B 0D ?? ?? ?? ?? 89 5D ??"))
 					} else {
 						byondcore.find(signature!("55 89 E5 83 EC 58 89 5D ?? 8B 5D ?? 89 75 ?? 8B 75 ?? 89 7D ?? 80 FB 54"))
 					};
 
-				if let Some(ptr) = res {
-					to_string = ptr as *const std::ffi::c_void;
+					match result {
+						Some(ptr) => ptr as *const std::ffi::c_void,
+						None => return Some("FAILED (Couldn't find to_string)".to_owned()),
+					}
 				}
 			}
+		};
 
-			if to_string.is_null() {
-				return Some("FAILED (Couldn't find to_string)".to_owned());
-			}
-		}
-
-		let mut set_variable = std::ptr::null();
-		{
-			if cfg!(windows) {
+		let set_variable_byond = {
+			#[cfg(windows)]
+			{
 				let res = byondcore.find(signature!("55 8B EC 8B 4D 08 0F B6 C1 48 57 8B 7D 10 83 F8 53 0F ?? ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 18 FF 75 14 57 FF 75 0C E8 ?? ?? ?? ?? 83 C4 10 5F 5D C3"));
 
 				if let Some(ptr) = res {
-					set_variable = ptr as *const std::ffi::c_void;
+					ptr as *const std::ffi::c_void
+				} else {
+					return Some("FAILED (Couldn't find set_variable)".to_owned());
 				}
 			}
 
-			if cfg!(unix) {
-				let res =
-					if version::get().1 >= 1543 {
-						byondcore.find(signature!("55 89 E5 81 EC A8 00 00 00 8B 55 ?? 89 5D ?? 8B 4D ?? 89 7D ?? 8B 5D ??"))
+			#[cfg(unix)]
+			{
+				if version::get().1 >= 1560 {
+					with_scanner_by_call! { byondcore,
+						set_variable
+					}
+
+					set_variable
+				} else {
+					let res =
+						if version::get().1 >= 1543 {
+							byondcore.find(signature!("55 89 E5 81 EC A8 00 00 00 8B 55 ?? 89 5D ?? 8B 4D ?? 89 7D ?? 8B 5D ??"))
+						} else {
+							byondcore.find(signature!("55 89 E5 81 EC A8 00 00 00 8B 55 ?? 8B 45 ?? 89 5D ?? 8B 5D ?? 89 7D ??"))
+						};
+
+					if let Some(ptr) = res {
+						ptr as *const std::ffi::c_void
 					} else {
-						byondcore.find(signature!("55 89 E5 81 EC A8 00 00 00 8B 55 ?? 8B 45 ?? 89 5D ?? 8B 5D ?? 89 7D ??"))
-					};
-
-				if let Some(ptr) = res {
-					set_variable = ptr as *const std::ffi::c_void;
+						return Some("FAILED (Couldn't find set_variable)".to_owned());
+					}
 				}
 			}
-
-			if set_variable.is_null() {
-				return Some("FAILED (Couldn't find set_variable)".to_owned());
-			}
-		}
+		};
 
 		let mut current_execution_context = std::ptr::null_mut();
 		{
@@ -362,7 +380,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 			raw_types::funcs::call_datum_proc_by_name_byond = call_datum_proc_by_name;
 			raw_types::funcs::get_string_id_byond = get_string_id;
 			raw_types::funcs::get_variable_byond = get_variable;
-			raw_types::funcs::set_variable_byond = set_variable;
+			raw_types::funcs::set_variable_byond = set_variable_byond;
 			raw_types::funcs::get_string_table_entry_byond = get_string_table_entry;
 			raw_types::funcs::inc_ref_count_byond = inc_ref_count;
 			raw_types::funcs::get_assoc_element_byond = get_assoc_element;
@@ -372,7 +390,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 			raw_types::funcs::remove_from_list_byond = remove_from_list;
 			raw_types::funcs::get_length_byond = get_length;
 			raw_types::funcs::get_misc_by_id_byond = get_misc_by_id;
-			raw_types::funcs::to_string_byond = to_string;
+			raw_types::funcs::to_string_byond = to_string_byond;
 			raw_types::funcs::runtime_byond = runtime;
 		}
 
