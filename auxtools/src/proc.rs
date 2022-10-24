@@ -64,9 +64,9 @@ impl Proc {
 		}
 		let proc_name = strip_path(unsafe { StringRef::from_id((*proc_entry).path).into() });
 		Some(Proc {
-			id: id,
+			id,
 			entry: proc_entry,
-			path: proc_name.clone(),
+			path: proc_name,
 		})
 	}
 
@@ -211,10 +211,7 @@ pub fn clear_procs() {
 
 pub fn get_proc_override<S: Into<String>>(path: S, override_id: u32) -> Option<Proc> {
 	let s = strip_path(path.into());
-	PROCS_BY_NAME.with(|h| match h.borrow().get(&s)?.get(override_id as usize) {
-		Some(p) => Some(p.clone()),
-		None => None,
-	})
+	PROCS_BY_NAME.with(|h| h.borrow().get(&s)?.get(override_id as usize).cloned())
 }
 
 /// Retrieves the 0th override of a proc.

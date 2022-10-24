@@ -5,7 +5,7 @@ use std::ffi::CStr;
 use std::fmt;
 
 #[repr(u8)]
-#[derive(PartialEq, Copy, Clone, Debug, Hash)]
+#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
 #[non_exhaustive]
 pub enum ValueTag {
 	Null = 0x00,
@@ -74,7 +74,7 @@ impl fmt::Display for Value {
 
 		unsafe {
 			match self.tag {
-				ValueTag::Null => write!(f, "{}", "null"),
+				ValueTag::Null => write!(f, "null"),
 				ValueTag::Number => write!(f, "{}", self.data.number),
 				ValueTag::String => {
 					let id = self.data.string;
@@ -96,7 +96,7 @@ impl fmt::Debug for Value {
 
 		unsafe {
 			match self.tag {
-				ValueTag::Null => write!(f, "{}", "null"),
+				ValueTag::Null => write!(f, "null"),
 				ValueTag::Number => write!(f, "{:?}", self.data.number),
 				ValueTag::String => {
 					let id = self.data.string;

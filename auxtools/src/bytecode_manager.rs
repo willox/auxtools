@@ -79,11 +79,10 @@ pub fn set_bytecode(proc: &Proc, mut bytecode: Vec<u32>) {
 			.as_mut()
 			.expect("BYTECODE_ALLOCATIONS is only valid on the main thread?");
 
-		if !state.original.contains_key(&proc.id) {
-			let (ptr, len) = unsafe { proc.bytecode_mut_ptr() };
-
-			state.original.insert(proc.id, (ptr, len));
-		}
+		state
+			.original
+			.entry(proc.id)
+			.or_insert_with(|| unsafe { proc.bytecode_mut_ptr() });
 
 		let (ptr, len) = {
 			let len = bytecode.len();

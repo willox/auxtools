@@ -105,9 +105,7 @@ macro_rules! find_function {
 	($scanner:ident, $name:ident) => {
 		let $name: *const c_void;
 		if let Some(ptr) = $scanner.find(SIGNATURES.$name) {
-			unsafe {
-				$name = std::mem::transmute(ptr as *const c_void);
-			}
+			$name = ptr as *const c_void;
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
 		}
@@ -398,7 +396,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 			return Some("FAILED (Could not pin the library in memory.)".to_owned());
 		}
 
-		if let Err(_) = hooks::init() {
+		if hooks::init().is_err() {
 			return Some("Failed (Couldn't initialize proc hooking)".to_owned());
 		}
 
@@ -423,10 +421,8 @@ byond_ffi_fn! { auxtools_init(_input) {
 					if let Some(ptr) = byondcore.find(signature!("A1 ?? ?? ?? ?? 8B 13 8B 39 8B 75 ?? 8B 14 ?? 89 7D ?? 8B 3C ?? 83 EE 02")) {
 						variable_names = unsafe { *((ptr.add(1)) as *mut *mut VariableNameIdTable) };
 					}
-				} else {
-					if let Some(ptr) = byondcore.find(signature!("8B 35 ?? ?? ?? ?? 89 5D ?? 0F B7 08 89 75 ?? 66 C7 45 ?? 00 00 89 7D ??")) {
+				} else if let Some(ptr) = byondcore.find(signature!("8B 35 ?? ?? ?? ?? 89 5D ?? 0F B7 08 89 75 ?? 66 C7 45 ?? 00 00 89 7D ??")) {
 						variable_names = unsafe { *((ptr.add(2)) as *mut *mut VariableNameIdTable) };
-					}
 				};
 			}
 

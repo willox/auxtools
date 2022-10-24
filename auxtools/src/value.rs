@@ -260,7 +260,7 @@ impl Value {
 				raw_types::funcs::inc_ref_count(v.raw);
 			}
 
-			let procname = String::from(procname.as_ref()).replace("_", " ");
+			let procname = String::from(procname.as_ref()).replace('_', " ");
 			let mut args: Vec<_> = args.iter().map(|e| e.raw).collect();
 			let name_ref = string::StringRef::new(&procname)?;
 
@@ -293,7 +293,7 @@ impl Value {
 			raw_types::values::ValueTag::Null
 			| raw_types::values::ValueTag::Number
 			| raw_types::values::ValueTag::String => {
-				return Ok(string::StringRef::new(format!("{}", self.raw).as_str())?)
+				return string::StringRef::new(format!("{}", self.raw).as_str())
 			}
 
 			_ => {}

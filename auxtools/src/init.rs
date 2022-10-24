@@ -1,6 +1,6 @@
 use crate::inventory;
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Eq, PartialEq, Clone, Copy)]
 pub enum InitLevel {
 	Full,
 	Partial,
