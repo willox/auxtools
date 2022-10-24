@@ -242,7 +242,6 @@ fn proc_instance_is_suspended(proc_ref: ProcInstanceRef) -> bool {
 	}
 }
 
-
 #[runtime_handler]
 fn handle_runtime(error: &str) {
 	unsafe {
