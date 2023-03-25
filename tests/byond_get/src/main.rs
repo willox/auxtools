@@ -27,6 +27,7 @@ fn main() {
 		)
 		.arg(
 			Arg::new("destination")
+				.allow_invalid_utf8(true)
 				.help("directory to extract the BYOND build into")
 				.required(true)
 				.takes_value(true),
