@@ -56,6 +56,7 @@ pub fn init() -> Result<(), String> {
 	#[cfg(unix)]
 	{
 		use libc::{dlopen, dlsym, RTLD_LAZY};
+		use std::ffi::{c_char, CString};
 
 		unsafe {
 			let module = dlopen(CString::new(BYONDCORE).unwrap().as_ptr(), RTLD_LAZY);
