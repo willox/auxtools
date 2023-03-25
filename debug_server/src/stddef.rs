@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CStr};
+use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
 
 use auxtools::*;
@@ -48,7 +48,6 @@ fn stddef_init() -> Result<(), String> {
 	#[cfg(unix)]
 	{
 		use libc::{dlopen, dlsym, RTLD_LAZY};
-		use std::ffi::CString;
 
 		unsafe {
 			let module = dlopen(CString::new(BYONDCORE).unwrap().as_ptr(), RTLD_LAZY);
