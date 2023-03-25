@@ -159,7 +159,11 @@ fn pin_dll() -> Result<(), ()> {
 			false => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
 		};
 
-		let res = GetModuleHandleExW(flags, None, &mut module);
+		let res = GetModuleHandleExW(
+			flags,
+			windows::core::PCWSTR::from_raw(pin_dll as *const _),
+			&mut module,
+		);
 
 		if !res.as_bool() {
 			return Err(());
@@ -341,7 +345,7 @@ byond_ffi_fn! { auxtools_full_shutdown(_input) {
 
 			let get_handle_res = GetModuleHandleExW(
 				GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-				None,
+				windows::core::PCWSTR::from_raw(auxtools_full_shutdown as *const _),
 				&mut module,
 			);
 
