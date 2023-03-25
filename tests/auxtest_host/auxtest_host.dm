@@ -1,3 +1,7 @@
+#if DM_VERSION < 515
+#define call_ext call
+#endif
+
 /datum
 	var/__auxtools_weakref_id
 
@@ -41,7 +45,9 @@ var/datum/weak_test_datum
 
 /proc/do_tests()
 	var/auxtest_dll = auxtools_test_dll()
-	ASSERT(call(auxtest_dll, "auxtools_init")() == "SUCCESS")
+	var/init_result = call_ext(auxtest_dll, "auxtools_init")()
+	world.log << "init_result = [init_result]"
+	ASSERT(init_result == "SUCCESS")
 
 	// Tests
 	ASSERT(auxtest_lists() == TRUE)
@@ -55,10 +61,10 @@ var/datum/weak_test_datum
 	// Stop testing after the 8th reboot
 	if (auxtest_inc_counter() == 8)
 		auxtest_out("SUCCESS: Finished")
-		call(auxtest_dll, "auxtools_shutdown")()
+		call_ext(auxtest_dll, "auxtools_shutdown")()
 		shutdown()
 	else
-		call(auxtest_dll, "auxtools_shutdown")()
+		call_ext(auxtest_dll, "auxtools_shutdown")()
 		world.Reboot()
 
 /world/New()
