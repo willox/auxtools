@@ -4,7 +4,7 @@ use crate::disassemble_env::DisassembleEnv;
 use crate::server_types::{BreakpointReason, ContinueKind};
 use crate::DEBUG_SERVER;
 use auxtools::*;
-use detour2::RawDetour;
+use detour::RawDetour;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::sync::Mutex;

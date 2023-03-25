@@ -1,4 +1,4 @@
-use detour2::RawDetour;
+use detour::RawDetour;
 use std::ffi::c_void;
 use std::{cell::UnsafeCell, collections::HashMap, fs::File, io};
 

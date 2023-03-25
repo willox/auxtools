@@ -20,8 +20,8 @@ ahash = "0.8.0"
 fxhash = "0.2.1"
 ctor = "0.1.26"
 
-[dependencies.detour2]
-version = "0.9.0"
+[dependencies.detour]
+version = "0.8.1"
 default-features = false
 
 [target.'cfg(windows)'.dependencies]

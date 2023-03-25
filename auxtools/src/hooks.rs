@@ -2,7 +2,7 @@ use super::proc::Proc;
 use super::raw_types;
 use super::value::Value;
 use crate::runtime::DMResult;
-use detour2::RawDetour;
+use detour::RawDetour;
 use fxhash::FxHashMap;
 use std::ffi::c_void;
 use std::os::raw::c_char;
