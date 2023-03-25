@@ -27,13 +27,14 @@ pub fn init() -> Result<(), String> {
 
 		unsafe {
 			let mut module = Foundation::HINSTANCE::default();
-			let core_str = windows::core::PCSTR::from_raw(
-				CString::new(BYONDCORE)
-					.unwrap()
-					.as_bytes_with_nul()
-					.as_ptr(),
-			);
-			if !LibraryLoader::GetModuleHandleExA(0, core_str, &mut module).as_bool() {
+			let core_str = CString::new(BYONDCORE).unwrap();
+			if !LibraryLoader::GetModuleHandleExA(
+				0,
+				windows::core::PCSTR::from_raw(core_str.as_bytes_with_nul().as_ptr()),
+				&mut module,
+			)
+			.as_bool()
+			{
 				return Err("Couldn't get module handle for BYONDCORE".into());
 			}
 

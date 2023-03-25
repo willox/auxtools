@@ -21,14 +21,11 @@ fn stddef_init() -> Result<(), String> {
 
 		unsafe {
 			let mut module = windows::Win32::Foundation::HINSTANCE::default();
+
+			let core_str = CString::new(BYONDCORE).unwrap();
 			if !LibraryLoader::GetModuleHandleExA(
 				0,
-				windows::core::PCSTR::from_raw(
-					CString::new(BYONDCORE)
-						.unwrap()
-						.as_bytes_with_nul()
-						.as_ptr(),
-				)
+				windows::core::PCSTR::from_raw(core_str.as_bytes_with_nul().as_ptr()),
 				&mut module,
 			)
 			.as_bool()
