@@ -1,4 +1,5 @@
 use super::*;
+use std::ffi::CString;
 
 pub static mut BYOND_VERSION_MAJOR: u32 = 0;
 pub static mut BYOND_VERSION_MINOR: u32 = 0;
@@ -26,7 +27,12 @@ pub fn init() -> Result<(), String> {
 
 		unsafe {
 			let mut module = Foundation::HINSTANCE::default();
-			let core_str = windows::core::PCSTR::from_raw(BYONDCORE.as_ptr());
+			let core_str = windows::core::PCSTR::from_raw(
+				CString::new(BYONDCORE)
+					.unwrap()
+					.as_bytes_with_nul()
+					.as_ptr(),
+			);
 			if !LibraryLoader::GetModuleHandleExA(0, core_str, &mut module).as_bool() {
 				return Err("Couldn't get module handle for BYONDCORE".into());
 			}
@@ -56,7 +62,7 @@ pub fn init() -> Result<(), String> {
 	#[cfg(unix)]
 	{
 		use libc::{dlopen, dlsym, RTLD_LAZY};
-		use std::ffi::{c_char, CString};
+		use std::ffi::c_char;
 
 		unsafe {
 			let module = dlopen(CString::new(BYONDCORE).unwrap().as_ptr(), RTLD_LAZY);

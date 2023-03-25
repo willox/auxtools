@@ -28,12 +28,8 @@ fn setup_hooks() {
 			THREAD_ID = windows::Win32::System::Threading::GetCurrentThreadId();
 
 			let mut module = windows::Win32::Foundation::HINSTANCE::default();
-			if !LibraryLoader::GetModuleHandleExA(
-				0,
-				PCSTR::from_raw("msvcr120.dll".as_ptr()),
-				&mut module,
-			)
-			.as_bool()
+			if !LibraryLoader::GetModuleHandleExA(0, windows::s!("msvcr120.dll"), &mut module)
+				.as_bool()
 			{
 				return;
 			}

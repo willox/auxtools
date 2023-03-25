@@ -23,7 +23,12 @@ fn stddef_init() -> Result<(), String> {
 			let mut module = windows::Win32::Foundation::HINSTANCE::default();
 			if !LibraryLoader::GetModuleHandleExA(
 				0,
-				windows::core::PCSTR::from_raw(BYONDCORE.as_ptr()),
+				windows::core::PCSTR::from_raw(
+					CString::new(BYONDCORE)
+						.unwrap()
+						.as_bytes_with_nul()
+						.as_ptr(),
+				)
 				&mut module,
 			)
 			.as_bool()
