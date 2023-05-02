@@ -5,6 +5,8 @@ mod instruction_hooking;
 mod server;
 mod server_types;
 mod stddef;
+mod codecov;
+mod cobertura;
 
 #[cfg(windows)]
 mod crash_handler_windows;
@@ -28,6 +30,7 @@ use std::{
 use auxtools::*;
 
 pub static mut DEBUG_SERVER: UnsafeCell<Option<server::Server>> = UnsafeCell::new(None);
+pub static mut COVERAGE_TRACKER: UnsafeCell<Option<codecov::Tracker>> = UnsafeCell::new(None);
 
 #[shutdown]
 fn debugger_shutdown() {

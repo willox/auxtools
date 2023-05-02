@@ -2,7 +2,7 @@ use std::{cell::UnsafeCell, ffi::c_void};
 
 use crate::disassemble_env::DisassembleEnv;
 use crate::server_types::{BreakpointReason, ContinueKind};
-use crate::DEBUG_SERVER;
+use crate::{DEBUG_SERVER, COVERAGE_TRACKER};
 use auxtools::*;
 use detour::RawDetour;
 use lazy_static::lazy_static;
@@ -276,6 +276,10 @@ extern "C" fn handle_instruction(
 	}
 
 	unsafe {
+		if let Some(tracker) = &mut *COVERAGE_TRACKER.get() {
+			tracker.process_instruction(&*ctx, &*((*ctx).proc_instance));
+		}
+
 		if let Some(server) = &mut *DEBUG_SERVER.get() {
 			if server.process() {
 				CURRENT_ACTION = DebuggerAction::Pause;

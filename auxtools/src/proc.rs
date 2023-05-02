@@ -66,6 +66,23 @@ impl Proc {
 		})
 	}
 
+	pub unsafe fn file_name(&self) -> Option<StringRef> {
+		let bytecode = self.bytecode();
+		if bytecode.len() < 2 || bytecode[0] != 0x84 {
+			return None;
+		}
+
+		let file_id = raw_types::strings::StringId(bytecode[0x01]);
+		if !file_id.valid() {
+			return None;
+		}
+
+		let mut entry: *mut raw_types::strings::StringEntry = std::ptr::null_mut();
+		assert_eq!(raw_types::funcs::get_string_table_entry(&mut entry, file_id), 1);
+
+		Some(StringRef::from_id(file_id))
+	}
+
 	pub fn parameter_names(&self) -> Vec<StringRef> {
 		unsafe {
 			let (data, count) = raw_types::misc::get_parameters((*self.entry).parameters);
