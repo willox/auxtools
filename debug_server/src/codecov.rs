@@ -50,19 +50,19 @@ impl Tracker {
 		let proc_map_index: usize = proc_instance.proc.0.try_into().unwrap();
 		let line: usize = ctx.line.try_into().unwrap();
 
-		let mut needs_extending = false;
+		let needs_extending = self.proc_id_map.len() < proc_map_index + 1;
 
-		if self.proc_id_map.len() < proc_map_index + 1 {
-			needs_extending = true;
-		} else if let Some(hit_map_cell) = &self.proc_id_map[proc_map_index] {
-			let mut hit_map = hit_map_cell.borrow_mut();
-			if hit_map.len() < line {
-				hit_map.resize(line, 0);
+		if !needs_extending {
+			if let Some(hit_map_cell) = &self.proc_id_map[proc_map_index] {
+				let mut hit_map = hit_map_cell.borrow_mut();
+				if hit_map.len() < line {
+					hit_map.resize(line, 0);
+				}
+
+				let i = line - 1;
+				hit_map[i] = hit_map[i] + 1;
+				return;
 			}
-
-			let i = line - 1;
-			hit_map[i] = hit_map[i] + 1;
-			return;
 		}
 
 		// Slow: Need to lookup based on filename and create proc entry
@@ -72,14 +72,14 @@ impl Tracker {
 			file_name = StringRef::from_id(ctx.filename).to_string();
 		}
 
-		// strip quotes
-		file_name = file_name[1..file_name.len() - 1].to_string();
-
 		// WHY BYOND? WHY
 		// Procs, datums, random-ass strings... Just why?
 		if !file_name.contains(".dm") {
 			return;
 		}
+
+		// strip quotes
+		file_name = file_name[1..file_name.len() - 1].to_string();
 
 		if needs_extending {
 			self.proc_id_map.resize(proc_map_index + 1, None);
