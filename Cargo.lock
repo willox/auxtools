@@ -408,6 +408,7 @@ dependencies = [
  "region 3.0.0",
  "rustc-hash",
  "serde",
+ "serde_json",
  "symbolic-common",
  "symbolic-demangle",
  "winapi 0.3.9",
@@ -1501,9 +1502,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.79"
+version = "1.0.96"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e8d9fa5c3b304765ce1fd9c4c8a3de2c8db365a5b91be52f186efc675681d95"
+checksum = "057d394a50403bcac12672b2b18fb387ab6d289d957dab67dd201875391e52f1"
 dependencies = [
  "itoa",
  "ryu",

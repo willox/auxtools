@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -17,10 +19,7 @@ pub struct Tracker {
 
 #[hook("/proc/enable_code_coverage")]
 fn enable_code_coverage() {
-	let tracker: Tracker = Tracker {
-		proc_id_map: Vec::new(),
-		filename_map: HashMap::new()
-	};
+	let tracker = Tracker::new();
 
 	unsafe {
 		*COVERAGE_TRACKER.get() = Some(tracker);
@@ -40,6 +39,36 @@ fn code_coverage_writeout() {
 }
 
 impl Tracker {
+	fn new() -> Tracker {
+		let mut tracker = Tracker {
+			proc_id_map: Vec::new(),
+			filename_map: HashMap::new()
+		};
+
+		let file = File::open("executable_lines.json").unwrap();
+		let reader = BufReader::new(file);
+
+		// Read the JSON contents of the file as an instance of `User`.
+		let line_data: HashMap<String, Vec<u32>> = serde_json::from_reader(reader).unwrap();
+
+		for (file_name, executable_lines) in line_data {
+			let mut hit_map = Vec::<u64>::new();
+			for line in executable_lines {
+				let i: usize = line.try_into().unwrap();
+				if i > hit_map.len() {
+					hit_map.resize(i, 0);
+				}
+
+				hit_map[i - 1] = 1;
+			}
+
+			let hit_map_rc = Rc::new(RefCell::new(hit_map));
+			tracker.filename_map.insert(file_name, hit_map_rc);
+		}
+
+		tracker
+	}
+
 	// returns true if we need to pause
 	pub fn process_instruction(&mut self, ctx: &raw_types::procs::ExecutionContext, proc_instance: &raw_types::procs::ProcInstance) {
 		if ctx.line == 0 || !ctx.filename.valid() {
@@ -60,7 +89,13 @@ impl Tracker {
 				}
 
 				let i = line - 1;
-				hit_map[i] = hit_map[i] + 1;
+				let mut current_hits = hit_map[i];
+				let existing_line = current_hits > 0;
+				if !existing_line {
+					current_hits = 1;
+				}
+
+				hit_map[i] = current_hits + 1;
 				return;
 			}
 		}
@@ -93,7 +128,13 @@ impl Tracker {
 				}
 
 				let i = line - 1;
-				hit_map[i] = hit_map[i] + 1;
+				let mut current_hits = hit_map[i];
+				let existing_line = current_hits > 0;
+				if !existing_line {
+					current_hits = 1;
+				}
+
+				hit_map[i] = current_hits + 1;
 
 				self.proc_id_map[proc_map_index] = Some(hit_map_cell.clone());
 				return;
@@ -106,7 +147,13 @@ impl Tracker {
 				}
 
 				let i = line - 1;
-				hit_map[i] = hit_map[i] + 1;
+				let mut current_hits = hit_map[i];
+				let existing_line = current_hits > 0;
+				if !existing_line {
+					current_hits = 1;
+				}
+
+				hit_map[i] = current_hits + 1;
 
 				let hit_map_rc = Rc::new(RefCell::new(hit_map));
 				self.filename_map.insert(file_name, hit_map_rc.clone());
@@ -123,7 +170,7 @@ impl Tracker {
 					continue;
 				}
 
-				new_map.insert((line_minus_one + 1).try_into().unwrap(), *hits);
+				new_map.insert((line_minus_one + 1).try_into().unwrap(), *hits - 1);
 			}
 
 			let path = PathBuf::from(file_name);
