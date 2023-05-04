@@ -12,7 +12,7 @@ use rustc_hash::FxHashMap;
 use crate::{COVERAGE_TRACKER, cobertura::{output_cobertura, CovResult, ResultTuple}};
 
 pub struct Tracker {
-	proc_id_map: Vec<Option<Rc<RefCell<Vec<u64>>>>>, // could make this faster by figuring out a value proc IDs never use and removing the Option<>
+	proc_id_map: Vec<Option<Rc<RefCell<Vec<u64>>>>>,
 	filename_map: HashMap::<String, Rc<RefCell<Vec<u64>>>>
 }
 
@@ -87,6 +87,8 @@ impl Tracker {
 			proc_id_map: Vec::new(),
 			filename_map: HashMap::new()
 		};
+
+		tracker.proc_id_map.reserve(i.into());
 
 		for (file_name, executable_lines) in line_data {
 			let file_name = file_name.to_string();
