@@ -7,9 +7,10 @@ use std::rc::Rc;
 use auxtools::*;
 use dmasm::Instruction;
 
+use grcov::{output_cobertura, CovResult, ResultTuple};
 use rustc_hash::FxHashMap;
 
-use crate::{COVERAGE_TRACKER, cobertura::{output_cobertura, CovResult, ResultTuple}};
+use crate::COVERAGE_TRACKER;
 
 pub struct Tracker {
 	proc_id_map: Vec<Option<Rc<RefCell<Vec<u64>>>>>,
@@ -88,7 +89,7 @@ impl Tracker {
 			filename_map: HashMap::new()
 		};
 
-		tracker.proc_id_map.reserve(i.into());
+		tracker.proc_id_map.reserve(i as usize);
 
 		for (file_name, executable_lines) in line_data {
 			let file_name = file_name.to_string();

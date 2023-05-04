@@ -6,7 +6,6 @@ mod server;
 mod server_types;
 mod stddef;
 mod codecov;
-mod cobertura;
 
 #[cfg(windows)]
 mod crash_handler_windows;

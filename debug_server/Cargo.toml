@@ -24,6 +24,7 @@ rustc-hash = "1.1"
 symbolic-common = "12.1"
 symbolic-demangle = { version = "12.1", default-features = false }
 serde_json = "1.0.96"
+grcov = "0.8.18"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["winuser", "libloaderapi", "errhandlingapi"] }
