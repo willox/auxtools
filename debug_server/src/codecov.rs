@@ -1,12 +1,11 @@
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryInto;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use auxtools::*;
+use dmasm::Instruction;
 
 use rustc_hash::FxHashMap;
 
@@ -40,18 +39,78 @@ fn code_coverage_writeout() {
 
 impl Tracker {
 	fn new() -> Tracker {
+		let mut line_data = HashMap::<String, HashSet<u32>>::new();
+		let mut i: u32 = 0;
+		loop {
+			let proc_option = Proc::from_id(raw_types::procs::ProcId(i));
+			if proc_option.is_none() {
+				break;
+			}
+
+			let proc = proc_option.unwrap();
+			i = i + 1;
+
+			let mut current_file_option;
+			let bytecode;
+			unsafe {
+				current_file_option = proc.file_name();
+				bytecode = proc.bytecode().to_vec();
+			}
+
+			let mut env = crate::disassemble_env::DisassembleEnv;
+			let (nodes, _error) = dmasm::disassembler::disassemble(&bytecode[..], &mut env);
+			for node in nodes {
+				match node {
+					dmasm::Node::Instruction(instruction, _) => {
+						match instruction {
+							Instruction::DbgFile(file) => {
+								let string_ref_result = StringRef::from_raw(&file.0);
+								match string_ref_result {
+									Ok(string_ref) => current_file_option = Some(string_ref),
+									Err(_) => current_file_option = None,
+								}
+							},
+							Instruction::DbgLine(line) => {
+								if let Some(current_file) = &current_file_option {
+									let mut file_name = current_file.to_string();
+
+									// strip quotes
+									file_name = file_name[1..file_name.len() - 1].to_string();
+									if !file_name.ends_with(".dm") {
+										continue;
+									}
+
+									match line_data.get_mut(&file_name) {
+										Some(existing_set) =>{
+											 existing_set.insert(line);
+										},
+										None => {
+											let mut new_set = HashSet::<u32>::new();
+											new_set.insert(line);
+											line_data.insert(file_name, new_set);
+										},
+									}
+								}
+							}
+							_ => { }
+						}
+					},
+					_ => { }
+				}
+			}
+		}
+
 		let mut tracker = Tracker {
 			proc_id_map: Vec::new(),
 			filename_map: HashMap::new()
 		};
 
-		let file = File::open("executable_lines.json").unwrap();
-		let reader = BufReader::new(file);
-
-		// Read the JSON contents of the file as an instance of `User`.
-		let line_data: HashMap<String, Vec<u32>> = serde_json::from_reader(reader).unwrap();
-
 		for (file_name, executable_lines) in line_data {
+			let file_name = file_name.to_string();
+			if !file_name.ends_with(".dm") {
+				continue;
+			}
+
 			let mut hit_map = Vec::<u64>::new();
 			for line in executable_lines {
 				let i: usize = line.try_into().unwrap();
@@ -107,14 +166,14 @@ impl Tracker {
 			file_name = StringRef::from_id(ctx.filename).to_string();
 		}
 
-		// WHY BYOND? WHY
-		// Procs, datums, random-ass strings... Just why?
-		if !file_name.contains(".dm") {
-			return;
-		}
-
 		// strip quotes
 		file_name = file_name[1..file_name.len() - 1].to_string();
+
+		// WHY BYOND? WHY
+		// Procs, datums, random-ass strings... Just why?
+		if !file_name.ends_with(".dm") {
+			return;
+		}
 
 		if needs_extending {
 			self.proc_id_map.resize(proc_map_index + 1, None);
