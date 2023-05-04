@@ -41,13 +41,7 @@ impl Tracker {
 	fn new() -> Tracker {
 		let mut line_data = HashMap::<String, HashSet<u32>>::new();
 		let mut i: u32 = 0;
-		loop {
-			let proc_option = Proc::from_id(raw_types::procs::ProcId(i));
-			if proc_option.is_none() {
-				break;
-			}
-
-			let proc = proc_option.unwrap();
+		while let Some(proc) = Proc::from_id(raw_types::procs::ProcId(i)) {
 			i = i + 1;
 
 			let mut current_file_option;
@@ -59,43 +53,32 @@ impl Tracker {
 
 			let mut env = crate::disassemble_env::DisassembleEnv;
 			let (nodes, _error) = dmasm::disassembler::disassemble(&bytecode[..], &mut env);
+
 			for node in nodes {
-				match node {
-					dmasm::Node::Instruction(instruction, _) => {
-						match instruction {
-							Instruction::DbgFile(file) => {
-								let string_ref_result = StringRef::from_raw(&file.0);
-								match string_ref_result {
-									Ok(string_ref) => current_file_option = Some(string_ref),
-									Err(_) => current_file_option = None,
-								}
-							},
-							Instruction::DbgLine(line) => {
-								if let Some(current_file) = &current_file_option {
-									let mut file_name = current_file.to_string();
-
-									// strip quotes
-									file_name = file_name[1..file_name.len() - 1].to_string();
-									if !file_name.ends_with(".dm") {
-										continue;
-									}
-
-									match line_data.get_mut(&file_name) {
-										Some(existing_set) =>{
-											 existing_set.insert(line);
-										},
-										None => {
-											let mut new_set = HashSet::<u32>::new();
-											new_set.insert(line);
-											line_data.insert(file_name, new_set);
-										},
-									}
-								}
+				if let dmasm::Node::Instruction(instruction, _) = node {
+					match instruction {
+						Instruction::DbgFile(file) => {
+							let string_ref_result = StringRef::from_raw(&file.0);
+							match string_ref_result {
+								Ok(string_ref) => current_file_option = Some(string_ref),
+								Err(_) => current_file_option = None,
 							}
-							_ => { }
+						},
+						Instruction::DbgLine(line) => {
+							if let Some(current_file) = &current_file_option {
+								let mut file_name = current_file.to_string();
+
+								// strip quotes
+								file_name = file_name[1..file_name.len() - 1].to_string();
+								if !file_name.ends_with(".dm") {
+									continue;
+								}
+
+								line_data.entry(file_name).or_insert(HashSet::new()).insert(line);
+							}
 						}
-					},
-					_ => { }
+						_ => { }
+					}
 				}
 			}
 		}
