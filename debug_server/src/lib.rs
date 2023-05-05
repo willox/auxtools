@@ -22,14 +22,16 @@ use mem_profiler_stub as mem_profiler;
 pub(crate) use disassemble_env::DisassembleEnv;
 
 use std::{
-	cell::UnsafeCell,
+	cell::{RefCell,UnsafeCell},
 	net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
 use auxtools::*;
 
 pub static mut DEBUG_SERVER: UnsafeCell<Option<server::Server>> = UnsafeCell::new(None);
-pub static mut COVERAGE_TRACKER: UnsafeCell<Option<codecov::Tracker>> = UnsafeCell::new(None);
+thread_local! {
+	pub static COVERAGE_TRACKER: RefCell<Option<codecov::Tracker>> = RefCell::new(None);
+}
 
 #[shutdown]
 fn debugger_shutdown() {

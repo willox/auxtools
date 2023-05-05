@@ -276,10 +276,6 @@ extern "C" fn handle_instruction(
 	}
 
 	unsafe {
-		if let Some(tracker) = &mut *COVERAGE_TRACKER.get() {
-			tracker.process_instruction(&*ctx, &*((*ctx).proc_instance));
-		}
-
 		if let Some(server) = &mut *DEBUG_SERVER.get() {
 			if server.process() {
 				CURRENT_ACTION = DebuggerAction::Pause;
@@ -289,6 +285,23 @@ extern "C" fn handle_instruction(
 
 	let opcode_ptr = unsafe { (*ctx).bytecode.add((*ctx).bytecode_offset as usize) };
 	let opcode = unsafe { *opcode_ptr };
+	let is_dbgline = opcode == OPCODE_DBGLINE;
+
+	if is_dbgline {
+		COVERAGE_TRACKER.with(|tracker_cell|{
+			let mut tracker_option = tracker_cell.borrow_mut();
+			if let Some(tracker) = tracker_option.as_mut() {
+				let ctx_ref;
+				let proc_instance;
+				unsafe {
+					ctx_ref = &*ctx;
+					proc_instance = &*ctx_ref.proc_instance;
+				}
+
+				tracker.process_dbg_line(ctx_ref, proc_instance);
+			}
+		});
+	}
 
 	// This lets us ignore any actual breakpoints we hit if we've already paused for another reason
 	let mut did_breakpoint = false;
@@ -313,7 +326,7 @@ extern "C" fn handle_instruction(
 			// 1) The target context has disappeared - this means it has returned or runtimed
 			// 2) We're inside the target context and on a DbgLine instruction
 			DebuggerAction::StepOver { target } => {
-				if opcode == OPCODE_DBGLINE && target.is((*ctx).proc_instance) {
+				if is_dbgline && target.is((*ctx).proc_instance) {
 					CURRENT_ACTION = DebuggerAction::BreakOnNext;
 				} else {
 					// If the context isn't in any stacks, it has just returned. Break!
@@ -334,7 +347,6 @@ extern "C" fn handle_instruction(
 			// 3) We're inside the parent context and on a DbgLine instruction
 			DebuggerAction::StepInto { parent } => {
 				if !is_generated_proc(ctx) {
-					let is_dbgline = opcode == OPCODE_DBGLINE;
 					let is_in_parent = parent.is((*ctx).proc_instance);
 
 					if is_dbgline && is_in_parent {

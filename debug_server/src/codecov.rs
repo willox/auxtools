@@ -1,10 +1,14 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryInto;
+use std::fs::create_dir_all;
+use std::io::Error;
+use std::panic::catch_unwind;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use auxtools::*;
+use auxtools::raw_types::strings::StringId;
 use dmasm::Instruction;
 
 use grcov::{output_cobertura, CovResult, ResultTuple};
@@ -12,35 +16,101 @@ use rustc_hash::FxHashMap;
 
 use crate::COVERAGE_TRACKER;
 
-pub struct Tracker {
+struct TrackerContext {
+	output_file_name: String,
 	proc_id_map: Vec<Option<Rc<RefCell<Vec<u64>>>>>,
 	filename_map: HashMap::<String, Rc<RefCell<Vec<u64>>>>
 }
 
-#[hook("/proc/enable_code_coverage")]
-fn enable_code_coverage() {
-	let tracker = Tracker::new();
+pub struct Tracker {
+	hittable_lines: HashMap<String, HashSet<u32>>,
+	contexts: Vec<TrackerContext>,
+	total_procs: u32
+}
 
-	unsafe {
-		*COVERAGE_TRACKER.get() = Some(tracker);
+#[hook("/proc/start_code_coverage")]
+fn start_code_coverage(coverage_file: Value) {
+	let coverage_file_string_result = coverage_file.as_string();
+	if let Err(runtime) = coverage_file_string_result {
+		return Err(runtime);
+	}
+
+	let coverage_file_string = coverage_file_string_result.unwrap();
+
+	let mut init_result = false;
+	COVERAGE_TRACKER.with(|tracker_cell|{
+		let mut tracker_option = tracker_cell.borrow_mut();
+		match tracker_option.as_mut() {
+			Some(existing_tracker) => {
+				init_result = existing_tracker.init_context(coverage_file_string.clone())
+			},
+			None => {
+				let mut created_tracker = Tracker::new();
+				init_result = created_tracker.init_context(coverage_file_string.clone());
+				tracker_option.replace(created_tracker);
+			}
+		}
+	});
+
+	if !init_result {
+		return Err(runtime!(
+			"A code coverage context for {} already exists!",
+			coverage_file_string
+		));
 	}
 
 	Ok(Value::null())
 }
 
+#[hook("/proc/stop_code_coverage")]
+fn stop_code_coverage(coverage_file: Value) {
+	let coverage_file_string_result = coverage_file.as_string();
+	if let Err(runtime) = coverage_file_string_result {
+		return Err(runtime);
+	}
+
+	let coverage_file_string = coverage_file_string_result.unwrap();
+
+	COVERAGE_TRACKER.with(|tracker_cell|{
+		let mut tracker_option = tracker_cell.borrow_mut();
+		match tracker_option.as_mut() {
+			Some(tracker) => {
+				let result = tracker.finalize_context(&coverage_file_string);
+				match result {
+					Ok(had_entry) => {
+						if !had_entry {
+							return Err(runtime!(
+								"A code coverage context for {} does not exist!",
+								coverage_file_string
+							));
+						}
+
+						Ok(Value::null())
+					},
+					Err(error) => Err(runtime!(
+						"A error occurred while trying to save the coverage file: {}",
+						error
+					))
+				}
+			},
+			None => Err(runtime!("Code coverage not initialized!"))
+		}
+	})
+}
+
 #[shutdown]
 fn code_coverage_writeout() {
-	unsafe {
-		if let Some(coverage) = &mut *COVERAGE_TRACKER.get() {
-			coverage.finalize();
-			*COVERAGE_TRACKER.get() = None;
+	COVERAGE_TRACKER.with(|tracker_cell|{
+		let tracker_option = tracker_cell.replace(None);
+		if let Some(mut tracker) = tracker_option {
+			let _result = tracker.finalize(); // dropping the result here because what can ya do?
 		}
-	}
+	});
 }
 
 impl Tracker {
 	fn new() -> Tracker {
-		let mut line_data = HashMap::<String, HashSet<u32>>::new();
+		let mut hittable_lines = HashMap::<String, HashSet<u32>>::new();
 		let mut i: u32 = 0;
 		while let Some(proc) = Proc::from_id(raw_types::procs::ProcId(i)) {
 			i = i + 1;
@@ -75,7 +145,7 @@ impl Tracker {
 									continue;
 								}
 
-								line_data.entry(file_name).or_insert(HashSet::new()).insert(line);
+								hittable_lines.entry(file_name).or_insert(HashSet::new()).insert(line);
 							}
 						}
 						_ => { }
@@ -84,14 +154,28 @@ impl Tracker {
 			}
 		}
 
-		let mut tracker = Tracker {
+		Tracker {
+			hittable_lines,
+			contexts: Vec::new(),
+			total_procs: i
+		}
+	}
+
+	fn init_context(&mut self, output_file_name: String) -> bool {
+		if self.contexts.iter().any(|context| context.output_file_name == *output_file_name) {
+			return false;
+		}
+
+		let mut context: TrackerContext = TrackerContext {
+			output_file_name,
 			proc_id_map: Vec::new(),
 			filename_map: HashMap::new()
 		};
 
-		tracker.proc_id_map.reserve(i as usize);
+		context.proc_id_map.reserve(self.total_procs as usize);
+		context.filename_map.reserve(self.hittable_lines.len());
 
-		for (file_name, executable_lines) in line_data {
+		for (file_name, executable_lines) in &self.hittable_lines {
 			let file_name = file_name.to_string();
 			if !file_name.ends_with(".dm") {
 				continue;
@@ -99,7 +183,7 @@ impl Tracker {
 
 			let mut hit_map = Vec::<u64>::new();
 			for line in executable_lines {
-				let i: usize = line.try_into().unwrap();
+				let i: usize = *line as usize;
 				if i > hit_map.len() {
 					hit_map.resize(i, 0);
 				}
@@ -108,22 +192,101 @@ impl Tracker {
 			}
 
 			let hit_map_rc = Rc::new(RefCell::new(hit_map));
-			tracker.filename_map.insert(file_name, hit_map_rc);
+			context.filename_map.insert(file_name, hit_map_rc);
 		}
 
-		tracker
+		self.contexts.push(context);
+		true
 	}
 
 	// returns true if we need to pause
-	pub fn process_instruction(&mut self, ctx: &raw_types::procs::ExecutionContext, proc_instance: &raw_types::procs::ProcInstance) {
+	pub fn process_dbg_line(&mut self, ctx: &raw_types::procs::ExecutionContext, proc_instance: &raw_types::procs::ProcInstance) {
 		if ctx.line == 0 || !ctx.filename.valid() {
-			return
+			return;
 		}
 
-		// Fast: Seen this proc before, array access based on ID
-		let proc_map_index: usize = proc_instance.proc.0.try_into().unwrap();
-		let line: usize = ctx.line.try_into().unwrap();
+		let filename_id = StringId::from(ctx.filename);
+		let proc_map_index = proc_instance.proc.0 as usize;
+		let line = ctx.line as usize;
 
+		let mut known_file_name: Option<String> = None;
+		for context in &mut self.contexts {
+			match &known_file_name {
+				Some(file_name) => {
+					context.process_dbg_line(filename_id, proc_map_index, line, Some(file_name));
+				},
+				None => {
+					let processed_file_name = context.process_dbg_line(filename_id, proc_map_index, line, None);
+					if let Some((file_name, valid)) = processed_file_name {
+						if !valid {
+							break;
+						}
+
+						known_file_name = Some(file_name)
+					}
+				}
+			}
+		}
+	}
+
+	fn finalize_context(&mut self, output_file_name: &String) -> Result<bool, Error> {
+		let mut remove_index_option = None;
+		let mut result = Ok(());
+		for (i, context) in self.contexts.iter().enumerate() {
+			if context.output_file_name == *output_file_name {
+				remove_index_option = Some(i);
+				result = context.finalize();
+				break;
+			}
+		}
+
+		if let Some(remove_index) = remove_index_option {
+			self.contexts.remove(remove_index);
+			if let Err(error) = result {
+				return Err(error);
+			}
+
+			return Ok(true);
+		}
+
+		Ok(false)
+	}
+
+	fn finalize(&mut self) -> Result<(), Vec<Error>> {
+		let mut errors_option = None;
+		for context in &self.contexts {
+			let result = context.finalize();	// dropping the results because what can ya do?
+			if let Err(error) = result {
+				match &mut errors_option {
+					None => {
+						let mut new_error_vec = Vec::new();
+						new_error_vec.push(error);
+						errors_option = Some(new_error_vec);
+					},
+					Some(existing_vec) => {
+						existing_vec.push(error);
+					}
+				}
+			}
+		}
+
+		self.contexts.clear();
+
+		if let Some(errors) = errors_option {
+			return Err(errors);
+		}
+
+		Ok(())
+	}
+}
+
+impl TrackerContext {
+	fn process_dbg_line(
+		&mut self,
+		filename_id: StringId,
+		proc_map_index: usize,
+		line: usize,
+		known_file_name: Option<&String>) -> Option<(String, bool)> {
 		let needs_extending = self.proc_id_map.len() < proc_map_index + 1;
 
 		if !needs_extending {
@@ -141,31 +304,41 @@ impl Tracker {
 				}
 
 				hit_map[i] = current_hits + 1;
-				return;
+				return None;
 			}
 		}
 
 		// Slow: Need to lookup based on filename and create proc entry
-		let mut file_name;
-		unsafe {
-			// TODO reverse this when not debugging
-			file_name = StringRef::from_id(ctx.filename).to_string();
-		}
+		let file_name;
+		let using_local_file_name = known_file_name.is_none();
+		let return_value;
+		if using_local_file_name {
+			let quoted_file_name;
+			unsafe {
+				quoted_file_name = StringRef::from_id(filename_id).to_string();
+			}
 
-		// strip quotes
-		file_name = file_name[1..file_name.len() - 1].to_string();
+			// strip quotes
+			let local_file_name = quoted_file_name[1..quoted_file_name.len() - 1].to_string();
 
-		// WHY BYOND? WHY
-		// Procs, datums, random-ass strings... Just why?
-		if !file_name.ends_with(".dm") {
-			return;
+			// WHY BYOND? WHY
+			// Procs, datums, random-ass strings... Just why?
+			if !local_file_name.ends_with(".dm") {
+				return Some((local_file_name, false));
+			}
+
+			return_value = Some((local_file_name, true));
+			file_name = &return_value.as_ref().unwrap().0;
+		} else {
+			file_name = known_file_name.unwrap();
+			return_value = None;
 		}
 
 		if needs_extending {
 			self.proc_id_map.resize(proc_map_index + 1, None);
 		}
 
-		match self.filename_map.get(&file_name) {
+		match self.filename_map.get(file_name) {
 			Some(hit_map_cell) => {
 				let mut hit_map = hit_map_cell.borrow_mut();
 				if hit_map.len() < line {
@@ -182,7 +355,6 @@ impl Tracker {
 				hit_map[i] = current_hits + 1;
 
 				self.proc_id_map[proc_map_index] = Some(hit_map_cell.clone());
-				return;
 			},
 			None => {
 				// Slower: Need to insert both file and proc
@@ -201,13 +373,15 @@ impl Tracker {
 				hit_map[i] = current_hits + 1;
 
 				let hit_map_rc = Rc::new(RefCell::new(hit_map));
-				self.filename_map.insert(file_name, hit_map_rc.clone());
+				self.filename_map.insert(file_name.clone(), hit_map_rc.clone());
 				self.proc_id_map[proc_map_index] = Some(hit_map_rc);
 			}
 		}
+
+		return_value
 	}
 
-	pub fn finalize(&mut self) {
+	fn finalize(&self) -> Result<(), Error> {
 		let result_tuples: Vec<ResultTuple> = self.filename_map.iter().map(|(file_name, hit_map)|{
 			let mut new_map = BTreeMap::<u32, u64>::new();
 			for (line_minus_one, hits) in hit_map.borrow().iter().enumerate() {
@@ -231,6 +405,25 @@ impl Tracker {
 		})
 		.collect();
 
-		output_cobertura(None, &result_tuples, Some(Path::new("auxtools_coverage.xml")), false);
+		let output_path = Path::new(&self.output_file_name);
+		let mut path_buf = output_path.to_path_buf();
+		if path_buf.pop() {
+			let create_dir_result = create_dir_all(path_buf);
+			if let Err(create_dir_error) = create_dir_result {
+				return Err(create_dir_error);
+			}
+		}
+
+		// reee wtf mozilla, what is this shitty rust?
+		let result = catch_unwind(|| {
+			output_cobertura(None, &result_tuples, Some(output_path), false);
+		});
+
+		if result.is_err() {
+			// bruh what do we even do
+			return Err(Error::last_os_error());
+		}
+
+		Ok(())
 	}
 }
