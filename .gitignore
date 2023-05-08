@@ -1,5 +1,5 @@
 /target
-/.vscode/launch.json
+/.vscode
 *.o
 *.dmb
 *.int
