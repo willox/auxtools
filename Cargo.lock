@@ -793,7 +793,6 @@ dependencies = [
  "clap 3.2.25",
  "detour",
  "dmasm",
- "grcov",
  "instruction_hooking",
  "lazy_static",
  "libc",

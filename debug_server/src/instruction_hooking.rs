@@ -1,4 +1,4 @@
-use std::{cell::UnsafeCell};
+use std::cell::UnsafeCell;
 use instruction_hooking::{InstructionHook, disassemble_env::{DisassembleEnv, self}};
 use crate::{server_types::{BreakpointReason, ContinueKind}, server::Server};
 use crate::DEBUG_SERVER;
@@ -202,7 +202,6 @@ fn handle_runtime(error: &str) {
 }
 
 impl InstructionHook for Server {
-// Handles any instruction BYOND tries to execute.
 	fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
 		// Always handle the deferred instruction replacement first - everything else will depend on it
 		unsafe {

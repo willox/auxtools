@@ -95,7 +95,7 @@ pub struct Server {
 	in_eval: bool,
 	eval_error: Option<String>,
 	conditional_breakpoints: HashMap<(raw_types::procs::ProcId, u16), String>,
-	app: Command<'static>
+	app: Command<'static>,
 }
 
 struct ServerThread {
@@ -103,7 +103,6 @@ struct ServerThread {
 }
 
 impl Server {
-
 	pub fn setup_app() -> Command<'static> {
 		Command::new("Auxtools Debug Server")
 			.version("2.2.2")
@@ -203,7 +202,7 @@ impl Server {
 			in_eval: false,
 			eval_error: None,
 			conditional_breakpoints: HashMap::new(),
-			app: Self::setup_app()
+			app: Self::setup_app(),
 		})
 	}
 

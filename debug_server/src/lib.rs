@@ -21,7 +21,7 @@ use mem_profiler_stub as mem_profiler;
 pub(crate) use ::instruction_hooking::disassemble_env::DisassembleEnv;
 
 use std::{
-	cell::{UnsafeCell},
+	cell::UnsafeCell,
 	net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
@@ -57,7 +57,7 @@ struct DebugServerInstructionHook<'a> {
 
 impl InstructionHook for DebugServerInstructionHook<'static> {
     fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
-        if let Some(debug_server) = self.debug_server.get_mut(){
+        if let Some(debug_server) = self.debug_server.get_mut() {
 			debug_server.handle_instruction(ctx);
 		}
     }
