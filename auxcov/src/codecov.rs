@@ -11,10 +11,9 @@ use auxtools::*;
 use auxtools::raw_types::strings::StringId;
 use dmasm::Instruction;
 
-use grcov::{output_cobertura, CovResult, ResultTuple};
-use rustc_hash::FxHashMap;
-
-use crate::COVERAGE_TRACKER;
+use grcov::{output_cobertura, CovResult, ResultTuple, FunctionMap};
+use instruction_hooking::InstructionHook;
+use instruction_hooking::disassemble_env::DisassembleEnv;
 
 struct TrackerContext {
 	output_file_name: String,
@@ -28,88 +27,8 @@ pub struct Tracker {
 	total_procs: u32
 }
 
-#[hook("/proc/start_code_coverage")]
-fn start_code_coverage(coverage_file: Value) {
-	let coverage_file_string_result = coverage_file.as_string();
-	if let Err(runtime) = coverage_file_string_result {
-		return Err(runtime);
-	}
-
-	let coverage_file_string = coverage_file_string_result.unwrap();
-
-	let mut init_result = false;
-	COVERAGE_TRACKER.with(|tracker_cell|{
-		let mut tracker_option = tracker_cell.borrow_mut();
-		match tracker_option.as_mut() {
-			Some(existing_tracker) => {
-				init_result = existing_tracker.init_context(coverage_file_string.clone())
-			},
-			None => {
-				let mut created_tracker = Tracker::new();
-				init_result = created_tracker.init_context(coverage_file_string.clone());
-				tracker_option.replace(created_tracker);
-			}
-		}
-	});
-
-	if !init_result {
-		return Err(runtime!(
-			"A code coverage context for {} already exists!",
-			coverage_file_string
-		));
-	}
-
-	Ok(Value::null())
-}
-
-#[hook("/proc/stop_code_coverage")]
-fn stop_code_coverage(coverage_file: Value) {
-	let coverage_file_string_result = coverage_file.as_string();
-	if let Err(runtime) = coverage_file_string_result {
-		return Err(runtime);
-	}
-
-	let coverage_file_string = coverage_file_string_result.unwrap();
-
-	COVERAGE_TRACKER.with(|tracker_cell|{
-		let mut tracker_option = tracker_cell.borrow_mut();
-		match tracker_option.as_mut() {
-			Some(tracker) => {
-				let result = tracker.finalize_context(&coverage_file_string);
-				match result {
-					Ok(had_entry) => {
-						if !had_entry {
-							return Err(runtime!(
-								"A code coverage context for {} does not exist!",
-								coverage_file_string
-							));
-						}
-
-						Ok(Value::null())
-					},
-					Err(error) => Err(runtime!(
-						"A error occurred while trying to save the coverage file: {}",
-						error
-					))
-				}
-			},
-			None => Err(runtime!("Code coverage not initialized!"))
-		}
-	})
-}
-
-#[shutdown]
-fn code_coverage_writeout() {
-	COVERAGE_TRACKER.with(|tracker_cell|{
-		let tracker_option = tracker_cell.replace(None);
-		if let Some(mut tracker) = tracker_option {
-			let _result = tracker.finalize(); // dropping the result here because what can ya do?
-		}
-	});
-}
-
 impl Tracker {
-	fn new() -> Tracker {
+	pub fn new() -> Tracker {
 		let mut hittable_lines = HashMap::<String, HashSet<u32>>::new();
 		let mut i: u32 = 0;
 		while let Some(proc) = Proc::from_id(raw_types::procs::ProcId(i)) {
@@ -122,7 +41,7 @@ impl Tracker {
 				bytecode = proc.bytecode().to_vec();
 			}
 
-			let mut env = crate::disassemble_env::DisassembleEnv;
+			let mut env = DisassembleEnv;
 			let (nodes, _error) = dmasm::disassembler::disassemble(&bytecode[..], &mut env);
 
 			for node in nodes {
@@ -161,7 +80,7 @@ impl Tracker {
 		}
 	}
 
-	fn init_context(&mut self, output_file_name: String) -> bool {
+	pub fn init_context(&mut self, output_file_name: String) -> bool {
 		if self.contexts.iter().any(|context| context.output_file_name == *output_file_name) {
 			return false;
 		}
@@ -229,7 +148,7 @@ impl Tracker {
 		}
 	}
 
-	fn finalize_context(&mut self, output_file_name: &String) -> Result<bool, Error> {
+	pub fn finalize_context(&mut self, output_file_name: &String) -> Result<bool, Error> {
 		let mut remove_index_option = None;
 		let mut result = Ok(());
 		for (i, context) in self.contexts.iter().enumerate() {
@@ -278,6 +197,25 @@ impl Tracker {
 
 		Ok(())
 	}
+}
+
+impl Drop for Tracker {
+    fn drop(&mut self) {
+		let _result = self.finalize(); // dropping the result here because what can ya do?
+    }
+}
+
+impl InstructionHook for Tracker {
+    fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
+        let ctx_ref;
+		let proc_instance_ref;
+		unsafe {
+			ctx_ref = &*ctx;
+			proc_instance_ref = &*ctx_ref.proc_instance;
+		}
+
+		self.process_dbg_line(ctx_ref, proc_instance_ref);
+    }
 }
 
 impl TrackerContext {
@@ -399,7 +337,7 @@ impl TrackerContext {
 				CovResult {
 					lines: new_map,
 					branches: BTreeMap::default(),
-					functions: FxHashMap::default(),
+					functions: FunctionMap::default(),
 				}
 			)
 		})

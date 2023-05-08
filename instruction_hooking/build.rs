@@ -23,5 +23,5 @@ fn main() {
 		other => panic!("don't know how to build hook for family={:?}", other),
 	}
 
-	build.compile("debug-server-cpp");
+	build.compile("instruction-hooking-cpp");
 }

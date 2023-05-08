@@ -169,6 +169,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
+name = "auxcov"
+version = "1.0.0"
+dependencies = [
+ "auxtools",
+ "dmasm",
+ "grcov",
+ "instruction_hooking",
+]
+
+[[package]]
 name = "auxtest"
 version = "0.1.0"
 dependencies = [
@@ -776,24 +786,19 @@ dependencies = [
 
 [[package]]
 name = "debug_server"
-version = "2.2.3"
+version = "2.2.4"
 dependencies = [
  "auxtools",
  "bincode",
- "cc",
  "clap 3.2.25",
  "detour",
  "dmasm",
  "grcov",
+ "instruction_hooking",
  "lazy_static",
  "libc",
- "quick-xml",
  "region 3.0.0",
- "rustc-hash",
  "serde",
- "serde_json",
- "symbolic-common",
- "symbolic-demangle",
  "winapi 0.3.9",
 ]
 
@@ -1395,6 +1400,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a5bbe824c507c5da5956355e86a746d82e0e1464f65d862cc5e71da70e94b2c"
 dependencies = [
  "cfg-if 1.0.0",
+]
+
+[[package]]
+name = "instruction_hooking"
+version = "1.0.0"
+dependencies = [
+ "auxtools",
+ "cc",
+ "detour",
+ "dmasm",
+ "libc",
+ "symbolic-common",
+ "symbolic-demangle",
+ "winapi 0.3.9",
 ]
 
 [[package]]
