@@ -77,9 +77,6 @@ impl Proc {
 			return None;
 		}
 
-		let mut entry: *mut raw_types::strings::StringEntry = std::ptr::null_mut();
-		assert_eq!(raw_types::funcs::get_string_table_entry(&mut entry, file_id), 1);
-
 		Some(StringRef::from_id(file_id))
 	}
 
