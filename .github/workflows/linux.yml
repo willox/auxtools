@@ -1,0 +1,26 @@
+name: Linux
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Build
+    - uses: actions/checkout@v3
+    - uses: cachix/install-nix-action@v20
+      with:
+        github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      run: nix build
+
+    - name: Upload Artifacts
+    - uses: actions/upload-artifact@v2
+      with:
+        path: |
+          results/lib/libauxcov.so
+          results/lib/libauxtest.so
+          results/lib/libdebug_server.so
