@@ -2,7 +2,7 @@
 name = "auxtools"
 description = "library for interfacing with low-level BYOND internals"
 version = "0.1.0"
-authors = ["William Wallace <me@wiox.me>"]
+authors = ["Sophie Wallace <sophie@wiox.me>"]
 license = "MIT"
 repository = "https://github.com/willox/auxtools"
 edition = "2018"
