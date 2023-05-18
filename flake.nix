@@ -1,10 +1,12 @@
 {
   nixConfig.extra-substituters = [
     "https://nix-community.cachix.org"
+    "https://auxtools.cachix.org"
   ];
 
   nixConfig.extra-trusted-public-keys = [
     "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    "auxtools.cachix.org-1:vh1xH58ZpS5hn7IPOY2fHw1F2QqMxwsdDks/bouqetI="
   ];
 
   inputs = {
