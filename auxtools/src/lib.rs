@@ -119,7 +119,7 @@ signatures! {
 	get_string_table_entry => universal_signature!("55 89 E5 83 EC 18 8B 45 ?? 39 05 ?? ?? ?? ?? 76 ?? 8B 15 ?? ?? ?? ?? 8B 04 ??"),
 	call_datum_proc_by_name => version_dependent_signature!(
 		1606.. => "55 89 E5 57 56 89 CE 53 89 D3 83 EC ?? 0F B6 55 ?? 89 45 ?? 8B 45 ?? 8B 7D ?? C6 45 E7 ?? 0F B6 CA 89 45 B0 8D 45 ?? 89 44 24 ?? 8B 45 ?? 89 ?? BC 31 C9 88 ?? BB 8B 55 ?? C7 44 24 ?? 01 00 00 00",
-		..1606 => "55 89 E5 57 56 53 83 EC ?? 8B 55 ?? 0F B6 45 ?? 8B 4D ?? 8B 5D ?? 89 14 24 8B 55 ?? 88 45 ?? 0F B6 F8 8B 75 ?? 8D 45 ?? 89 44 24 ?? 89 F8 89 4C 24 ?? 31 C9 C6 45 ?? 00 C7 44 24 ?? 01 00 00 00"
+		..1606 => "55 89 E5 57 56 53 83 EC 5C 8B 55 ?? 0F B6 45 ?? 8B 4D ?? 8B 5D ?? 89 14 24 8B 55 ?? 88 45 ?? 0F B6 F8 8B 75 ?? 8D 45 ?? 89 44 24 ?? 89 F8 89 4C 24 ?? 31 C9 C6 45 ?? 00 C7 44 24 ?? 01 00 00 00"
 	),
 
 	dec_ref_count => version_dependent_signature!(
@@ -129,7 +129,7 @@ signatures! {
 	inc_ref_count => universal_signature!(call, "E8 ?? ?? ?? ?? 8B 43 ?? 80 48 ?? 04 8B 5D ?? 8B 75 ?? 8B 7D ?? 89 EC 5D"),
 	get_assoc_element => version_dependent_signature!(
 		1602.. => "55 89 E5 83 EC ?? ?? ?? ?? ?? 5D F4 89 D3 89 75 F8 89 D6 89 7D FC 89 CF 89 45 B4 0F 84 B7 00 00 ??",
-		..1602 => "55 89 E5 83 EC ?? 89 4D ?? B9 7B 00 00 00 89 5D ?? 89 D3 89 75 ?? 89 C6"
+		..1602 => "55 89 E5 83 EC 68 89 4D ?? B9 7B 00 00 00 89 5D ?? 89 D3 89 75 ?? 89 C6"
 	),
 
 	set_assoc_element => version_dependent_signature!(
