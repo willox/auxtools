@@ -350,14 +350,15 @@ impl Server {
 		for i in 1..=len {
 			let key = list.get(i)?;
 
-			if let Ok(value) = list.get(&key) {
-				if value.raw.tag != raw_types::values::ValueTag::Null {
-					// assoc entry
+			// assoc entry
+			if key.raw.tag != raw_types::values::ValueTag::Number {
+				if let Ok(value) = list.get(&key) {
 					variables.push(Variable {
 						name: format!("[{}]", i),
 						value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
 						variables: Some(state.get_ref(Variables::ListPair { key, value })),
 					});
+
 					continue;
 				}
 			}

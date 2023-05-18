@@ -19,7 +19,7 @@ mod string;
 mod string_intern;
 mod value;
 mod value_from;
-mod version;
+pub mod version;
 mod weak_value;
 
 use init::{get_init_level, set_init_level, InitLevel};

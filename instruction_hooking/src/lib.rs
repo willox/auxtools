@@ -5,6 +5,19 @@ use std::{cell::RefCell, ffi::c_void, any::Any};
 use auxtools::*;
 use detour::RawDetour;
 
+#[cfg(windows)]
+signatures! {
+	execute_instruction => version_dependent_signature!(
+		1590.. => "0F B7 48 ?? 8B ?? ?? 8B F1 8B ?? ?? 81 ?? ?? ?? 00 00 0F 87 ?? ?? ?? ??",
+		..1590 => "0F B7 48 ?? 8B 78 ?? 8B F1 8B 14 ?? 81 FA ?? ?? 00 00 0F 87 ?? ?? ?? ??"
+	)
+}
+
+#[cfg(unix)]
+signatures! {
+	execute_instruction => universal_signature!(call, "0F B7 47 ?? 8B 57 ?? 0F B7 D8 8B 0C ?? 81 F9 ?? ?? 00 00 77 ?? FF 24 8D ?? ?? ?? ??")
+}
+
 // stackoverflow copypasta https://old.reddit.com/r/rust/comments/kkap4e/how_to_cast_a_boxdyn_mytrait_to_an_actual_struct/
 pub trait InstructionHookToAny: 'static {
     fn as_any(&mut self) -> &mut dyn Any;
@@ -24,8 +37,6 @@ thread_local! {
 	pub static INSTRUCTION_HOOKS: RefCell<Vec<Box<dyn InstructionHook>>> = RefCell::new(Vec::new());
 }
 
-static mut EXECUTE_INSTRUCTION: *const c_void = std::ptr::null();
-
 extern "C" {
 	// Trampoline to the original un-hooked BYOND execute_instruction code
 	static mut execute_instruction_original: *const c_void;
@@ -38,39 +49,19 @@ extern "C" {
 fn instruction_hooking_init() -> Result<(), String> {
 	let byondcore = sigscan::Scanner::for_module(BYONDCORE).unwrap();
 
-	if cfg!(windows) {
-		let ptr = byondcore
-			.find(signature!(
-				"0F B7 48 ?? 8B 78 ?? 8B F1 8B 14 ?? 81 FA ?? ?? 00 00 0F 87 ?? ?? ?? ??"
-			))
-			.ok_or_else(|| "Couldn't find EXECUTE_INSTRUCTION")?;
-
-		unsafe {
-			EXECUTE_INSTRUCTION = ptr as *const c_void;
-		}
-	}
-
-	if cfg!(unix) {
-		let ptr = byondcore
-			.find(signature!(
-				"0F B7 47 ?? 8B 57 ?? 0F B7 D8 8B 0C ?? 81 F9 ?? ?? 00 00 77 ?? FF 24 8D ?? ?? ?? ??"
-			))
-			.ok_or_else(|| "Couldn't find EXECUTE_INSTRUCTION")?;
-
-		unsafe {
-			EXECUTE_INSTRUCTION = ptr as *const c_void;
-		}
+	find_signatures_result! { byondcore,
+		execute_instruction
 	}
 
 	unsafe {
 		let hook = RawDetour::new(
-			EXECUTE_INSTRUCTION as *const (),
+			execute_instruction as *const (),
 			execute_instruction_hook as *const (),
 		)
-		.map_err(|_| "Couldn't detour EXECUTE_INSTRUCTION")?;
+		.map_err(|_| "Couldn't detour execute_instruction")?;
 
 		hook.enable()
-			.map_err(|_| "Couldn't enable EXECUTE_INSTRUCTION detour")?;
+			.map_err(|_| "Couldn't enable execute_instruction detour")?;
 
 		execute_instruction_original = std::mem::transmute(hook.trampoline());
 
