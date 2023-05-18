@@ -1,7 +1,7 @@
 use std::os::raw::c_char;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub struct StringId(pub u32);
 
 impl StringId {
