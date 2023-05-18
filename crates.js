@@ -1,0 +1,1 @@
+window.ALL_CRATES = ["auxcov","auxtest","auxtools","auxtools_impl","byond_get","debug_server","instruction_hooking","test_runner"];

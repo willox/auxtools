@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_bytecode","get_locals","get_parameters","set_bytecode"],"struct":["BytecodeId","Bytecode_V1","Bytecode_V2","LocalsId","Locals_V1","Locals_V2","MiscId","ParametersData","ParametersId","Parameters_V1","Parameters_V2"],"trait":["AsMiscId"],"union":["Misc_V1","Misc_V2"]};
