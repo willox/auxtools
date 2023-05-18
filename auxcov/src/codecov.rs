@@ -7,24 +7,24 @@ use std::panic::catch_unwind;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use auxtools::*;
 use auxtools::raw_types::strings::StringId;
+use auxtools::*;
 use dmasm::Instruction;
 
-use grcov::{output_cobertura, CovResult, ResultTuple, FunctionMap};
-use instruction_hooking::InstructionHook;
+use grcov::{output_cobertura, CovResult, FunctionMap, ResultTuple};
 use instruction_hooking::disassemble_env::DisassembleEnv;
+use instruction_hooking::InstructionHook;
 
 struct TrackerContext {
 	output_file_name: String,
 	proc_id_map: Vec<Option<Rc<RefCell<Vec<u64>>>>>,
-	filename_map: HashMap::<String, Rc<RefCell<Vec<u64>>>>
+	filename_map: HashMap<String, Rc<RefCell<Vec<u64>>>>,
 }
 
 pub struct Tracker {
 	hittable_lines: HashMap<String, HashSet<u32>>,
 	contexts: Vec<TrackerContext>,
-	total_procs: u32
+	total_procs: u32,
 }
 
 impl Tracker {
@@ -53,7 +53,7 @@ impl Tracker {
 								Ok(string_ref) => current_file_option = Some(string_ref),
 								Err(_) => current_file_option = None,
 							}
-						},
+						}
 						Instruction::DbgLine(line) => {
 							if let Some(current_file) = &current_file_option {
 								let mut file_name = current_file.to_string();
@@ -64,10 +64,13 @@ impl Tracker {
 									continue;
 								}
 
-								hittable_lines.entry(file_name).or_insert(HashSet::new()).insert(line);
+								hittable_lines
+									.entry(file_name)
+									.or_insert(HashSet::new())
+									.insert(line);
 							}
 						}
-						_ => { }
+						_ => {}
 					}
 				}
 			}
@@ -76,19 +79,23 @@ impl Tracker {
 		Tracker {
 			hittable_lines,
 			contexts: Vec::new(),
-			total_procs: i
+			total_procs: i,
 		}
 	}
 
 	pub fn init_context(&mut self, output_file_name: String) -> bool {
-		if self.contexts.iter().any(|context| context.output_file_name == *output_file_name) {
+		if self
+			.contexts
+			.iter()
+			.any(|context| context.output_file_name == *output_file_name)
+		{
 			return false;
 		}
 
 		let mut context: TrackerContext = TrackerContext {
 			output_file_name,
 			proc_id_map: Vec::new(),
-			filename_map: HashMap::new()
+			filename_map: HashMap::new(),
 		};
 
 		context.proc_id_map.reserve(self.total_procs as usize);
@@ -119,7 +126,11 @@ impl Tracker {
 	}
 
 	// returns true if we need to pause
-	pub fn process_dbg_line(&mut self, ctx: &raw_types::procs::ExecutionContext, proc_instance: &raw_types::procs::ProcInstance) {
+	pub fn process_dbg_line(
+		&mut self,
+		ctx: &raw_types::procs::ExecutionContext,
+		proc_instance: &raw_types::procs::ProcInstance,
+	) {
 		if ctx.line == 0 || !ctx.filename.valid() {
 			return;
 		}
@@ -133,9 +144,10 @@ impl Tracker {
 			match &known_file_name {
 				Some(file_name) => {
 					context.process_dbg_line(filename_id, proc_map_index, line, Some(file_name));
-				},
+				}
 				None => {
-					let processed_file_name = context.process_dbg_line(filename_id, proc_map_index, line, None);
+					let processed_file_name =
+						context.process_dbg_line(filename_id, proc_map_index, line, None);
 					if let Some((file_name, valid)) = processed_file_name {
 						if !valid {
 							break;
@@ -174,14 +186,14 @@ impl Tracker {
 	fn finalize(&mut self) -> Result<(), Vec<Error>> {
 		let mut errors_option = None;
 		for context in &self.contexts {
-			let result = context.finalize();	// dropping the results because what can ya do?
+			let result = context.finalize(); // dropping the results because what can ya do?
 			if let Err(error) = result {
 				match &mut errors_option {
 					None => {
 						let mut new_error_vec = Vec::new();
 						new_error_vec.push(error);
 						errors_option = Some(new_error_vec);
-					},
+					}
 					Some(existing_vec) => {
 						existing_vec.push(error);
 					}
@@ -200,14 +212,14 @@ impl Tracker {
 }
 
 impl Drop for Tracker {
-    fn drop(&mut self) {
+	fn drop(&mut self) {
 		let _result = self.finalize(); // dropping the result here because what can ya do?
-    }
+	}
 }
 
 impl InstructionHook for Tracker {
-    fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
-        let ctx_ref;
+	fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
+		let ctx_ref;
 		let proc_instance_ref;
 		unsafe {
 			ctx_ref = &*ctx;
@@ -215,7 +227,7 @@ impl InstructionHook for Tracker {
 		}
 
 		self.process_dbg_line(ctx_ref, proc_instance_ref);
-    }
+	}
 }
 
 impl TrackerContext {
@@ -224,7 +236,8 @@ impl TrackerContext {
 		filename_id: StringId,
 		proc_map_index: usize,
 		line: usize,
-		known_file_name: Option<&String>) -> Option<(String, bool)> {
+		known_file_name: Option<&String>,
+	) -> Option<(String, bool)> {
 		let needs_extending = self.proc_id_map.len() < proc_map_index + 1;
 
 		if !needs_extending {
@@ -293,7 +306,7 @@ impl TrackerContext {
 				hit_map[i] = current_hits + 1;
 
 				self.proc_id_map[proc_map_index] = Some(hit_map_cell.clone());
-			},
+			}
 			None => {
 				// Slower: Need to insert both file and proc
 				let mut hit_map = Vec::<u64>::new();
@@ -311,7 +324,8 @@ impl TrackerContext {
 				hit_map[i] = current_hits + 1;
 
 				let hit_map_rc = Rc::new(RefCell::new(hit_map));
-				self.filename_map.insert(file_name.clone(), hit_map_rc.clone());
+				self.filename_map
+					.insert(file_name.clone(), hit_map_rc.clone());
 				self.proc_id_map[proc_map_index] = Some(hit_map_rc);
 			}
 		}
@@ -320,28 +334,31 @@ impl TrackerContext {
 	}
 
 	fn finalize(&self) -> Result<(), Error> {
-		let result_tuples: Vec<ResultTuple> = self.filename_map.iter().map(|(file_name, hit_map)|{
-			let mut new_map = BTreeMap::<u32, u64>::new();
-			for (line_minus_one, hits) in hit_map.borrow().iter().enumerate() {
-				if *hits == 0 {
-					continue;
+		let result_tuples: Vec<ResultTuple> = self
+			.filename_map
+			.iter()
+			.map(|(file_name, hit_map)| {
+				let mut new_map = BTreeMap::<u32, u64>::new();
+				for (line_minus_one, hits) in hit_map.borrow().iter().enumerate() {
+					if *hits == 0 {
+						continue;
+					}
+
+					new_map.insert((line_minus_one + 1).try_into().unwrap(), *hits - 1);
 				}
 
-				new_map.insert((line_minus_one + 1).try_into().unwrap(), *hits - 1);
-			}
-
-			let path = PathBuf::from(file_name);
-			(
-				path.clone(),
-				path,
-				CovResult {
-					lines: new_map,
-					branches: BTreeMap::default(),
-					functions: FunctionMap::default(),
-				}
-			)
-		})
-		.collect();
+				let path = PathBuf::from(file_name);
+				(
+					path.clone(),
+					path,
+					CovResult {
+						lines: new_map,
+						branches: BTreeMap::default(),
+						functions: FunctionMap::default(),
+					},
+				)
+			})
+			.collect();
 
 		let output_path = Path::new(&self.output_file_name);
 		let mut path_buf = output_path.to_path_buf();

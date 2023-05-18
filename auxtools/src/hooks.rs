@@ -41,12 +41,15 @@ extern "C" {
 
 struct Detours {
 	pub runtime_detour: Option<RawDetour>,
-	pub call_proc_detour: Option<RawDetour>
+	pub call_proc_detour: Option<RawDetour>,
 }
 
 impl Detours {
 	pub fn new() -> Self {
-		Self{ runtime_detour: None, call_proc_detour: None }
+		Self {
+			runtime_detour: None,
+			call_proc_detour: None,
+		}
 	}
 }
 
@@ -99,7 +102,7 @@ pub fn init() -> Result<(), String> {
 	Ok(())
 }
 
-pub fn shutdown(){
+pub fn shutdown() {
 	unsafe {
 		DETOURS.with(|detours_cell| {
 			let detours = detours_cell.borrow();

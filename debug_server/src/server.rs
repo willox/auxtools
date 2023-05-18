@@ -12,7 +12,7 @@ use std::{
 };
 
 use clap::{Arg, Command};
-use instruction_hooking::{disassemble_env};
+use instruction_hooking::disassemble_env;
 
 use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
@@ -350,15 +350,22 @@ impl Server {
 		for i in 1..=len {
 			let key = list.get(i)?;
 
-			if let Ok(value) = list.get(&key) {
-				if value.raw.tag != raw_types::values::ValueTag::Null {
-					// assoc entry
-					variables.push(Variable {
-						name: format!("[{}]", i),
-						value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
-						variables: Some(state.get_ref(Variables::ListPair { key, value })),
-					});
-					continue;
+			// assoc entry
+			if key.raw.tag != raw_types::values::ValueTag::Number {
+				if let Ok(value) = list.get(&key) {
+					if value.raw.tag != raw_types::values::ValueTag::Null {
+						variables.push(Variable {
+							name: format!("[{}]", i),
+							value: format!(
+								"{} = {}",
+								Self::stringify(&key),
+								Self::stringify(&value)
+							),
+							variables: Some(state.get_ref(Variables::ListPair { key, value })),
+						});
+
+						continue;
+					}
 				}
 			}
 

@@ -1,9 +1,15 @@
-use std::cell::UnsafeCell;
-use instruction_hooking::{InstructionHook, disassemble_env::{DisassembleEnv, self}};
-use crate::{server_types::{BreakpointReason, ContinueKind}, server::Server};
 use crate::DEBUG_SERVER;
+use crate::{
+	server::Server,
+	server_types::{BreakpointReason, ContinueKind},
+};
 use auxtools::*;
+use instruction_hooking::{
+	disassemble_env::{self, DisassembleEnv},
+	InstructionHook,
+};
 use lazy_static::lazy_static;
+use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
