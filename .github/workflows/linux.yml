@@ -10,11 +10,14 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
-    - name: Build
     - uses: actions/checkout@v3
+
+    - name: Install Nix
     - uses: cachix/install-nix-action@v20
       with:
         github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build
       run: nix build
 
     - name: Upload Artifacts
