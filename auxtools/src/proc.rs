@@ -66,6 +66,20 @@ impl Proc {
 		})
 	}
 
+	pub unsafe fn file_name(&self) -> Option<StringRef> {
+		let bytecode = self.bytecode();
+		if bytecode.len() < 2 || bytecode[0] != 0x84 {
+			return None;
+		}
+
+		let file_id = raw_types::strings::StringId(bytecode[0x01]);
+		if !file_id.valid() {
+			return None;
+		}
+
+		Some(StringRef::from_id(file_id))
+	}
+
 	pub fn parameter_names(&self) -> Vec<StringRef> {
 		unsafe {
 			let (data, count) = raw_types::misc::get_parameters((*self.entry).parameters);

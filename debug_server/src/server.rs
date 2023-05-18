@@ -12,6 +12,7 @@ use std::{
 };
 
 use clap::{Arg, Command};
+use instruction_hooking::{disassemble_env};
 
 use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
@@ -221,7 +222,7 @@ impl Server {
 
 				let bytecode = unsafe { proc.bytecode() };
 
-				let mut env = crate::disassemble_env::DisassembleEnv;
+				let mut env = disassemble_env::DisassembleEnv;
 				let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
 
 				for node in nodes {
@@ -261,7 +262,7 @@ impl Server {
 
 				let bytecode = unsafe { proc.bytecode() };
 
-				let mut env = crate::disassemble_env::DisassembleEnv;
+				let mut env = disassemble_env::DisassembleEnv;
 				let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
 
 				for node in nodes {
