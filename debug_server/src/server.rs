@@ -12,7 +12,7 @@ use std::{
 };
 
 use clap::{Arg, Command};
-use instruction_hooking::{disassemble_env};
+use instruction_hooking::disassemble_env;
 
 use super::server_types::*;
 use auxtools::raw_types::values::{ValueData, ValueTag};
@@ -356,7 +356,11 @@ impl Server {
 					if value.raw.tag != raw_types::values::ValueTag::Null {
 						variables.push(Variable {
 							name: format!("[{}]", i),
-							value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
+							value: format!(
+								"{} = {}",
+								Self::stringify(&key),
+								Self::stringify(&value)
+							),
 							variables: Some(state.get_ref(Variables::ListPair { key, value })),
 						});
 

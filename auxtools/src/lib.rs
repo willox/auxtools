@@ -23,27 +23,24 @@ pub mod version;
 mod weak_value;
 
 use init::{get_init_level, set_init_level, InitLevel};
-use sigscan::{Signature, SignatureMap, SignatureTreatment};
 
-pub use auxtools_impl::{hook, init, runtime_handler, shutdown, full_shutdown, pin_dll};
+pub use auxtools_impl::{full_shutdown, hook, init, pin_dll, runtime_handler, shutdown};
+/// Used by the [pin_dll] macro to set dll pinning
+pub use ctor;
 pub use hooks::{CompileTimeHook, RuntimeErrorHook};
-pub use init::{FullInitFunc, PartialInitFunc, PartialShutdownFunc, FullShutdownFunc};
+pub use init::{FullInitFunc, FullShutdownFunc, PartialInitFunc, PartialShutdownFunc};
+/// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
+pub use inventory;
 pub use list::List;
 pub use proc::Proc;
 pub use raw_types::variables::VariableNameIdTable;
 pub use runtime::{DMResult, Runtime};
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, Ordering};
 pub use string::StringRef;
 pub use string_intern::InternedString;
 pub use value::Value;
 pub use weak_value::WeakValue;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::ops::RangeBounds;
-use once_cell::sync::Lazy;
-/// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
-pub use inventory;
-/// Used by the [pin_dll] macro to set dll pinning
-pub use ctor;
 
 // We need winapi to call GetModuleHandleExW which lets us prevent our DLL from unloading.
 #[cfg(windows)]
@@ -164,7 +161,6 @@ pub static PIN_DLL: AtomicBool = AtomicBool::new(true);
 #[cfg(windows)]
 fn pin_dll() -> Result<(), ()> {
 	unsafe {
-
 		use winapi::um::libloaderapi::{
 			GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
 			GET_MODULE_HANDLE_EX_FLAG_PIN,
@@ -173,14 +169,10 @@ fn pin_dll() -> Result<(), ()> {
 
 		let flags = match PIN_DLL.load(Ordering::Relaxed) {
 			true => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-			false => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+			false => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
 		};
 
-		let res = GetModuleHandleExW(
-			flags,
-			pin_dll as *const _,
-			&mut module,
-		);
+		let res = GetModuleHandleExW(flags, pin_dll as *const _, &mut module);
 
 		if res == 0 {
 			return Err(());

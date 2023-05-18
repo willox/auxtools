@@ -60,7 +60,12 @@ impl Scanner {
 			memory_len: 0,
 			memory_area: None,
 		};
-		unsafe { dl_iterate_phdr(Some(dl_phdr_callback), &mut data as *mut CallbackData as *mut c_void) };
+		unsafe {
+			dl_iterate_phdr(
+				Some(dl_phdr_callback),
+				&mut data as *mut CallbackData as *mut c_void,
+			)
+		};
 
 		let mut data_current = data.memory_start as *mut u8;
 		let data_end = (data.memory_start + data.memory_len) as *mut u8;

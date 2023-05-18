@@ -1,6 +1,6 @@
 pub mod disassemble_env;
 
-use std::{cell::RefCell, ffi::c_void, any::Any};
+use std::{any::Any, cell::UnsafeCell, ffi::c_void};
 
 use auxtools::*;
 use detour::RawDetour;
@@ -20,22 +20,21 @@ signatures! {
 
 // stackoverflow copypasta https://old.reddit.com/r/rust/comments/kkap4e/how_to_cast_a_boxdyn_mytrait_to_an_actual_struct/
 pub trait InstructionHookToAny: 'static {
-    fn as_any(&mut self) -> &mut dyn Any;
+	fn as_any(&mut self) -> &mut dyn Any;
 }
 
 impl<T: 'static> InstructionHookToAny for T {
-    fn as_any(&mut self) -> &mut dyn Any {
-        self
-    }
+	fn as_any(&mut self) -> &mut dyn Any {
+		self
+	}
 }
 
-pub trait InstructionHook : InstructionHookToAny {
+pub trait InstructionHook: InstructionHookToAny {
 	fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext);
 }
 
-thread_local! {
-	pub static INSTRUCTION_HOOKS: RefCell<Vec<Box<dyn InstructionHook>>> = RefCell::new(Vec::new());
-}
+pub static mut INSTRUCTION_HOOKS: UnsafeCell<Vec<Box<dyn InstructionHook>>> =
+	UnsafeCell::new(Vec::new());
 
 extern "C" {
 	// Trampoline to the original un-hooked BYOND execute_instruction code
@@ -74,8 +73,9 @@ fn instruction_hooking_init() -> Result<(), String> {
 
 #[shutdown]
 fn instruction_hooking_shutdown() {
-	INSTRUCTION_HOOKS.with(|hooks|
-		hooks.borrow_mut().clear());
+	unsafe {
+		INSTRUCTION_HOOKS.get_mut().clear();
+	}
 }
 
 // Handles any instruction BYOND tries to execute.
@@ -84,13 +84,11 @@ fn instruction_hooking_shutdown() {
 extern "C" fn handle_instruction(
 	ctx: *mut raw_types::procs::ExecutionContext,
 ) -> *const raw_types::procs::ExecutionContext {
-	INSTRUCTION_HOOKS.with(|hooks_cell|{
-		let mut hooks_ref = hooks_cell.borrow_mut();
-		let iter = hooks_ref.iter_mut();
-		for vec_box in iter {
+	unsafe {
+		for vec_box in &mut *INSTRUCTION_HOOKS.get() {
 			vec_box.handle_instruction(ctx);
 		}
-	});
+	}
 
 	ctx
 }

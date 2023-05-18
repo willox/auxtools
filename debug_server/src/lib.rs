@@ -14,7 +14,7 @@ mod mem_profiler;
 #[cfg(not(windows))]
 mod mem_profiler_stub;
 
-use ::instruction_hooking::{INSTRUCTION_HOOKS, InstructionHook};
+use ::instruction_hooking::{InstructionHook, INSTRUCTION_HOOKS};
 #[cfg(not(windows))]
 use mem_profiler_stub as mem_profiler;
 
@@ -52,15 +52,15 @@ fn get_default_port() -> u16 {
 }
 
 struct DebugServerInstructionHook<'a> {
-	debug_server: &'a mut UnsafeCell<Option<server::Server>>
+	debug_server: &'a mut UnsafeCell<Option<server::Server>>,
 }
 
 impl InstructionHook for DebugServerInstructionHook<'static> {
-    fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
-        if let Some(debug_server) = self.debug_server.get_mut() {
+	fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
+		if let Some(debug_server) = self.debug_server.get_mut() {
 			debug_server.handle_instruction(ctx);
 		}
-    }
+	}
 }
 
 #[hook("/proc/enable_debugging")]
@@ -100,16 +100,13 @@ fn enable_debugging(mode: Value, port: Value) {
 	unsafe {
 		*DEBUG_SERVER.get() = Some(server);
 		debug_server_instruction_hook = DebugServerInstructionHook {
-			debug_server: &mut DEBUG_SERVER
+			debug_server: &mut DEBUG_SERVER,
 		};
+
+		INSTRUCTION_HOOKS
+			.get_mut()
+			.push(Box::new(debug_server_instruction_hook));
 	}
-
-	let hook_box = Box::new(debug_server_instruction_hook);
-
-	INSTRUCTION_HOOKS.with(|hooks|{
-		let mut hooks_ref = hooks.borrow_mut();
-		hooks_ref.push(hook_box);
-	});
 
 	Ok(Value::null())
 }
