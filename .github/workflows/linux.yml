@@ -12,28 +12,18 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Cache Nix store
-      uses: actions/cache@v3
-      id: nix-cache
-      with:
-        path: /tmp/nix-cache
-        key: nix-cache-${{ hashFiles('flake.nix') }}-${{ hashFiles('flake.lock') }}
-
     - name: Install Nix
       uses: cachix/install-nix-action@v20
       with:
         github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: "Import Nix store"
-      if: "steps.nix-cache.outputs.cache-hit == 'true'"
-      run: "nix-store --import < /tmp/nix-cache"
+    - uses: cachix/cachix-action@v12
+      with:
+        name: auxtools
+        authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
     - name: Build
       run: nix build --accept-flake-config
-
-    - name: "Export Nix store"
-      if: "steps.nix-cache.outputs.cache-hit != 'true'"
-      run: "nix-store --export $(find /nix/store -maxdepth 1 -name '*-*') > /tmp/nix-cache"
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
