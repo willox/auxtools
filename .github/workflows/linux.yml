@@ -32,7 +32,7 @@ jobs:
       run: nix build --accept-flake-config
 
     - name: "Export Nix store"
-      if: "steps.nix-cache.outputs.cache-hit == 'false'"
+      if: "steps.nix-cache.outputs.cache-hit != 'true'"
       run: "nix-store --export $(find /nix/store -maxdepth 1 -name '*-*') > /tmp/nix-cache"
 
     - name: Upload artifacts
