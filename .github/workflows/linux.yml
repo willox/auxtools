@@ -18,7 +18,7 @@ jobs:
         github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build
-      run: nix build
+      run: nix build --accept-flake-config
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v2
