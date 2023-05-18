@@ -353,13 +353,15 @@ impl Server {
 			// assoc entry
 			if key.raw.tag != raw_types::values::ValueTag::Number {
 				if let Ok(value) = list.get(&key) {
-					variables.push(Variable {
-						name: format!("[{}]", i),
-						value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
-						variables: Some(state.get_ref(Variables::ListPair { key, value })),
-					});
+					if value.raw.tag != raw_types::values::ValueTag::Null {
+						variables.push(Variable {
+							name: format!("[{}]", i),
+							value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
+							variables: Some(state.get_ref(Variables::ListPair { key, value })),
+						});
 
-					continue;
+						continue;
+					}
 				}
 			}
 
