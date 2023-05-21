@@ -1,3 +1,5 @@
+//! For your DM code coverage """needs"""
+
 mod codecov;
 
 use codecov::Tracker;
@@ -100,3 +102,5 @@ fn stop_code_coverage(coverage_file: Value) {
 
 	result
 }
+
+pub fn anti_dce_stub() {}

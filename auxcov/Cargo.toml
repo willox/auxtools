@@ -6,7 +6,7 @@ edition = "2018"
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
 
 [dependencies]
 auxtools = { path = "../auxtools" }
