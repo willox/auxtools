@@ -53,7 +53,7 @@ System libraries:
     ```sh
     sudo dpkg --add-architecture i386
     sudo apt-get update
-    sudo apt-get install build-essential g++-multilib libc6-i386 libstdc++6:i386
+    sudo apt-get install build-essential g++-multilib libc6-i386 libstdc++6:i386 pkg-config libssl-dev libssl-dev:i386
     ```
 
 * Other Linux distributions install the appropriate **32-bit development** and **32-bit runtime** packages.
