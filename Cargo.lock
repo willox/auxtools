@@ -786,7 +786,7 @@ dependencies = [
 
 [[package]]
 name = "debug_server"
-version = "2.2.4"
+version = "2.3.0"
 dependencies = [
  "auxtools",
  "bincode",
