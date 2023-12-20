@@ -6,7 +6,6 @@ members = [
 	"debug_server",
 	"instruction_hooking",
 	"tests/auxtest",
-	"tests/byond_get",
 	"tests/test_runner",
 ]
 
