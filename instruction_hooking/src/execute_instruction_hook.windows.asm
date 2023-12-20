@@ -2,22 +2,24 @@
 .MODEL FLAT, C
 .CODE
 
-EXTERN execute_instruction_original : PTR
-handle_instruction PROTO, opcode: DWORD
+EXTERN _execute_instruction_original : DWORD
+extern _handle_instruction : DWORD
 
 ; EDI = [CURRENT_EXECUTION_CONTEXT]
-execute_instruction_hook PROC PUBLIC
+_execute_instruction_hook PROC
   ; Give rust a chance to handle the instruction. Leaves [CURRENT_EXECUTION_CONTEXT] in EAX.
   PUSH EAX
   PUSH ECX
-  INVOKE handle_instruction, EDI
+  PUSH EDI
+  call _handle_instruction
   MOV EDI, EAX
+  ADD ESP, 04h
   POP ECX
   POP EAX
 
   ; Jump to BYOND's default do_instruction.
-  MOV EAX, execute_instruction_original
+  MOV EAX, _execute_instruction_original
   JMP EAX
-execute_instruction_hook ENDP
+_execute_instruction_hook ENDP
 
 END
