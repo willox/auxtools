@@ -1,6 +1,7 @@
 /target
 /result
 /.vscode
+/.xwin-cache
 *.o
 *.dmb
 *.int
