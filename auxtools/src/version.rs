@@ -66,7 +66,8 @@ pub fn init() -> Result<(), String> {
 		use std::ffi::c_char;
 
 		unsafe {
-			let module = dlopen(CString::new(BYONDCORE).unwrap().as_ptr(), RTLD_LAZY);
+			let byond_core_str = CString::new(BYONDCORE).unwrap();
+			let module = dlopen(byond_core_str.as_ptr(), RTLD_LAZY);
 			if module.is_null() {
 				return Err("Couldn't get module handle for BYONDCORE".into());
 			}

@@ -1,4 +1,4 @@
-name: Rust
+name: Windows
 
 on:
   push:
@@ -15,12 +15,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [windows-latest]
         include:
-        - os: ubuntu-latest
-          TOOLCHAIN: stable-i686-unknown-linux-gnu
-          TARGET: i686-unknown-linux-gnu
-
         - os: windows-latest
           TOOLCHAIN: stable-i686-pc-windows-msvc
           TARGET: i686-pc-windows-msvc
@@ -38,16 +34,6 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-
-
-    - name: Install Ubuntu Deps
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo dpkg --add-architecture i386
-        sudo apt-get update
-        sudo apt install libc6-i386
-        sudo apt install libstdc++6:i386
-        sudo apt install build-essential g++-multilib
-        sudo apt install libssl-dev:i386
 
     - uses: actions-rs/toolchain@v1
       with:

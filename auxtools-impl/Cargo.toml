@@ -2,7 +2,7 @@
 name = "auxtools-impl"
 description = "procedural macros for use with the auxtools crate"
 version = "0.1.0"
-authors = ["Aspen <luxx4x@protonmail.com>", "William Wallace <me@wiox.me>"]
+authors = ["Aspen <luxx4x@protonmail.com>", "Sophie Wallace <sophie@wiox.me>"]
 license = "MIT"
 repository = "https://github.com/willox/auxtools"
 edition = "2018"

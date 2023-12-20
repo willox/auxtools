@@ -7,6 +7,8 @@ Currently, it implements some of the features such as the debug server, but is p
 Code Documentation: https://auxtools.willox.dev
 
 ## Features
+Code Coverage - A tool to generate cobertura code coverage XML reports for a codebase. Note that, due to a [BYOND issue](http://www.byond.com/forum/post/108025) it requires some additional work to have properly un-mangled file names in the report.
+
 Debug Server - Working with SpaceManiac's [SpacemanDMM](https://github.com/SpaceManiac/SpacemanDMM), Auxtools interfaces with the debugger frontend to provide debugger information and management of breakpoints.
 
 *Dissassembly*  - When currently stopped at a breakpoint, enter the `#dis` command into the Debug Console in VSC to see the DM bytecode for the current proc. You can also provide it any arbitrary proc path like `#dis /mob/proc/Life`.
@@ -72,7 +74,7 @@ Windows:
 
 ```sh
 cargo build --release --target i686-pc-windows-msvc
-# output: target/i686-pc-windows-msvc/release/auxtools.dll,debug_server.dll
+# output: target/i686-pc-windows-msvc/release/auxtools.dll,debug_server.dll,auxcov.dll
 ```
 
 [Rust]: https://rust-lang.org
@@ -85,5 +87,5 @@ cargo build --release --target i686-pc-windows-msvc
 Auxtools is licensed under the [MIT license](https://en.wikipedia.org/wiki/MIT_License).
 See [LICENSE](./LICENSE) for more details.
 
-The Auxtool Debug Server (located @ ./debug_server) is licensed under the [GPL 3.0 license](https://www.gnu.org/licenses/gpl-3.0.en.html).
-See [debug_server/LICENSE](./debug_server/LICENSE) for more details.
+The Auxtool Debug Server (located @ ./debug_server) and Auxcov Code Coverage tool (located @ ./auxcov) is licensed under the [GPL 3.0 license](https://www.gnu.org/licenses/gpl-3.0.en.html).
+See [debug_server/LICENSE](./debug_server/LICENSE) or [auxcov/LICENSE](./auxcov/LICENSE) for more details.
