@@ -1,6 +1,5 @@
 use detour::RawDetour;
-use std::ffi::{c_void, CString};
-use std::os::raw::c_char;
+use std::ffi::c_void;
 use std::{cell::UnsafeCell, collections::HashMap, fs::File, io};
 
 use auxtools::{raw_types::procs::ProcId, *};
@@ -23,36 +22,38 @@ fn setup_hooks() {
 		DONE = true;
 
 		{
-			use winapi::um::libloaderapi;
+			use windows::core::PCSTR;
+			use windows::Win32::System::LibraryLoader;
 
-			THREAD_ID = winapi::um::processthreadsapi::GetCurrentThreadId();
+			THREAD_ID = windows::Win32::System::Threading::GetCurrentThreadId();
 
-			let mut module = std::ptr::null_mut();
-			let module_path = CString::new("msvcr120.dll").unwrap();
-			if libloaderapi::GetModuleHandleExA(0, module_path.as_ptr(), &mut module) == 0 {
+			let mut module = windows::Win32::Foundation::HINSTANCE::default();
+			if !LibraryLoader::GetModuleHandleExA(0, windows::s!("msvcr120.dll"), &mut module)
+				.as_bool()
+			{
 				return;
 			}
 
 			let malloc =
-				libloaderapi::GetProcAddress(module, MALLOC_SYMBOL.as_ptr() as *const c_char);
+				LibraryLoader::GetProcAddress(module, PCSTR::from_raw(MALLOC_SYMBOL.as_ptr()));
 			let realloc =
-				libloaderapi::GetProcAddress(module, REALLOC_SYMBOL.as_ptr() as *const c_char);
-			let free = libloaderapi::GetProcAddress(module, FREE_SYMBOL.as_ptr() as *const c_char);
-			let new = libloaderapi::GetProcAddress(module, NEW_SYMBOL.as_ptr() as *const c_char);
+				LibraryLoader::GetProcAddress(module, PCSTR::from_raw(REALLOC_SYMBOL.as_ptr()));
+			let free = LibraryLoader::GetProcAddress(module, PCSTR::from_raw(FREE_SYMBOL.as_ptr()));
+			let new = LibraryLoader::GetProcAddress(module, PCSTR::from_raw(NEW_SYMBOL.as_ptr()));
 			let delete =
-				libloaderapi::GetProcAddress(module, DELETE_SYMBOL.as_ptr() as *const c_char);
+				LibraryLoader::GetProcAddress(module, PCSTR::from_raw(DELETE_SYMBOL.as_ptr()));
 
 			// ¯\_(ツ)_/¯
-			if malloc.is_null()
-				|| realloc.is_null()
-				|| free.is_null()
-				|| new.is_null() || delete.is_null()
+			if malloc.is_none()
+				|| realloc.is_none()
+				|| free.is_none()
+				|| new.is_none() || delete.is_none()
 			{
 				return;
 			}
 
 			{
-				let hook = RawDetour::new(malloc as _, malloc_hook as _).unwrap();
+				let hook = RawDetour::new(malloc.unwrap() as _, malloc_hook as _).unwrap();
 
 				hook.enable().unwrap();
 				MALLOC_ORIGINAL = Some(std::mem::transmute(hook.trampoline()));
@@ -60,7 +61,7 @@ fn setup_hooks() {
 			}
 
 			{
-				let hook = RawDetour::new(realloc as _, realloc_hook as _).unwrap();
+				let hook = RawDetour::new(realloc.unwrap() as _, realloc_hook as _).unwrap();
 
 				hook.enable().unwrap();
 				REALLOC_ORIGINAL = Some(std::mem::transmute(hook.trampoline()));
@@ -68,7 +69,7 @@ fn setup_hooks() {
 			}
 
 			{
-				let hook = RawDetour::new(new as _, new_hook as _).unwrap();
+				let hook = RawDetour::new(new.unwrap() as _, new_hook as _).unwrap();
 
 				hook.enable().unwrap();
 				NEW_ORIGINAL = Some(std::mem::transmute(hook.trampoline()));
@@ -76,7 +77,7 @@ fn setup_hooks() {
 			}
 
 			{
-				let hook = RawDetour::new(free as _, free_hook as _).unwrap();
+				let hook = RawDetour::new(free.unwrap() as _, free_hook as _).unwrap();
 
 				hook.enable().unwrap();
 				FREE_ORIGINAL = Some(std::mem::transmute(hook.trampoline()));
@@ -84,7 +85,7 @@ fn setup_hooks() {
 			}
 
 			{
-				let hook = RawDetour::new(delete as _, delete_hook as _).unwrap();
+				let hook = RawDetour::new(delete.unwrap() as _, delete_hook as _).unwrap();
 
 				hook.enable().unwrap();
 				DELETE_ORIGINAL = Some(std::mem::transmute(hook.trampoline()));
@@ -105,7 +106,7 @@ extern "cdecl" fn malloc_hook(size: usize) -> *mut c_void {
 	let ptr = unsafe { (MALLOC_ORIGINAL.unwrap())(size) };
 
 	unsafe {
-		if THREAD_ID == winapi::um::processthreadsapi::GetCurrentThreadId() {
+		if THREAD_ID == windows::Win32::System::Threading::GetCurrentThreadId() {
 			if let Some(state) = STATE.get_mut() {
 				state.allocate(ptr, size);
 			}
@@ -119,7 +120,7 @@ extern "cdecl" fn realloc_hook(ptr: *mut c_void, size: usize) -> *mut c_void {
 	let new_ptr = unsafe { (REALLOC_ORIGINAL.unwrap())(ptr, size) };
 
 	unsafe {
-		if THREAD_ID == winapi::um::processthreadsapi::GetCurrentThreadId() {
+		if THREAD_ID == windows::Win32::System::Threading::GetCurrentThreadId() {
 			if let Some(state) = STATE.get_mut() {
 				state.free(ptr);
 				state.allocate(new_ptr, size);
@@ -134,7 +135,7 @@ extern "cdecl" fn new_hook(size: usize) -> *mut c_void {
 	let ptr = unsafe { (NEW_ORIGINAL.unwrap())(size) };
 
 	unsafe {
-		if THREAD_ID == winapi::um::processthreadsapi::GetCurrentThreadId() {
+		if THREAD_ID == windows::Win32::System::Threading::GetCurrentThreadId() {
 			if let Some(state) = STATE.get_mut() {
 				state.allocate(ptr, size);
 			}
@@ -150,7 +151,7 @@ extern "cdecl" fn free_hook(ptr: *mut c_void) {
 	}
 
 	unsafe {
-		if THREAD_ID == winapi::um::processthreadsapi::GetCurrentThreadId() {
+		if THREAD_ID == windows::Win32::System::Threading::GetCurrentThreadId() {
 			if let Some(state) = STATE.get_mut() {
 				state.free(ptr);
 			}
@@ -164,7 +165,7 @@ extern "cdecl" fn delete_hook(ptr: *mut c_void) {
 	}
 
 	unsafe {
-		if THREAD_ID == winapi::um::processthreadsapi::GetCurrentThreadId() {
+		if THREAD_ID == windows::Win32::System::Threading::GetCurrentThreadId() {
 			if let Some(state) = STATE.get_mut() {
 				state.free(ptr);
 			}

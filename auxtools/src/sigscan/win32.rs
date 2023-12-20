@@ -1,40 +1,41 @@
 use std::mem;
-use std::ptr;
 
-use winapi::shared::minwindef;
-use winapi::um::libloaderapi;
-use winapi::um::processthreadsapi;
-use winapi::um::psapi;
+use windows::core::HSTRING;
+use windows::Win32::Foundation;
+use windows::Win32::System::LibraryLoader;
+use windows::Win32::System::ProcessStatus;
+use windows::Win32::System::Threading;
 
 pub struct Scanner {
-	_module: minwindef::HMODULE,
+	_module: Foundation::HINSTANCE,
 	data_begin: *mut u8,
 	data_end: *mut u8,
 }
 
 impl Scanner {
 	pub fn for_module(name: &str) -> Option<Scanner> {
-		let mut module: minwindef::HMODULE = ptr::null_mut();
+		let mut module: Foundation::HINSTANCE = Default::default();
 		let data_begin: *mut u8;
 		let data_end: *mut u8;
 
 		// Construct a null-terminated UTF-16 string to pass to the Windows API
-		let name_winapi: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+		let name_winapi: HSTRING = name.into();
 
 		unsafe {
-			if libloaderapi::GetModuleHandleExW(0, name_winapi.as_ptr(), &mut module) == 0 {
+			if !LibraryLoader::GetModuleHandleExW(0, &name_winapi, &mut module).as_bool() {
 				return None;
 			}
 
-			let mut module_info_wrapper = mem::MaybeUninit::<psapi::MODULEINFO>::zeroed();
-			if psapi::GetModuleInformation(
-				processthreadsapi::GetCurrentProcess(),
+			let mut module_info_wrapper = mem::MaybeUninit::<ProcessStatus::MODULEINFO>::zeroed();
+			if !ProcessStatus::K32GetModuleInformation(
+				Threading::GetCurrentProcess(),
 				module,
 				module_info_wrapper.as_mut_ptr(),
-				mem::size_of::<psapi::MODULEINFO>() as u32,
-			) == 0
+				mem::size_of::<ProcessStatus::MODULEINFO>() as u32,
+			)
+			.as_bool()
 			{
-				libloaderapi::FreeLibrary(module);
+				LibraryLoader::FreeLibrary(module);
 				return None;
 			}
 
@@ -92,7 +93,7 @@ impl Drop for Scanner {
 		// TODO: WTf this started throwing?!
 		/*
 		unsafe {
-			libloaderapi::FreeLibrary(self.module);
+			LibraryLoader::FreeLibrary(self.module);
 		}
 		*/
 	}

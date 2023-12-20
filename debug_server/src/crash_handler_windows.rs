@@ -1,12 +1,10 @@
 use crate::{server_types::BreakpointReason, DEBUG_SERVER};
 use auxtools::*;
-use winapi::{
-	shared::ntdef::LONG,
-	um::{errhandlingapi::SetUnhandledExceptionFilter, winnt::EXCEPTION_POINTERS},
-	vc::excpt::EXCEPTION_EXECUTE_HANDLER,
-};
 
-extern "system" fn exception_filter(_: *mut EXCEPTION_POINTERS) -> LONG {
+use windows::Win32::System::Diagnostics::Debug::SetUnhandledExceptionFilter;
+use windows::Win32::System::Diagnostics::Debug::EXCEPTION_POINTERS;
+
+extern "system" fn exception_filter(_: *const EXCEPTION_POINTERS) -> i32 {
 	unsafe {
 		if let Some(dbg) = &mut *DEBUG_SERVER.get() {
 			let ctx = *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
@@ -18,7 +16,7 @@ extern "system" fn exception_filter(_: *mut EXCEPTION_POINTERS) -> LONG {
 		}
 	}
 
-	return EXCEPTION_EXECUTE_HANDLER;
+	return 1;
 }
 
 #[init(full)]
@@ -26,6 +24,5 @@ fn crash_handler_init() -> Result<(), String> {
 	unsafe {
 		SetUnhandledExceptionFilter(Some(exception_filter));
 	}
-
 	Ok(())
 }
