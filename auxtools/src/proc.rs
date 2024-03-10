@@ -82,7 +82,7 @@ impl Proc {
 
 	pub fn parameter_names(&self) -> Vec<StringRef> {
 		unsafe {
-			let (data, count) = raw_types::misc::get_parameters((*self.entry).parameters);
+			let (data, count) = raw_types::misc::get_parameters((*self.entry).metadata.get_parameters());
 			(0..count)
 				.map(|i| StringRef::from_variable_id((*data.add(i as usize)).name))
 				.collect()
@@ -91,7 +91,7 @@ impl Proc {
 
 	pub fn local_names(&self) -> Vec<StringRef> {
 		unsafe {
-			let (names, count) = raw_types::misc::get_locals((*self.entry).locals);
+			let (names, count) = raw_types::misc::get_locals((*self.entry).metadata.get_locals());
 			(0..count)
 				.map(|i| StringRef::from_variable_id(*names.add(i as usize)))
 				.collect()
@@ -103,7 +103,7 @@ impl Proc {
 	}
 
 	pub unsafe fn bytecode_mut_ptr(&self) -> (*mut u32, u16) {
-		raw_types::misc::get_bytecode((*self.entry).bytecode)
+		raw_types::misc::get_bytecode((*self.entry).metadata.get_bytecode())
 	}
 
 	pub unsafe fn bytecode(&self) -> &[u32] {
