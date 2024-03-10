@@ -1,6 +1,7 @@
 use super::misc;
 use super::strings;
 use super::values;
+use std::sync::OnceLock;
 
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -14,7 +15,90 @@ pub struct ProcEntry {
 	pub category: strings::StringId,
 	flags: u32,
 	unk_1: u32,
+	pub metadata: ProcMetadata,
+}
+
+pub union ProcMetadata {
+	pub pre1630: BytecodePre1630,
+	pub post1630: BytecodePost1630,
+}
+
+impl ProcMetadata {
+	pub fn get_bytecode(&self) -> misc::BytecodeId {
+		static REDIRECT: OnceLock<fn(&ProcMetadata) -> misc::BytecodeId> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match crate::version::BYOND_VERSION_MINOR {
+				..=1627 => Self::get_bytecode_pre1630,
+				_ => Self::get_bytecode_post1630,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn get_bytecode_pre1630(this: &Self) -> misc::BytecodeId {
+		unsafe { this.pre1630.bytecode }
+	}
+
+	#[inline(never)]
+	fn get_bytecode_post1630(this: &Self) -> misc::BytecodeId {
+		unsafe { this.post1630.bytecode }
+	}
+
+	pub fn get_locals(&self) -> misc::LocalsId {
+		static REDIRECT: OnceLock<fn(&ProcMetadata) -> misc::LocalsId> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match crate::version::BYOND_VERSION_MINOR {
+				..=1627 => Self::get_locals_pre1630,
+				_ => Self::get_locals_post1630,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn get_locals_pre1630(this: &Self) -> misc::LocalsId {
+		unsafe { this.pre1630.locals }
+	}
+
+	#[inline(never)]
+	fn get_locals_post1630(this: &Self) -> misc::LocalsId {
+		unsafe { this.post1630.locals }
+	}
+
+	pub fn get_parameters(&self) -> misc::ParametersId {
+		static REDIRECT: OnceLock<fn(&ProcMetadata) -> misc::ParametersId> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match crate::version::BYOND_VERSION_MINOR {
+				..=1627 => Self::get_parameters_pre1630,
+				_ => Self::get_parameters_post1630,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn get_parameters_pre1630(this: &Self) -> misc::ParametersId {
+		unsafe { this.pre1630.parameters }
+	}
+
+	#[inline(never)]
+	fn get_parameters_post1630(this: &Self) -> misc::ParametersId {
+		unsafe { this.post1630.parameters }
+	}
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct BytecodePre1630 {
 	pub bytecode: misc::BytecodeId,
+	pub locals: misc::LocalsId,
+	pub parameters: misc::ParametersId,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct BytecodePost1630 {
+	unk_2: u32,
+	pub bytecode: misc::BytecodeId,
+	//Bytecode moved by 4 bytes in 1630
 	pub locals: misc::LocalsId,
 	pub parameters: misc::ParametersId,
 }
