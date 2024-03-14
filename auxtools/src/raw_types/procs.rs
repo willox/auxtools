@@ -1,7 +1,6 @@
-use super::misc;
-use super::strings;
-use super::values;
 use std::sync::OnceLock;
+
+use super::{misc, strings, values};
 
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -15,12 +14,13 @@ pub struct ProcEntry {
 	pub category: strings::StringId,
 	flags: u32,
 	unk_1: u32,
-	pub metadata: ProcMetadata,
+	pub metadata: ProcMetadata
 }
 
+#[repr(C)]
 pub union ProcMetadata {
 	pub pre1630: BytecodePre1630,
-	pub post1630: BytecodePost1630,
+	pub post1630: BytecodePost1630
 }
 
 impl ProcMetadata {
@@ -29,7 +29,7 @@ impl ProcMetadata {
 		REDIRECT.get_or_init(|| unsafe {
 			match crate::version::BYOND_VERSION_MINOR {
 				..=1627 => Self::get_bytecode_pre1630,
-				_ => Self::get_bytecode_post1630,
+				_ => Self::get_bytecode_post1630
 			}
 		})(self)
 	}
@@ -49,7 +49,7 @@ impl ProcMetadata {
 		REDIRECT.get_or_init(|| unsafe {
 			match crate::version::BYOND_VERSION_MINOR {
 				..=1627 => Self::get_locals_pre1630,
-				_ => Self::get_locals_post1630,
+				_ => Self::get_locals_post1630
 			}
 		})(self)
 	}
@@ -69,7 +69,7 @@ impl ProcMetadata {
 		REDIRECT.get_or_init(|| unsafe {
 			match crate::version::BYOND_VERSION_MINOR {
 				..=1627 => Self::get_parameters_pre1630,
-				_ => Self::get_parameters_post1630,
+				_ => Self::get_parameters_post1630
 			}
 		})(self)
 	}
@@ -90,7 +90,7 @@ impl ProcMetadata {
 pub struct BytecodePre1630 {
 	pub bytecode: misc::BytecodeId,
 	pub locals: misc::LocalsId,
-	pub parameters: misc::ParametersId,
+	pub parameters: misc::ParametersId
 }
 
 #[repr(C)]
@@ -98,9 +98,9 @@ pub struct BytecodePre1630 {
 pub struct BytecodePost1630 {
 	unk_2: u32,
 	pub bytecode: misc::BytecodeId,
-	//Bytecode moved by 4 bytes in 1630
+	// Bytecode moved by 4 bytes in 1630
 	pub locals: misc::LocalsId,
-	pub parameters: misc::ParametersId,
+	pub parameters: misc::ParametersId
 }
 
 #[repr(C)]
@@ -117,7 +117,7 @@ pub struct ProcInstance {
 	pub args_count: u32,
 	pub args: *mut values::Value,
 	unk_3: [u8; 0x58],
-	pub time_to_resume: u32,
+	pub time_to_resume: u32
 }
 
 #[repr(C)]
@@ -151,17 +151,17 @@ pub struct ExecutionContext {
 	infinite_loop_count: u32,
 	unk_8: [u8; 0x02],
 	paused: u8,
-	unk_9: [u8; 0x33],
+	unk_9: [u8; 0x33]
 }
 
 #[repr(C)]
 pub struct SuspendedProcsBuffer {
-	pub buffer: *mut *mut ProcInstance,
+	pub buffer: *mut *mut ProcInstance
 }
 
 #[repr(C)]
 pub struct SuspendedProcs {
 	pub front: usize,
 	pub back: usize,
-	pub capacity: usize,
+	pub capacity: usize
 }

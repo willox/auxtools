@@ -3,7 +3,7 @@
 //! For when BYOND is not enough. Probably often.
 
 //#[cfg(not(target_pointer_width = "32"))]
-//compile_error!("Auxtools must be compiled for a 32-bit target");
+// compile_error!("Auxtools must be compiled for a 32-bit target");
 
 mod byond_ffi;
 mod bytecode_manager;
@@ -22,12 +22,16 @@ mod value_from;
 pub mod version;
 mod weak_value;
 
-use init::{get_init_level, set_init_level, InitLevel};
+use std::{
+	ffi::c_void,
+	sync::atomic::{AtomicBool, Ordering}
+};
 
 pub use auxtools_impl::{full_shutdown, hook, init, pin_dll, runtime_handler, shutdown};
 /// Used by the [pin_dll] macro to set dll pinning
 pub use ctor;
 pub use hooks::{CompileTimeHook, RuntimeErrorHook};
+use init::{get_init_level, set_init_level, InitLevel};
 pub use init::{FullInitFunc, FullShutdownFunc, PartialInitFunc, PartialShutdownFunc};
 /// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
 pub use inventory;
@@ -35,14 +39,13 @@ pub use list::List;
 pub use proc::Proc;
 pub use raw_types::variables::VariableNameIdTable;
 pub use runtime::{DMResult, Runtime};
-use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
 pub use string::StringRef;
 pub use string_intern::InternedString;
 pub use value::Value;
 pub use weak_value::WeakValue;
 
-// We need winapi to call GetModuleHandleExW which lets us prevent our DLL from unloading.
+// We need winapi to call GetModuleHandleExW which lets us prevent our DLL from
+// unloading.
 #[cfg(windows)]
 extern crate winapi;
 
@@ -194,20 +197,17 @@ signatures! {
 }
 pub static PIN_DLL: AtomicBool = AtomicBool::new(true);
 
-// This strange section of code retrieves our DLL using the init function's address.
-// This increments the DLL reference count, which prevents unloading.
+// This strange section of code retrieves our DLL using the init function's
+// address. This increments the DLL reference count, which prevents unloading.
 #[cfg(windows)]
 fn pin_dll() -> Result<(), ()> {
 	unsafe {
-		use winapi::um::libloaderapi::{
-			GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-			GET_MODULE_HANDLE_EX_FLAG_PIN,
-		};
+		use winapi::um::libloaderapi::{GetModuleHandleExW, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_PIN};
 		let mut module = std::ptr::null_mut();
 
 		let flags = match PIN_DLL.load(Ordering::Relaxed) {
 			true => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-			false => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+			false => GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
 		};
 
 		let res = GetModuleHandleExW(flags, pin_dll as *const _, &mut module);

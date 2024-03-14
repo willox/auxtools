@@ -1,11 +1,12 @@
 [package]
 name = "auxtools"
 description = "library for interfacing with low-level BYOND internals"
-version = "0.1.0"
-authors = ["Sophie Wallace <sophie@wiox.me>"]
-license = "MIT"
-repository = "https://github.com/willox/auxtools"
-edition = "2018"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [build-dependencies]
 cc = "1.0"

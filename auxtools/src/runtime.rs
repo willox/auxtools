@@ -1,23 +1,25 @@
-use crate::value::Value;
 use std::result;
 
-/// Represents a byond runtime, sort of. This will probably drastically in the future.
+use crate::value::Value;
+
+/// Represents a byond runtime, sort of. This will probably drastically in the
+/// future.
 ///
-/// These are just simple error messages that our API and hooks can return as failure states.
+/// These are just simple error messages that our API and hooks can return as
+/// failure states.
 #[derive(Debug)]
 pub struct Runtime {
-	pub message: String,
+	pub message: String
 }
 
 impl Runtime {
 	pub fn new<S: Into<String>>(message: S) -> Self {
-		Self {
-			message: message.into(),
-		}
+		Self { message: message.into() }
 	}
 }
 
-/// This macro makes instantiating [Runtimes](struct.Runtime.html) a (little bit) easier.
+/// This macro makes instantiating [Runtimes](struct.Runtime.html) a (little
+/// bit) easier.
 #[macro_export]
 macro_rules! runtime {
 	($fmt:expr) => {

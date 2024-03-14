@@ -1,8 +1,6 @@
-use super::funcs;
-use super::lists;
-use super::strings;
-use std::ffi::CStr;
-use std::fmt;
+use std::{ffi::CStr, fmt};
+
+use super::{funcs, lists, strings};
 
 #[repr(u8)]
 #[derive(PartialEq, Copy, Clone, Debug, Hash)]
@@ -63,7 +61,7 @@ pub enum ValueTag {
 	SaveFile = 0x23,
 
 	Number = 0x2A,
-	Appearance = 0x3A,
+	Appearance = 0x3A
 }
 
 impl fmt::Display for Value {
@@ -78,7 +76,7 @@ impl fmt::Display for Value {
 					assert_eq!(funcs::get_string_table_entry(&mut entry, id), 1);
 					write!(f, "{:?}", CStr::from_ptr((*entry).data).to_string_lossy())
 				}
-				_ => write!(f, "Value({}, {})", self.tag as u8, self.data.id),
+				_ => write!(f, "Value({}, {})", self.tag as u8, self.data.id)
 			}
 		}
 	}
@@ -96,7 +94,7 @@ impl fmt::Debug for Value {
 					assert_eq!(funcs::get_string_table_entry(&mut entry, id), 1);
 					write!(f, "{:?}", CStr::from_ptr((*entry).data).to_string_lossy())
 				}
-				_ => write!(f, "Value({}, {})", self.tag as u8, self.data.id),
+				_ => write!(f, "Value({}, {})", self.tag as u8, self.data.id)
 			}
 		}
 	}
@@ -104,7 +102,7 @@ impl fmt::Debug for Value {
 
 impl fmt::Display for ValueTag {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		//write!(f, "{:?}", self)
+		// write!(f, "{:?}", self)
 		write!(f, "TODO")
 	}
 }
@@ -115,13 +113,14 @@ pub union ValueData {
 	pub string: strings::StringId,
 	pub number: f32,
 	pub id: u32,
-	pub list: lists::ListId,
+	pub list: lists::ListId
 }
 
-/// Internal thing used when interfacing with BYOND. You shouldn't need to use this.
+/// Internal thing used when interfacing with BYOND. You shouldn't need to use
+/// this.
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct Value {
 	pub tag: ValueTag,
-	pub data: ValueData,
+	pub data: ValueData
 }

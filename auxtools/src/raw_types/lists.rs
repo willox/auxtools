@@ -8,7 +8,7 @@ pub struct ListId(pub u32);
 #[allow(unused)]
 enum Color {
 	Red = 0,
-	Black = 1,
+	Black = 1
 }
 
 #[repr(C)]
@@ -17,7 +17,7 @@ pub struct AssociativeListEntry {
 	value: values::Value,
 	color: Color,
 	left: *mut AssociativeListEntry,
-	right: *mut AssociativeListEntry,
+	right: *mut AssociativeListEntry
 }
 
 #[repr(C)]
@@ -27,5 +27,5 @@ pub struct List {
 	pub allocated: u32,
 	pub length: u32,
 	pub refcount: u32,
-	unknown: u32,
+	unknown: u32
 }

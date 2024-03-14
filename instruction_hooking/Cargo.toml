@@ -2,8 +2,11 @@
 name = "instruction_hooking"
 version = "1.0.0"
 authors = ["Sophie Wallace <sophie@wiox.me>", "Jordan Dominion <Cyberboss@users.noreply.github.com>"]
-edition = "2018"
 publish = false
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [build-dependencies]
 cc = "1.0"

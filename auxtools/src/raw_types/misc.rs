@@ -45,7 +45,7 @@ impl AsMiscId for ParametersId {
 #[derive(Copy, Clone)]
 pub struct Bytecode_V1 {
 	pub count: u16,
-	pub bytecode: *mut u32,
+	pub bytecode: *mut u32
 }
 
 #[repr(C)]
@@ -53,14 +53,14 @@ pub struct Bytecode_V1 {
 pub struct Bytecode_V2 {
 	pub count: u16,
 	unk_0: u32,
-	pub bytecode: *mut u32,
+	pub bytecode: *mut u32
 }
 
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct Locals_V1 {
 	pub count: u16,
-	pub names: *const strings::VariableId,
+	pub names: *const strings::VariableId
 }
 
 #[repr(C)]
@@ -68,14 +68,14 @@ pub struct Locals_V1 {
 pub struct Locals_V2 {
 	pub count: u16,
 	unk_0: u32,
-	pub names: *const strings::VariableId,
+	pub names: *const strings::VariableId
 }
 
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct Parameters_V1 {
 	params_count_mul_4: u16,
-	pub data: *const ParametersData,
+	pub data: *const ParametersData
 }
 
 #[repr(C)]
@@ -83,7 +83,7 @@ pub struct Parameters_V1 {
 pub struct Parameters_V2 {
 	params_count_mul_4: u16,
 	unk_0: u32,
-	pub data: *const ParametersData,
+	pub data: *const ParametersData
 }
 
 #[repr(C)]
@@ -91,7 +91,7 @@ pub struct Parameters_V2 {
 pub union Misc_V1 {
 	pub bytecode: Bytecode_V1,
 	pub locals: Locals_V1,
-	pub parameters: Parameters_V1,
+	pub parameters: Parameters_V1
 }
 
 #[repr(C)]
@@ -99,7 +99,7 @@ pub union Misc_V1 {
 pub union Misc_V2 {
 	pub bytecode: Bytecode_V2,
 	pub locals: Locals_V2,
-	pub parameters: Parameters_V2,
+	pub parameters: Parameters_V2
 }
 
 #[repr(C)]
@@ -107,7 +107,7 @@ pub struct ParametersData {
 	unk_0: u32,
 	unk_1: u32,
 	pub name: strings::VariableId,
-	unk_4: u32,
+	unk_4: u32
 }
 
 impl Parameters_V1 {

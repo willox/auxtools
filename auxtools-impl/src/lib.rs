@@ -17,7 +17,7 @@ fn from_signature(s: String) -> Vec<Option<u8>> {
 						hex::decode(byte).map(|decoded_byte| decoded_byte[0]).ok()
 					}
 				}
-				_ => None,
+				_ => None
 			}
 		})
 		.collect()
@@ -28,7 +28,7 @@ pub fn convert_signature(input: TokenStream) -> TokenStream {
 	let string = parse_macro_input!(input as Lit);
 	let string = match string {
 		Lit::Str(lit) => lit.value(),
-		_ => panic!("not string input"),
+		_ => panic!("not string input")
 	};
 
 	let streams: Vec<proc_macro2::TokenStream> = from_signature(string)
@@ -54,7 +54,7 @@ pub fn convert_signature(input: TokenStream) -> TokenStream {
 fn extract_args(a: &syn::FnArg) -> &syn::PatType {
 	match a {
 		syn::FnArg::Typed(p) => p,
-		_ => panic!("Not supported on types with `self`!"),
+		_ => panic!("Not supported on types with `self`!")
 	}
 }
 
@@ -67,11 +67,7 @@ pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let func_type = match init_type.to_string().as_str() {
 		"full" => quote! { auxtools::FullInitFunc },
 		"partial" => quote! { auxtools::PartialInitFunc },
-		_ => {
-			return syn::Error::new(init_type.span(), "invalid init type")
-				.to_compile_error()
-				.into()
-		}
+		_ => return syn::Error::new(init_type.span(), "invalid init type").to_compile_error().into()
 	};
 
 	let inventory_define = quote! {
@@ -148,17 +144,19 @@ pub fn full_shutdown(_: TokenStream, item: TokenStream) -> TokenStream {
 
 /// The `pin_dll!` macro is used to determine whether the dll handle auxtools
 /// takes on Windows is pinned. For reference, a dll with a pinned handle cannot
-/// be unloaded during execution of the host process - termination of the host is
-/// the only way to unload the dll and release the lock on the corresponding file.
+/// be unloaded during execution of the host process - termination of the host
+/// is the only way to unload the dll and release the lock on the corresponding
+/// file.
 ///
-/// This has very limited use cases - for instance, if a .dmb is hosted on a live
-/// server whose Dream Daemon process is kept running between runs, keeping a pinned
-/// handle to the dll will prevent the corresponding file from being updated by
-/// automatic updaters such as tgs. You shouldn't use this unless you very specifically
-/// need it for your particular use case.
+/// This has very limited use cases - for instance, if a .dmb is hosted on a
+/// live server whose Dream Daemon process is kept running between runs, keeping
+/// a pinned handle to the dll will prevent the corresponding file from being
+/// updated by automatic updaters such as tgs. You shouldn't use this unless you
+/// very specifically need it for your particular use case.
 ///
-/// Libraries that unpin the dll using this macro should ensure that no spawned threads
-/// are running when calling `auxtools_full_shutdown` from DM, or else Dream Daemon will crash.
+/// Libraries that unpin the dll using this macro should ensure that no spawned
+/// threads are running when calling `auxtools_full_shutdown` from DM, or else
+/// Dream Daemon will crash.
 #[proc_macro]
 pub fn pin_dll(attr: TokenStream) -> TokenStream {
 	let flag = syn::parse_macro_input!(attr as syn::LitBool);
@@ -175,14 +173,14 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 	code.into()
 }
 
-/// The `hook` attribute is used to define functions that may be used as proc hooks,
-/// and to optionally hook those procs upon library initialization.
+/// The `hook` attribute is used to define functions that may be used as proc
+/// hooks, and to optionally hook those procs upon library initialization.
 ///
 /// # Examples
 ///
 /// Here we define a hook that multiplies a number passed to it by two.
-/// It can now be used to hook procs, for example `hooks::hook("/proc/double_up", double_up);`
-/// ```ignore
+/// It can now be used to hook procs, for example
+/// `hooks::hook("/proc/double_up", double_up);` ```ignore
 /// #[hook]
 /// fn double_up(num: Value) {
 ///     if let Some(num) = num.as_number() {
@@ -191,10 +189,9 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 ///     Value::null()
 /// }
 /// ```
-///
+/// 
 /// This function is used to hook `/mob/proc/on_honked`.
 /// By specifying the proc path, we hook the proc immediately upon startup.
-///
 /// ```ignore
 /// #[hook("/mob/proc/on_honked")]
 /// fn on_honked(honker: Value) {
@@ -231,14 +228,11 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 			}
 		}
 		Some(other_literal) => {
-			return syn::Error::new(
-				other_literal.span(),
-				"Hook attributes must be a string literal",
-			)
-			.to_compile_error()
-			.into()
+			return syn::Error::new(other_literal.span(), "Hook attributes must be a string literal")
+				.to_compile_error()
+				.into()
 		}
-		None => quote! {},
+		None => quote! {}
 	};
 	let signature = quote! {
 		fn #func_name(
@@ -249,12 +243,8 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	};
 
 	let body = &input.block;
-	let mut arg_names: syn::punctuated::Punctuated<syn::Ident, syn::Token![,]> =
-		syn::punctuated::Punctuated::new();
-	let mut proc_arg_unpacker: syn::punctuated::Punctuated<
-		proc_macro2::TokenStream,
-		syn::Token![,],
-	> = syn::punctuated::Punctuated::new();
+	let mut arg_names: syn::punctuated::Punctuated<syn::Ident, syn::Token![,]> = syn::punctuated::Punctuated::new();
+	let mut proc_arg_unpacker: syn::punctuated::Punctuated<proc_macro2::TokenStream, syn::Token![,]> = syn::punctuated::Punctuated::new();
 
 	for arg in args.iter().map(extract_args) {
 		if let syn::Pat::Ident(p) = &*arg.pat {
@@ -264,7 +254,7 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 				(quote! {
 					&args[#index]
 				})
-				.into(),
+				.into()
 			);
 		}
 	}

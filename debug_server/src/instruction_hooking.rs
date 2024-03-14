@@ -1,17 +1,17 @@
-use crate::DEBUG_SERVER;
-use crate::{
-	server::Server,
-	server_types::{BreakpointReason, ContinueKind},
-};
+use std::{cell::UnsafeCell, collections::HashMap, sync::Mutex};
+
 use auxtools::*;
 use instruction_hooking::{
 	disassemble_env::{self, DisassembleEnv},
-	InstructionHook,
+	InstructionHook
 };
 use lazy_static::lazy_static;
-use std::cell::UnsafeCell;
-use std::collections::HashMap;
-use std::sync::Mutex;
+
+use crate::{
+	server::Server,
+	server_types::{BreakpointReason, ContinueKind},
+	DEBUG_SERVER
+};
 
 // Could move these to dmasm
 const OPCODE_DBGLINE: u32 = 0x85;
@@ -45,7 +45,8 @@ impl ProcInstanceRef {
 	}
 }
 
-// A lot of these store the parent ExecutionContext so we can tell if our proc has returned
+// A lot of these store the parent ExecutionContext so we can tell if our proc
+// has returned
 #[derive(Copy, Clone)]
 enum DebuggerAction {
 	None,
@@ -53,13 +54,12 @@ enum DebuggerAction {
 	StepOver { target: ProcInstanceRef },
 	StepInto { parent: ProcInstanceRef },
 	BreakOnNext,
-	StepOut { target: ProcInstanceRef },
+	StepOut { target: ProcInstanceRef }
 }
 
 static mut CURRENT_ACTION: DebuggerAction = DebuggerAction::None;
 
-static mut DEFERRED_INSTRUCTION_REPLACE: UnsafeCell<Option<(Vec<u32>, *mut u32)>> =
-	UnsafeCell::new(None);
+static mut DEFERRED_INSTRUCTION_REPLACE: UnsafeCell<Option<(Vec<u32>, *mut u32)>> = UnsafeCell::new(None);
 
 #[derive(PartialEq, Eq, Hash)]
 struct PtrKey(usize);
@@ -107,14 +107,11 @@ fn get_proc_ctx(stack_id: u32) -> *mut raw_types::procs::ExecutionContext {
 	}
 }
 
-fn handle_breakpoint(
-	ctx: *mut raw_types::procs::ExecutionContext,
-	reason: BreakpointReason,
-) -> DebuggerAction {
+fn handle_breakpoint(ctx: *mut raw_types::procs::ExecutionContext, reason: BreakpointReason) -> DebuggerAction {
 	let action = unsafe {
 		match &mut *DEBUG_SERVER.get() {
 			Some(server) => server.handle_breakpoint(ctx, reason),
-			None => ContinueKind::Continue,
+			None => ContinueKind::Continue
 		}
 	};
 
@@ -123,13 +120,13 @@ fn handle_breakpoint(
 		ContinueKind::StepOver { stack_id } => {
 			let ctx = get_proc_ctx(stack_id);
 			DebuggerAction::StepOver {
-				target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
+				target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance })
 			}
 		}
 		ContinueKind::StepInto { stack_id } => {
 			let ctx = get_proc_ctx(stack_id);
 			DebuggerAction::StepInto {
-				parent: ProcInstanceRef::new(unsafe { (*ctx).proc_instance }),
+				parent: ProcInstanceRef::new(unsafe { (*ctx).proc_instance })
 			}
 		}
 		ContinueKind::StepOut { stack_id } => {
@@ -141,7 +138,7 @@ fn handle_breakpoint(
 					DebuggerAction::None
 				} else {
 					DebuggerAction::StepOut {
-						target: ProcInstanceRef::new((*parent).proc_instance),
+						target: ProcInstanceRef::new((*parent).proc_instance)
 					}
 				}
 			}
@@ -149,10 +146,7 @@ fn handle_breakpoint(
 	}
 }
 
-fn proc_instance_is_in_stack(
-	mut ctx: *mut raw_types::procs::ExecutionContext,
-	proc_ref: ProcInstanceRef,
-) -> bool {
+fn proc_instance_is_in_stack(mut ctx: *mut raw_types::procs::ExecutionContext, proc_ref: ProcInstanceRef) -> bool {
 	unsafe {
 		let mut found = false;
 
@@ -209,7 +203,8 @@ fn handle_runtime(error: &str) {
 
 impl InstructionHook for Server {
 	fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
-		// Always handle the deferred instruction replacement first - everything else will depend on it
+		// Always handle the deferred instruction replacement first - everything else
+		// will depend on it
 		unsafe {
 			let deferred = DEFERRED_INSTRUCTION_REPLACE.get();
 			if let Some((src, dst)) = &*deferred {
@@ -229,7 +224,8 @@ impl InstructionHook for Server {
 		let opcode = unsafe { *opcode_ptr };
 		let is_dbgline = opcode == OPCODE_DBGLINE;
 
-		// This lets us ignore any actual breakpoints we hit if we've already paused for another reason
+		// This lets us ignore any actual breakpoints we hit if we've already paused for
+		// another reason
 		let mut did_breakpoint = false;
 
 		unsafe {
@@ -257,9 +253,7 @@ impl InstructionHook for Server {
 					} else {
 						// If the context isn't in any stacks, it has just returned. Break!
 						// TODO: Don't break if the context's stack is gone (returned to C)
-						if !proc_instance_is_in_stack(ctx, target)
-							&& !proc_instance_is_suspended(target)
-						{
+						if !proc_instance_is_in_stack(ctx, target) && !proc_instance_is_suspended(target) {
 							CURRENT_ACTION = DebuggerAction::None;
 							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 							did_breakpoint = true;
@@ -324,16 +318,14 @@ impl InstructionHook for Server {
 				}
 			}
 
-			// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been removed
+			// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been
+			// removed
 			let map = ORIGINAL_BYTECODE.lock().unwrap();
 			if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
 				unsafe {
 					let deferred_replace = DEFERRED_INSTRUCTION_REPLACE.get();
 					assert_eq!(*deferred_replace, None);
-					*deferred_replace = Some((
-						std::slice::from_raw_parts(opcode_ptr, original.len()).to_vec(),
-						opcode_ptr,
-					));
+					*deferred_replace = Some((std::slice::from_raw_parts(opcode_ptr, original.len()).to_vec(), opcode_ptr));
 					std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
 				}
 			}
@@ -343,14 +335,10 @@ impl InstructionHook for Server {
 
 #[derive(Debug)]
 pub enum InstructionHookError {
-	InvalidOffset,
+	InvalidOffset
 }
 
-fn find_instruction<'a>(
-	env: &'a mut DisassembleEnv,
-	proc: &'a Proc,
-	offset: u32,
-) -> Option<(dmasm::Instruction, dmasm::DebugData<'a>)> {
+fn find_instruction<'a>(env: &'a mut DisassembleEnv, proc: &'a Proc, offset: u32) -> Option<(dmasm::Instruction, dmasm::DebugData<'a>)> {
 	let bytecode = unsafe { proc.bytecode() };
 
 	let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, env);
@@ -368,8 +356,7 @@ fn find_instruction<'a>(
 
 pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookError> {
 	let mut env = disassemble_env::DisassembleEnv;
-	let (_, debug) =
-		find_instruction(&mut env, proc, offset).ok_or(InstructionHookError::InvalidOffset)?;
+	let (_, debug) = find_instruction(&mut env, proc, offset).ok_or(InstructionHookError::InvalidOffset)?;
 
 	let instruction_length = debug.bytecode.len();
 
@@ -394,7 +381,7 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 	unsafe {
 		ORIGINAL_BYTECODE.lock().unwrap().insert(
 			PtrKey::new(opcode_ptr),
-			std::slice::from_raw_parts(opcode_ptr, instruction_length as usize).to_vec(),
+			std::slice::from_raw_parts(opcode_ptr, instruction_length as usize).to_vec()
 		);
 	}
 
@@ -407,13 +394,12 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 
 #[derive(Debug)]
 pub enum InstructionUnhookError {
-	InvalidOffset,
+	InvalidOffset
 }
 
 pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnhookError> {
 	let mut env = disassemble_env::DisassembleEnv;
-	let (_, _) =
-		find_instruction(&mut env, proc, offset).ok_or(InstructionUnhookError::InvalidOffset)?;
+	let (..) = find_instruction(&mut env, proc, offset).ok_or(InstructionUnhookError::InvalidOffset)?;
 
 	let opcode_ptr = unsafe {
 		let bytecode = {
@@ -424,7 +410,8 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 		bytecode.as_mut_ptr().add(offset as usize)
 	};
 
-	// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been removed
+	// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been
+	// removed
 	let mut map = ORIGINAL_BYTECODE.lock().unwrap();
 	if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
 		unsafe {

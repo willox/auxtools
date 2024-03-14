@@ -1,17 +1,19 @@
-use super::proc::Proc;
-use super::raw_types;
-use super::value::Value;
-use crate::runtime::DMResult;
+use std::{
+	cell::RefCell,
+	ffi::{c_void, CStr},
+	os::raw::c_char
+};
+
 use detour::RawDetour;
 use fxhash::FxHashMap;
-use std::ffi::c_void;
-use std::os::raw::c_char;
-use std::{cell::RefCell, ffi::CStr};
+
+use super::{proc::Proc, raw_types, value::Value};
+use crate::runtime::DMResult;
 
 #[doc(hidden)]
 pub struct CompileTimeHook {
 	pub proc_path: &'static str,
-	pub hook: ProcHook,
+	pub hook: ProcHook
 }
 
 inventory::collect!(CompileTimeHook);
@@ -35,20 +37,20 @@ extern "C" {
 		args: *mut raw_types::values::Value,
 		args_count_l: usize,
 		unk_1: u32,
-		unk_2: u32,
+		unk_2: u32
 	) -> raw_types::values::Value;
 }
 
 struct Detours {
 	pub runtime_detour: Option<RawDetour>,
-	pub call_proc_detour: Option<RawDetour>,
+	pub call_proc_detour: Option<RawDetour>
 }
 
 impl Detours {
 	pub fn new() -> Self {
 		Self {
 			runtime_detour: None,
-			call_proc_detour: None,
+			call_proc_detour: None
 		}
 	}
 }
@@ -59,7 +61,7 @@ pub enum HookFailure {
 	NotInitialized,
 	ProcNotFound,
 	AlreadyHooked,
-	UnknownFailure,
+	UnknownFailure
 }
 
 impl std::fmt::Debug for HookFailure {
@@ -68,25 +70,21 @@ impl std::fmt::Debug for HookFailure {
 			Self::NotInitialized => write!(f, "Library not initialized"),
 			Self::ProcNotFound => write!(f, "Proc not found"),
 			Self::AlreadyHooked => write!(f, "Proc is already hooked"),
-			Self::UnknownFailure => write!(f, "Unknown failure"),
+			Self::UnknownFailure => write!(f, "Unknown failure")
 		}
 	}
 }
 
 pub fn init() -> Result<(), String> {
 	unsafe {
-		let runtime_hook = RawDetour::new(
-			raw_types::funcs::runtime_byond as *const (),
-			runtime_hook as *const (),
-		)
-		.unwrap();
+		let runtime_hook = RawDetour::new(raw_types::funcs::runtime_byond as *const (), runtime_hook as *const ()).unwrap();
 
 		runtime_hook.enable().unwrap();
 		runtime_original = std::mem::transmute(runtime_hook.trampoline());
 
 		let call_hook = RawDetour::new(
 			raw_types::funcs::call_proc_by_id_byond as *const (),
-			call_proc_by_id_hook_trampoline as *const (),
+			call_proc_by_id_hook_trampoline as *const ()
 		)
 		.unwrap();
 
@@ -120,11 +118,7 @@ thread_local! {
 	static PROC_HOOKS: RefCell<FxHashMap<raw_types::procs::ProcId, (ProcHook, String)>> = RefCell::new(FxHashMap::default());
 }
 
-fn hook_by_id(
-	id: raw_types::procs::ProcId,
-	hook: ProcHook,
-	hook_path: String,
-) -> Result<(), HookFailure> {
+fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook, hook_path: String) -> Result<(), HookFailure> {
 	PROC_HOOKS.with(|h| {
 		let mut map = h.borrow_mut();
 		if map.contains_key(&id) {
@@ -143,7 +137,7 @@ pub fn clear_hooks() {
 pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure> {
 	match super::proc::get_proc(name) {
 		Some(p) => hook_by_id(p.id, hook, p.path.to_owned()),
-		None => Err(HookFailure::ProcNotFound),
+		None => Err(HookFailure::ProcNotFound)
 	}
 }
 
@@ -173,7 +167,7 @@ extern "C" fn call_proc_by_id_hook(
 	args_ptr: *mut raw_types::values::Value,
 	num_args: usize,
 	_unknown2: u32,
-	_unknown3: u32,
+	_unknown3: u32
 ) -> u8 {
 	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
 		Some((hook, path)) => {
@@ -185,7 +179,7 @@ extern "C" fn call_proc_by_id_hook(
 					std::slice::from_raw_parts(args_ptr, num_args)
 						.iter()
 						.map(|v| Value::from_raw_owned(*v))
-						.collect(),
+						.collect()
 				)
 			};
 
@@ -201,18 +195,13 @@ extern "C" fn call_proc_by_id_hook(
 				Err(e) => {
 					Proc::find("/proc/auxtools_stack_trace")
 						.unwrap()
-						.call(&[&Value::from_string(format!(
-							"{} HookPath: {}",
-							e.message.as_str(),
-							path.as_str()
-						))
-						.unwrap()])
+						.call(&[&Value::from_string(format!("{} HookPath: {}", e.message.as_str(), path.as_str())).unwrap()])
 						.unwrap();
 					Some(Value::null().raw)
 				}
 			}
 		}
-		None => None,
+		None => None
 	}) {
 		Some(result) => {
 			unsafe {
@@ -220,6 +209,6 @@ extern "C" fn call_proc_by_id_hook(
 			}
 			1
 		}
-		None => 0,
+		None => 0
 	}
 }

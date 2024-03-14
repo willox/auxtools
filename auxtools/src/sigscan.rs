@@ -5,14 +5,12 @@ mod windows;
 
 use std::ops::{Bound, RangeBounds};
 
+pub use auxtools_impl::convert_signature;
 #[cfg(unix)]
 pub use linux::Scanner;
+pub use once_cell;
 #[cfg(windows)]
 pub use windows::Scanner;
-
-pub use auxtools_impl::convert_signature;
-
-pub use once_cell;
 
 #[macro_export]
 macro_rules! signature {
@@ -39,13 +37,13 @@ macro_rules! signature_struct {
 	(call, $sig:tt) => {
 		$crate::sigscan::Signature {
 			treatment: $crate::sigscan::SignatureTreatment::OffsetByCall,
-			bytes: signature!($sig),
+			bytes: signature!($sig)
 		}
 	};
 	($offset:literal, $sig:tt) => {
 		$crate::sigscan::Signature {
 			treatment: $crate::sigscan::SignatureTreatment::OffsetByInt($offset),
-			bytes: signature!($sig),
+			bytes: signature!($sig)
 		}
 	};
 	(($spec:tt, $sig:tt)) => {
@@ -54,7 +52,7 @@ macro_rules! signature_struct {
 	($sig:tt) => {
 		$crate::sigscan::Signature {
 			treatment: $crate::sigscan::SignatureTreatment::NoOffset,
-			bytes: signature!($sig),
+			bytes: signature!($sig)
 		}
 	};
 }
@@ -111,7 +109,7 @@ macro_rules! find_signature {
 		find_signature_inner!($scanner, $name, $type);
 	};
 
-	($scanner:ident, ($name:ident as $type:ty)) => {
+	($scanner:ident,($name:ident as $type:ty)) => {
 		find_signature_inner!($scanner, $name, $type);
 	};
 
@@ -126,7 +124,7 @@ macro_rules! find_signature_result {
 		find_signature_inner_result!($scanner, $name, $type);
 	};
 
-	($scanner:ident, ($name:ident as $type:ty)) => {
+	($scanner:ident,($name:ident as $type:ty)) => {
 		find_signature_inner_result!($scanner, $name, $type);
 	};
 
@@ -156,24 +154,20 @@ macro_rules! find_signatures_result {
 pub enum SignatureTreatment {
 	NoOffset,
 	OffsetByInt(isize),
-	OffsetByCall,
+	OffsetByCall
 }
 
 pub struct Signature {
 	pub treatment: SignatureTreatment,
-	pub bytes: &'static [Option<u8>],
+	pub bytes: &'static [Option<u8>]
 }
 
 impl Signature {
 	pub fn find(&self, scanner: &Scanner) -> Option<*const std::ffi::c_void> {
 		scanner.find(&self.bytes).map(|address| unsafe {
 			match self.treatment {
-				SignatureTreatment::NoOffset | SignatureTreatment::OffsetByInt(0) => {
-					std::mem::transmute(address as *const std::ffi::c_void)
-				}
-				SignatureTreatment::OffsetByInt(i) => {
-					*(address.offset(i) as *const *const std::ffi::c_void)
-				}
+				SignatureTreatment::NoOffset | SignatureTreatment::OffsetByInt(0) => std::mem::transmute(address as *const std::ffi::c_void),
+				SignatureTreatment::OffsetByInt(i) => *(address.offset(i) as *const *const std::ffi::c_void),
 				SignatureTreatment::OffsetByCall => {
 					let offset = *(address.offset(1) as *const isize);
 					address.offset(5).offset(offset) as *const () as *const std::ffi::c_void
@@ -185,7 +179,7 @@ impl Signature {
 
 pub enum SignatureMap {
 	AllVersions(Signature),
-	VersionDependent(Vec<((Bound<&'static u32>, Bound<&'static u32>), Signature)>),
+	VersionDependent(Vec<((Bound<&'static u32>, Bound<&'static u32>), Signature)>)
 }
 
 impl SignatureMap {
@@ -195,7 +189,7 @@ impl SignatureMap {
 			Self::VersionDependent(map) => map
 				.iter()
 				.find(|(version_range, _)| version_range.contains(&version))
-				.and_then(|(_, signature)| signature.find(scanner)),
+				.and_then(|(_, signature)| signature.find(scanner))
 		}
 	}
 }

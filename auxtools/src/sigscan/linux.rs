@@ -1,5 +1,7 @@
-use std::ffi::{c_void, CStr, CString};
-use std::os::raw::{c_char, c_int};
+use std::{
+	ffi::{c_void, CStr, CString},
+	os::raw::{c_char, c_int}
+};
 
 use libc::{dl_iterate_phdr, dl_phdr_info, Elf32_Phdr, PT_LOAD};
 
@@ -8,31 +10,24 @@ struct CallbackData {
 	module_name_ptr: *const c_char,
 	memory_start: usize,
 	memory_len: usize,
-	memory_area: Option<&'static [u8]>,
+	memory_area: Option<&'static [u8]>
 }
 
 pub struct Scanner {
-	module_name: String,
+	module_name: String
 }
 
 extern "C" fn dl_phdr_callback(info: *mut dl_phdr_info, _size: usize, data: *mut c_void) -> c_int {
 	let info = unsafe { *info };
 	let module_name = unsafe { CStr::from_ptr(info.dlpi_name) }.to_str().unwrap();
 	let cb_data = unsafe { &mut *(data as *mut CallbackData) };
-	let target_module_name = unsafe { CStr::from_ptr(cb_data.module_name_ptr as *mut c_char) }
-		.to_str()
-		.unwrap();
+	let target_module_name = unsafe { CStr::from_ptr(cb_data.module_name_ptr as *mut c_char) }.to_str().unwrap();
 	if !module_name.ends_with(target_module_name) {
 		return 0;
 	}
 
-	let headers: &'static [Elf32_Phdr] =
-		unsafe { std::slice::from_raw_parts(info.dlpi_phdr, info.dlpi_phnum as usize) };
-	let elf_header = headers
-		.iter()
-		.filter(|p| p.p_type == PT_LOAD)
-		.next()
-		.unwrap();
+	let headers: &'static [Elf32_Phdr] = unsafe { std::slice::from_raw_parts(info.dlpi_phdr, info.dlpi_phnum as usize) };
+	let elf_header = headers.iter().filter(|p| p.p_type == PT_LOAD).next().unwrap();
 
 	let start = (info.dlpi_addr + elf_header.p_vaddr) as usize;
 	let end = start + elf_header.p_memsz as usize;
@@ -47,7 +42,7 @@ extern "C" fn dl_phdr_callback(info: *mut dl_phdr_info, _size: usize, data: *mut
 impl Scanner {
 	pub fn for_module(name: &str) -> Option<Scanner> {
 		Some(Scanner {
-			module_name: name.to_string(),
+			module_name: name.to_string()
 		})
 	}
 
@@ -58,14 +53,9 @@ impl Scanner {
 			module_name_ptr,
 			memory_start: 0,
 			memory_len: 0,
-			memory_area: None,
+			memory_area: None
 		};
-		unsafe {
-			dl_iterate_phdr(
-				Some(dl_phdr_callback),
-				&mut data as *mut CallbackData as *mut c_void,
-			)
-		};
+		unsafe { dl_iterate_phdr(Some(dl_phdr_callback), &mut data as *mut CallbackData as *mut c_void) };
 
 		let mut data_current = data.memory_start as *mut u8;
 		let data_end = (data.memory_start + data.memory_len) as *mut u8;
@@ -80,9 +70,7 @@ impl Scanner {
 
 		unsafe {
 			while data_current <= data_end {
-				if signature[signature_offset] == None
-					|| signature[signature_offset] == Some(*data_current)
-				{
+				if signature[signature_offset] == None || signature[signature_offset] == Some(*data_current) {
 					if signature.len() <= signature_offset + 1 {
 						if result.is_some() {
 							// Found two matches.

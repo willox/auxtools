@@ -23,5 +23,5 @@ pub struct StringEntry {
 	pub right: *mut StringEntry,
 	pub ref_count: u32,
 	pub unk_1: u32,
-	pub unk_2: u32,
+	pub unk_2: u32
 }

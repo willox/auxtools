@@ -1,22 +1,22 @@
 use crate::*;
-use std::ffi::CStr;
-use std::fmt;
+use std::{ffi::CStr, fmt};
 
-/// A wrapper around [Values](struct.Value.html) that make working with strings a little easier
+/// A wrapper around [Values](struct.Value.html) that make working with strings
+/// a little easier
 pub struct StringRef {
-	pub value: Value,
+	pub value: Value
 }
 
 impl StringRef {
 	pub fn new(string: &str) -> DMResult<Self> {
 		Ok(StringRef {
-			value: Value::from_string(string)?,
+			value: Value::from_string(string)?
 		})
 	}
 
 	pub fn from_raw(data: &[u8]) -> DMResult<Self> {
 		Ok(StringRef {
-			value: Value::from_string_raw(data)?,
+			value: Value::from_string_raw(data)?
 		})
 	}
 
@@ -25,9 +25,10 @@ impl StringRef {
 			return None;
 		}
 
-		// Here we're going from value -> raw -> new value because to get that juicy static lifetime
+		// Here we're going from value -> raw -> new value because to get that juicy
+		// static lifetime
 		Some(StringRef {
-			value: unsafe { Value::from_raw(value.raw) },
+			value: unsafe { Value::from_raw(value.raw) }
 		})
 	}
 
@@ -35,21 +36,19 @@ impl StringRef {
 		StringRef {
 			value: Value::from_raw(raw_types::values::Value {
 				tag: raw_types::values::ValueTag::String,
-				data: raw_types::values::ValueData { string: id },
-			}),
+				data: raw_types::values::ValueData { string: id }
+			})
 		}
 	}
 
 	pub unsafe fn from_variable_id(id: raw_types::strings::VariableId) -> Self {
-		let string_id = *((*raw_types::funcs::VARIABLE_NAMES)
-			.entries
-			.add(id.0 as usize));
+		let string_id = *((*raw_types::funcs::VARIABLE_NAMES).entries.add(id.0 as usize));
 
 		StringRef {
 			value: Value::from_raw(raw_types::values::Value {
 				tag: raw_types::values::ValueTag::String,
-				data: raw_types::values::ValueData { string: string_id },
-			}),
+				data: raw_types::values::ValueData { string: string_id }
+			})
 		}
 	}
 
@@ -88,11 +87,12 @@ impl fmt::Debug for StringRef {
 		loop {
 			let byte = match iter.next() {
 				Some(x) => *x,
-				None => break,
+				None => break
 			};
 
 			if byte == 0xFF {
-				// NOTE: Doesn't hold state for formatting, so some strings relying on are a little off
+				// NOTE: Doesn't hold state for formatting, so some strings relying on are a
+				// little off
 				format.extend_from_slice(match iter.next() {
 					None => break,
 					Some(1) | Some(2) | Some(3) | Some(4) => b"[]",
@@ -137,7 +137,7 @@ impl fmt::Debug for StringRef {
 					Some(43) => b"\\icon[]",
 					Some(44) => b"\\roman[]",
 					Some(45) => b"\\Roman[]",
-					Some(_) => b"[UNKNONWN FORMAT SPECIFIER]",
+					Some(_) => b"[UNKNONWN FORMAT SPECIFIER]"
 				});
 				continue;
 			}

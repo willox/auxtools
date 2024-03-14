@@ -1,9 +1,11 @@
-use crate::*;
 use std::iter::FromIterator;
 
-/// A wrapper around [Values](struct.Value.html) that make working with lists a little easier
+use crate::*;
+
+/// A wrapper around [Values](struct.Value.html) that make working with lists a
+/// little easier
 pub struct List {
-	value: Value,
+	value: Value
 }
 
 impl List {
@@ -29,10 +31,10 @@ impl List {
 
 		let raw = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::List,
-			data: raw_types::values::ValueData { id: id.0 },
+			data: raw_types::values::ValueData { id: id.0 }
 		};
 		Self {
-			value: unsafe { Value::from_raw_owned(raw) },
+			value: unsafe { Value::from_raw_owned(raw) }
 		}
 	}
 
@@ -41,7 +43,7 @@ impl List {
 
 		let mut value = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
-			data: raw_types::values::ValueData { id: 0 },
+			data: raw_types::values::ValueData { id: 0 }
 		};
 
 		// assoc funcs for everything else
@@ -50,17 +52,11 @@ impl List {
 				return Ok(Value::from_raw_owned(value));
 			}
 
-			Err(runtime!(
-				"failed to get assoc list entry (probably given an invalid list or key)"
-			))
+			Err(runtime!("failed to get assoc list entry (probably given an invalid list or key)"))
 		}
 	}
 
-	pub fn set<K: Into<Value>, V: Into<Value>>(
-		&self,
-		index: K,
-		value: V,
-	) -> Result<(), runtime::Runtime> {
+	pub fn set<K: Into<Value>, V: Into<Value>>(&self, index: K, value: V) -> Result<(), runtime::Runtime> {
 		let index = index.into();
 		let value = value.into();
 
@@ -69,9 +65,7 @@ impl List {
 				return Ok(());
 			}
 
-			Err(runtime!(
-				"failed to set assoc list entry (probably given an invalid list or key)"
-			))
+			Err(runtime!("failed to set assoc list entry (probably given an invalid list or key)"))
 		}
 	}
 
@@ -79,10 +73,7 @@ impl List {
 		let value = value.into();
 
 		unsafe {
-			assert_eq!(
-				raw_types::funcs::append_to_list(self.value.raw, value.raw),
-				1
-			);
+			assert_eq!(raw_types::funcs::append_to_list(self.value.raw, value.raw), 1);
 		}
 	}
 
@@ -90,10 +81,7 @@ impl List {
 		let value = value.into();
 
 		unsafe {
-			assert_eq!(
-				raw_types::funcs::remove_from_list(self.value.raw, value.raw),
-				1
-			);
+			assert_eq!(raw_types::funcs::remove_from_list(self.value.raw, value.raw), 1);
 		}
 	}
 
@@ -140,7 +128,7 @@ impl List {
 			| raw_types::values::ValueTag::MobVisLocs
 			| raw_types::values::ValueTag::WorldVars
 			| raw_types::values::ValueTag::GlobalVars => true,
-			_ => false,
+			_ => false
 		}
 	}
 }
