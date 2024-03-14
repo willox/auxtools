@@ -1,7 +1,7 @@
-use crate::raw_types::{funcs, procs};
-use crate::Proc;
-use crate::StringRef;
-use crate::Value;
+use crate::{
+	raw_types::{funcs, procs},
+	Proc, StringRef, Value
+};
 
 pub struct StackFrame {
 	pub context: *mut procs::ExecutionContext,
@@ -14,14 +14,13 @@ pub struct StackFrame {
 	pub args: Vec<(Option<StringRef>, Value)>,
 	pub locals: Vec<(StringRef, Value)>,
 	pub file_name: Option<StringRef>,
-	pub line_number: Option<u32>,
-	// pub time_to_resume: Option<u32>,
-	// TODO: current instruction & bytecode offset
+	pub line_number: Option<u32> /* pub time_to_resume: Option<u32>,
+	                              * TODO: current instruction & bytecode offset */
 }
 
 pub struct CallStacks {
 	pub active: Vec<StackFrame>,
-	pub suspended: Vec<Vec<StackFrame>>,
+	pub suspended: Vec<Vec<StackFrame>>
 }
 
 impl StackFrame {
@@ -37,12 +36,13 @@ impl StackFrame {
 		let src = Value::from_raw((*instance).src);
 		let dot = Value::from_raw((*context).dot);
 
-		// Make sure to handle arguments/locals with no names (when there are more values than names)
+		// Make sure to handle arguments/locals with no names (when there are more
+		// values than names)
 		let args = (0..(*instance).args_count)
 			.map(|i| {
 				let name = match param_names.get(i as usize) {
 					Some(name) => Some(name.clone()),
-					None => None,
+					None => None
 				};
 				(name, Value::from_raw(*((*instance).args).add(i as usize)))
 			})
@@ -52,7 +52,7 @@ impl StackFrame {
 			.map(|i| {
 				(
 					local_names.get(i as usize).unwrap().clone(),
-					Value::from_raw(*((*context).locals).add(i as usize)),
+					Value::from_raw(*((*context).locals).add(i as usize))
 				)
 			})
 			.collect();
@@ -79,15 +79,14 @@ impl StackFrame {
 			args,
 			locals,
 			file_name,
-			line_number,
-			// time_to_resume,
+			line_number // time_to_resume,
 		}
 	}
 }
 
 enum CallStackKind {
 	Active,
-	Suspended,
+	Suspended
 }
 
 impl CallStacks {
@@ -108,17 +107,12 @@ impl CallStacks {
 		}
 
 		CallStacks {
-			active: unsafe {
-				CallStacks::from_context(*funcs::CURRENT_EXECUTION_CONTEXT, CallStackKind::Active)
-			},
-			suspended,
+			active: unsafe { CallStacks::from_context(*funcs::CURRENT_EXECUTION_CONTEXT, CallStackKind::Active) },
+			suspended
 		}
 	}
 
-	fn from_context(
-		mut context: *mut procs::ExecutionContext,
-		kind: CallStackKind,
-	) -> Vec<StackFrame> {
+	fn from_context(mut context: *mut procs::ExecutionContext, kind: CallStackKind) -> Vec<StackFrame> {
 		let mut frames = vec![];
 
 		loop {
@@ -135,7 +129,7 @@ impl CallStacks {
 		// BYOND stores sleeping stacks' frames in reverse-order
 		match kind {
 			CallStackKind::Active => frames,
-			CallStackKind::Suspended => frames.into_iter().rev().collect(),
+			CallStackKind::Suspended => frames.into_iter().rev().collect()
 		}
 	}
 }

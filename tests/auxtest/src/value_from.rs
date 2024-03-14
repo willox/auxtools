@@ -1,25 +1,23 @@
+use std::{collections::HashMap, convert::TryFrom};
+
 use auxtools::*;
-use std::collections::HashMap;
-use std::convert::TryFrom;
 
 #[hook("/proc/auxtest_value_from")]
 fn test_value_from() {
-	/* Numbers */
+	// Numbers
 	let value = Value::from(30);
 	if value.as_number()? != 30.0 {
 		return Err(runtime!("value_from: Value failed to convert i32"));
 	}
 
-	/* Vectors */
+	// Vectors
 	// The simplest case: A Vec of Value's.
 	let mut vector: Vec<Value> = Vec::new();
 	vector.push(5.into());
 	let value = Value::from(&vector);
 	let list = List::from_value(&value)?;
 	if list.len() != 1 {
-		return Err(runtime!(
-			"value_from: Vec with one entry did not result in a list length of one"
-		));
+		return Err(runtime!("value_from: Vec with one entry did not result in a list length of one"));
 	}
 	let value = list.get(1)?.as_number()?;
 	if value != 5.0 {
@@ -29,7 +27,7 @@ fn test_value_from() {
 		));
 	};
 
-	/* Hashmaps */
+	// Hashmaps
 	// The simplest case: Value -> Value
 	let mut hashmap: HashMap<Value, Value> = HashMap::new();
 	hashmap.insert(Value::from_string("meow")?, 1.into());
@@ -42,7 +40,7 @@ fn test_value_from() {
 	let value = Value::try_from(&hashmap)?;
 	assert_meow_equals_one(value)?;
 
-	/* Todo: Other stuff */
+	// Todo: Other stuff
 
 	Ok(Value::from(true))
 }
@@ -61,9 +59,7 @@ fn assert_meow_equals_one(value: Value) -> Result<(), Runtime> {
 	let list = List::from_value(&value)?;
 
 	if list.len() != 1 {
-		return Err(runtime!(
-			"value_from: Hashmap with one key did not result in a list length of one"
-		));
+		return Err(runtime!("value_from: Hashmap with one key did not result in a list length of one"));
 	}
 
 	let value = list.get(byond_string!("meow"))?.as_number()?;

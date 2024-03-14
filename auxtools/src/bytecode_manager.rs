@@ -1,20 +1,23 @@
-// This module is in control of allocating buffers for use when replacing a proc's bytecode.
-// To keep things sane, we also have to return the pointers to their original value before BYOND shuts down.
-// We _also_ have to check if any existing procs are still using our bytecode when we shut down and leak the memory if so.
-// It may be possible to avoid the leaks but it really doesn't matter.
+// This module is in control of allocating buffers for use when replacing a
+// proc's bytecode. To keep things sane, we also have to return the pointers to
+// their original value before BYOND shuts down. We _also_ have to check if any
+// existing procs are still using our bytecode when we shut down and leak the
+// memory if so. It may be possible to avoid the leaks but it really doesn't
+// matter.
 
-use crate::{debug, raw_types, *};
-use std::convert::TryFrom;
 use std::{
 	cell::UnsafeCell,
 	collections::{HashMap, HashSet},
+	convert::TryFrom
 };
+
+use crate::{debug, raw_types, *};
 
 static mut BYTECODE_ALLOCATIONS: UnsafeCell<Option<State>> = UnsafeCell::new(None);
 
 struct State {
 	allocations: HashSet<Vec<u32>>,
-	original: HashMap<raw_types::procs::ProcId, (*mut u32, u16)>,
+	original: HashMap<raw_types::procs::ProcId, (*mut u32, u16)>
 }
 
 pub fn init() {
@@ -22,7 +25,7 @@ pub fn init() {
 		let ptr = BYTECODE_ALLOCATIONS.get();
 		*ptr = Some(State {
 			allocations: HashSet::new(),
-			original: HashMap::new(),
+			original: HashMap::new()
 		});
 	}
 }

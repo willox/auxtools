@@ -14,45 +14,45 @@ pub enum Request {
 	Eval {
 		frame_id: Option<u32>,
 		command: String,
-		context: Option<String>,
+		context: Option<String>
 	},
 	CurrentInstruction {
-		frame_id: u32,
+		frame_id: u32
 	},
 	BreakpointSet {
 		instruction: InstructionRef,
-		condition: Option<String>,
+		condition: Option<String>
 	},
 	BreakpointUnset {
-		instruction: InstructionRef,
+		instruction: InstructionRef
 	},
 	CatchRuntimes {
-		should_catch: bool,
+		should_catch: bool
 	},
 	LineNumber {
 		proc: ProcRef,
-		offset: u32,
+		offset: u32
 	},
 	Offset {
 		proc: ProcRef,
-		line: u32,
+		line: u32
 	},
 	Stacks,
 	StackFrames {
 		stack_id: u32,
 		start_frame: Option<u32>,
-		count: Option<u32>,
+		count: Option<u32>
 	},
 	Scopes {
-		frame_id: u32,
+		frame_id: u32
 	},
 	Variables {
-		vars: VariablesRef,
+		vars: VariablesRef
 	},
 	Continue {
-		kind: ContinueKind,
+		kind: ContinueKind
 	},
-	Pause,
+	Pause
 }
 
 // Message from server -> client
@@ -63,54 +63,54 @@ pub enum Response {
 	Eval(EvalResponse),
 	CurrentInstruction(Option<InstructionRef>),
 	BreakpointSet {
-		result: BreakpointSetResult,
+		result: BreakpointSetResult
 	},
 	BreakpointUnset {
-		success: bool,
+		success: bool
 	},
 	LineNumber {
-		line: Option<u32>,
+		line: Option<u32>
 	},
 	Offset {
-		offset: Option<u32>,
+		offset: Option<u32>
 	},
 	Stacks {
-		stacks: Vec<Stack>,
+		stacks: Vec<Stack>
 	},
 	StackFrames {
 		frames: Vec<StackFrame>,
-		total_count: u32,
+		total_count: u32
 	},
 	Scopes {
 		arguments: Option<VariablesRef>,
 		locals: Option<VariablesRef>,
-		globals: Option<VariablesRef>,
+		globals: Option<VariablesRef>
 	},
 	Variables {
-		vars: Vec<Variable>,
+		vars: Vec<Variable>
 	},
 
 	// These responses can occur at any moment, even between a request and its response
 	// I guess they aren't really responses...
 	Disconnect,
 	Notification {
-		message: String,
+		message: String
 	},
 	BreakpointHit {
-		reason: BreakpointReason,
-	},
+		reason: BreakpointReason
+	}
 }
 
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct ProcRef {
 	pub path: String,
-	pub override_id: u32,
+	pub override_id: u32
 }
 
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct InstructionRef {
 	pub proc: ProcRef,
-	pub offset: u32,
+	pub offset: u32
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -118,7 +118,7 @@ pub enum BreakpointReason {
 	Breakpoint,
 	Step,
 	Pause,
-	Runtime(String),
+	Runtime(String)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -126,26 +126,26 @@ pub enum ContinueKind {
 	Continue,
 	StepOver { stack_id: u32 },
 	StepInto { stack_id: u32 },
-	StepOut { stack_id: u32 },
+	StepOut { stack_id: u32 }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Stack {
 	pub id: u32,
-	pub name: String,
+	pub name: String
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StackFrame {
 	pub id: u32,
 	pub instruction: InstructionRef,
-	pub line: Option<u32>,
+	pub line: Option<u32>
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum BreakpointSetResult {
 	Success { line: Option<u32> },
-	Failed,
+	Failed
 }
 
 #[derive(Clone, Hash, Eq, PartialEq, Serialize, Deserialize, Debug)]
@@ -155,11 +155,11 @@ pub struct VariablesRef(pub i32);
 pub struct Variable {
 	pub name: String,
 	pub value: String,
-	pub variables: Option<VariablesRef>,
+	pub variables: Option<VariablesRef>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EvalResponse {
 	pub value: String,
-	pub variables: Option<VariablesRef>,
+	pub variables: Option<VariablesRef>
 }

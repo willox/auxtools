@@ -1,14 +1,14 @@
 [workspace]
-members = [
-	"auxcov",
-	"auxtools",
-	"auxtools-impl",
-	"debug_server",
-	"instruction_hooking",
-	"tests/auxtest",
-	"tests/byond_get",
-	"tests/test_runner",
-]
+members = ["auxcov", "auxtools", "auxtools-impl", "debug_server", "instruction_hooking", "tests/auxtest", "tests/byond_get", "tests/test_runner"]
+resolver = "2"
+
+[workspace.package]
+authors = ["Sophie Wallace <sophie@wiox.me>", "Lucy <lucy@absolucy.moe>"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/wilox/auxtools"
+rust-version = "1.76"
+version = "0.1.0"
 
 [profile.release]
 opt-level = 3

@@ -5,9 +5,7 @@ fn test_weak_values(someval: Value) {
 	let weak = someval.as_weak()?;
 
 	if weak.upgrade().is_none() {
-		return Err(runtime!(
-			"test_weak_values: Failed to upgrade weak reference to existing value"
-		));
+		return Err(runtime!("test_weak_values: Failed to upgrade weak reference to existing value"));
 	}
 
 	Proc::find("/proc/del_value")
@@ -19,9 +17,7 @@ fn test_weak_values(someval: Value) {
 		.call(&[])?;
 
 	if weak.upgrade().is_some() {
-		return Err(runtime!(
-			"test_weak_values: Upgraded a weak reference to deleted value"
-		));
+		return Err(runtime!("test_weak_values: Upgraded a weak reference to deleted value"));
 	}
 
 	Ok(Value::from(true))

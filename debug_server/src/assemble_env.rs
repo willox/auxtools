@@ -45,13 +45,7 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 		let proc = Proc::find("/proc/auxtools_expr_stub")?;
 		proc.set_bytecode(assembly);
 
-		let res = proc
-			.call(&[&path])
-			.unwrap()
-			.as_list()
-			.unwrap()
-			.get(1)
-			.unwrap();
+		let res = proc.call(&[&path]).unwrap().as_list().unwrap().get(1).unwrap();
 
 		if res == Value::null() {
 			return None;

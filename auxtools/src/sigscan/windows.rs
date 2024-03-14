@@ -1,15 +1,14 @@
-use std::mem;
-use std::ptr;
+use std::{mem, ptr};
 
-use winapi::shared::minwindef;
-use winapi::um::libloaderapi;
-use winapi::um::processthreadsapi;
-use winapi::um::psapi;
+use winapi::{
+	shared::minwindef,
+	um::{libloaderapi, processthreadsapi, psapi}
+};
 
 pub struct Scanner {
 	_module: minwindef::HMODULE,
 	data_begin: *mut u8,
-	data_end: *mut u8,
+	data_end: *mut u8
 }
 
 impl Scanner {
@@ -31,7 +30,7 @@ impl Scanner {
 				processthreadsapi::GetCurrentProcess(),
 				module,
 				module_info_wrapper.as_mut_ptr(),
-				mem::size_of::<psapi::MODULEINFO>() as u32,
+				mem::size_of::<psapi::MODULEINFO>() as u32
 			) == 0
 			{
 				libloaderapi::FreeLibrary(module);
@@ -40,15 +39,13 @@ impl Scanner {
 
 			let module_info = module_info_wrapper.assume_init();
 			data_begin = module_info.lpBaseOfDll as *mut u8;
-			data_end = data_begin
-				.offset(module_info.SizeOfImage as isize)
-				.offset(-1);
+			data_end = data_begin.offset(module_info.SizeOfImage as isize).offset(-1);
 		}
 
 		Some(Scanner {
 			_module: module,
 			data_begin,
-			data_end,
+			data_end
 		})
 	}
 
@@ -60,9 +57,7 @@ impl Scanner {
 
 		unsafe {
 			while data_current <= data_end {
-				if signature[signature_offset] == None
-					|| signature[signature_offset] == Some(*data_current)
-				{
+				if signature[signature_offset] == None || signature[signature_offset] == Some(*data_current) {
 					if signature.len() <= signature_offset + 1 {
 						if result.is_some() {
 							// Found two matches.
@@ -90,11 +85,9 @@ impl Scanner {
 impl Drop for Scanner {
 	fn drop(&mut self) {
 		// TODO: WTf this started throwing?!
-		/*
-		unsafe {
-			libloaderapi::FreeLibrary(self.module);
-		}
-		*/
+		// unsafe {
+		// libloaderapi::FreeLibrary(self.module);
+		// }
 	}
 }
 

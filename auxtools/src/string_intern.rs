@@ -1,14 +1,12 @@
 use std::cell::UnsafeCell;
 
-use crate::inventory;
-use crate::StringRef;
+use crate::{inventory, StringRef};
 
 #[macro_export]
 macro_rules! byond_string {
 	($s:literal) => {
 		unsafe {
-			static mut STORE: $crate::InternedString =
-				$crate::InternedString($s, std::cell::UnsafeCell::new(None));
+			static mut STORE: $crate::InternedString = $crate::InternedString($s, std::cell::UnsafeCell::new(None));
 			$crate::inventory::submit!(unsafe { &STORE });
 			let x = &*STORE.1.get();
 			x.as_ref().unwrap()
@@ -16,7 +14,7 @@ macro_rules! byond_string {
 	};
 }
 
-//hack
+// hack
 unsafe impl Sync for InternedString {}
 
 #[doc(hidden)]

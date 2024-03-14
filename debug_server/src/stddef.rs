@@ -1,5 +1,7 @@
-use std::ffi::{c_void, CStr, CString};
-use std::os::raw::c_char;
+use std::{
+	ffi::{c_void, CStr, CString},
+	os::raw::c_char
+};
 
 use auxtools::*;
 
@@ -26,8 +28,7 @@ fn stddef_init() -> Result<(), String> {
 				return Err("Couldn't get module handle for BYONDCORE".into());
 			}
 
-			let symbol =
-				libloaderapi::GetProcAddress(module, STDDEF_FN_SYMBOL.as_ptr() as *const c_char);
+			let symbol = libloaderapi::GetProcAddress(module, STDDEF_FN_SYMBOL.as_ptr() as *const c_char);
 			if symbol.is_null() {
 				return Err("Couldn't find STDDEF_FN in BYONDCORE".into());
 			}

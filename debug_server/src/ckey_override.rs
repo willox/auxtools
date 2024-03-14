@@ -1,7 +1,7 @@
-use region::Protection;
 use std::{ffi::CString, os::raw::c_char};
 
 use auxtools::*;
+use region::Protection;
 
 static mut STRING_PTR: *mut *const c_char = std::ptr::null_mut();
 
@@ -27,7 +27,7 @@ fn ckey_override_init() -> Result<(), String> {
 #[derive(Debug)]
 pub enum Error {
 	UnsupportedByondVersion,
-	InvalidString,
+	InvalidString
 }
 
 pub fn override_guest_ckey(name: &str) -> Result<(), Error> {
@@ -39,9 +39,7 @@ pub fn override_guest_ckey(name: &str) -> Result<(), Error> {
 
 	let name = name.replace('%', "%%");
 
-	let new_ptr = CString::new(name)
-		.map_err(|_| Error::InvalidString)?
-		.into_raw();
+	let new_ptr = CString::new(name).map_err(|_| Error::InvalidString)?.into_raw();
 
 	unsafe {
 		region::protect(STRING_PTR as *const u8, 4, Protection::READ_WRITE_EXECUTE).unwrap();

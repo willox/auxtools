@@ -1,18 +1,24 @@
 pub mod disassemble_env;
 
-use std::{any::Any, cell::UnsafeCell, ffi::c_void};
-
 use auxtools::*;
 use detour::RawDetour;
+use std::{any::Any, cell::UnsafeCell, ffi::c_void};
 
 #[cfg(windows)]
 signatures! {
-	execute_instruction => universal_signature!("0F B7 47 ?? 8B 4F ?? 8B F0 8B 14 ?? 89 95 ?? ?? ?? ?? 81 FA 78 01 00 00")
+	execute_instruction => version_dependent_signature!(
+		1616.. => "0F B7 47 ?? 8B 4F ?? 8B F0 8B 14 ?? 89 95 ?? ?? ?? ?? 81 FA 78 01 00 00",
+		1590..1616 => "0F B7 48 ?? 8B ?? ?? 8B F1 8B ?? ?? 81 ?? ?? ?? 00 00 0F 87 ?? ?? ?? ??",
+		..1590 => "0F B7 48 ?? 8B 78 ?? 8B F1 8B 14 ?? 81 FA ?? ?? 00 00 0F 87 ?? ?? ?? ??"
+	)
 }
 
 #[cfg(unix)]
 signatures! {
-	execute_instruction => universal_signature!("0F B7 C0 8D 14 ?? 8B 02 8B 52 ?? 8B 4E ?? 8B 5E ?? 89 46 ?? 89 56 ?? 89 0C 24")
+	execute_instruction => version_dependent_signature!(
+		1616.. => "0F B7 C0 8D 14 ?? 8B 02 8B 52 ?? 8B 4E ?? 8B 5E ?? 89 46 ?? 89 56 ?? 89 0C 24",
+		..1616 => "0F B7 47 ?? 8B 57 ?? 0F B7 D8 8B 0C ?? 81 F9 ?? ?? 00 00 77 ?? FF 24 8D ?? ?? ?? ??"
+	)
 }
 
 // stackoverflow copypasta https://old.reddit.com/r/rust/comments/kkap4e/how_to_cast_a_boxdyn_mytrait_to_an_actual_struct/
@@ -30,15 +36,18 @@ pub trait InstructionHook: InstructionHookToAny {
 	fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext);
 }
 
-pub static mut INSTRUCTION_HOOKS: UnsafeCell<Vec<Box<dyn InstructionHook>>> =
-	UnsafeCell::new(Vec::new());
+pub static mut INSTRUCTION_HOOKS: UnsafeCell<Vec<Box<dyn InstructionHook>>> = UnsafeCell::new(Vec::new());
 
 extern "C" {
 	// Trampoline to the original un-hooked BYOND execute_instruction code
 	static mut execute_instruction_original: *const c_void;
 
-	// Our version of execute_instruction. It hasn't got a calling convention rust knows about, so don't call it.
+	// Our version of execute_instruction. It hasn't got a calling convention rust
+	// knows about, so don't call it.
 	fn execute_instruction_hook();
+
+	// The 514 version of the instruction hook.
+	fn execute_instruction_hook_514();
 }
 
 #[init(full)]
@@ -49,15 +58,16 @@ fn instruction_hooking_init() -> Result<(), String> {
 		execute_instruction
 	}
 
-	unsafe {
-		let hook = RawDetour::new(
-			execute_instruction as *const (),
-			execute_instruction_hook as *const (),
-		)
-		.map_err(|_| "Couldn't detour execute_instruction")?;
+	let versioned_hook = if cfg!(windows) && auxtools::version::get().0 == 514 {
+		execute_instruction_hook_514 as *const ()
+	} else {
+		execute_instruction_hook as *const ()
+	};
 
-		hook.enable()
-			.map_err(|_| "Couldn't enable execute_instruction detour")?;
+	unsafe {
+		let hook = RawDetour::new(execute_instruction as *const (), versioned_hook).map_err(|_| "Couldn't detour execute_instruction")?;
+
+		hook.enable().map_err(|_| "Couldn't enable execute_instruction detour")?;
 
 		execute_instruction_original = std::mem::transmute(hook.trampoline());
 
@@ -76,11 +86,10 @@ fn instruction_hooking_shutdown() {
 }
 
 // Handles any instruction BYOND tries to execute.
-// This function has to leave `*CURRENT_EXECUTION_CONTEXT` in EAX, so make sure to return it.
+// This function has to leave `*CURRENT_EXECUTION_CONTEXT` in EAX, so make sure
+// to return it.
 #[no_mangle]
-extern "C" fn handle_instruction(
-	ctx: *mut raw_types::procs::ExecutionContext,
-) -> *const raw_types::procs::ExecutionContext {
+extern "C" fn handle_instruction(ctx: *mut raw_types::procs::ExecutionContext) -> *const raw_types::procs::ExecutionContext {
 	unsafe {
 		for vec_box in &mut *INSTRUCTION_HOOKS.get() {
 			vec_box.handle_instruction(ctx);

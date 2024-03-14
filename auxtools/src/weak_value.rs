@@ -1,12 +1,9 @@
-use crate::byond_string;
-use crate::raw_types;
-use crate::DMResult;
-use crate::Value;
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::Ordering::Relaxed;
+use crate::{byond_string, raw_types, DMResult, Value};
+use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
 fn get_next_id() -> f32 {
-	// This can (should) be only called from the main thread but we need to shut Rust up.
+	// This can (should) be only called from the main thread but we need to shut
+	// Rust up.
 	static NEXT_WEAKREF_ID: AtomicU32 = AtomicU32::new(1);
 	let id = NEXT_WEAKREF_ID.fetch_add(1, Relaxed);
 	id as f32
@@ -15,8 +12,8 @@ fn get_next_id() -> f32 {
 /// A weak reference to some datum or atom in the game.
 ///
 /// Normal [`Value`]s are not safe to move between threads.
-/// Using methods like [`Value::set`] or [`Value::call`] can at best cause undefined behavior,
-/// at worst crash the server.
+/// Using methods like [`Value::set`] or [`Value::call`] can at best cause
+/// undefined behavior, at worst crash the server.
 ///
 /// A way to bypass that limitation is to store a raw value
 /// and use [`Value::from_raw`] on the main thread to actually work
@@ -35,7 +32,8 @@ fn get_next_id() -> f32 {
 /// [`WeakValue::upgrade`] on another thread and invoke undefined behavior with
 /// the resulting [`Value`]. So, don't do that.
 ///
-/// Using this struct requires all datums to have a `__auxtools_weakref_id` variable.
+/// Using this struct requires all datums to have a `__auxtools_weakref_id`
+/// variable.
 ///
 /// # Example
 /// ```ignore
@@ -46,13 +44,13 @@ fn get_next_id() -> f32 {
 ///
 /// let weakref = callbacks.get(some_id);
 /// if let Some(thing) = weakref.upgrade() {
-///		thing.call("callback", &[])?;
+/// 		thing.call("callback", &[])?;
 /// }
 /// ```
 #[derive(Copy, Clone)]
 pub struct WeakValue {
 	inner: raw_types::values::Value,
-	id: f32,
+	id: f32
 }
 
 impl WeakValue {
@@ -71,9 +69,7 @@ impl WeakValue {
 	/// and checks if it has been deleted in the meantime.
 	pub fn upgrade(&self) -> Option<Value> {
 		let real_val = unsafe { Value::from_raw(self.inner) };
-		let id = real_val
-			.get_number(byond_string!("__auxtools_weakref_id"))
-			.ok()?;
+		let id = real_val.get_number(byond_string!("__auxtools_weakref_id")).ok()?;
 
 		if self.id != id {
 			return None;
@@ -82,12 +78,12 @@ impl WeakValue {
 		Some(real_val)
 	}
 
-	/// Same as [`WeakValue::upgrade`] but returns a null if the datum was deleted,
-	/// so you can pass it straight into DM.
+	/// Same as [`WeakValue::upgrade`] but returns a null if the datum was
+	/// deleted, so you can pass it straight into DM.
 	pub fn upgrade_or_null(&self) -> Value {
 		match self.upgrade() {
 			Some(v) => v,
-			None => Value::null(),
+			None => Value::null()
 		}
 	}
 }

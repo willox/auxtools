@@ -4,7 +4,7 @@ use crate::inventory;
 pub enum InitLevel {
 	Full,
 	Partial,
-	None,
+	None
 }
 
 pub static mut REQUIRED_INIT: InitLevel = InitLevel::Full;
@@ -17,7 +17,6 @@ pub fn set_init_level(level: InitLevel) {
 	unsafe { REQUIRED_INIT = level }
 }
 
-//
 // Hooks that run on intiailization
 //
 pub type InitFunc = fn() -> Result<(), String>;

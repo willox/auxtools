@@ -11,16 +11,15 @@ fn main() {
 		"windows" => match env::var("CARGO_CFG_TARGET_ENV").unwrap().as_str() {
 			"gnu" => {
 				build.file("src/execute_instruction_hook.windows.S");
+				build.file("src/514/execute_instruction_hook.windows.S");
 			}
 			"msvc" => {
 				build.file("src/execute_instruction_hook.windows.asm");
+				build.file("src/514/execute_instruction_hook.windows.asm");
 			}
-			other => panic!(
-				"don't know how to build hook for family=\"windows\", env={:?}",
-				other
-			),
+			other => panic!("don't know how to build hook for family=\"windows\", env={:?}", other)
 		},
-		other => panic!("don't know how to build hook for family={:?}", other),
+		other => panic!("don't know how to build hook for family={:?}", other)
 	}
 
 	build.compile("instruction-hooking-cpp");

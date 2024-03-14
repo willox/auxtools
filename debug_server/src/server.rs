@@ -1,22 +1,26 @@
-use crate::mem_profiler;
-
-use super::instruction_hooking::{get_hooked_offsets, hook_instruction, unhook_instruction};
-use std::io::{Read, Write};
-use std::sync::mpsc;
-use std::thread;
-use std::{cell::RefCell, error::Error};
 use std::{
+	cell::RefCell,
 	collections::HashMap,
+	error::Error,
+	io::{Read, Write},
 	net::{SocketAddr, TcpListener, TcpStream},
-	thread::JoinHandle,
+	sync::mpsc,
+	thread,
+	thread::JoinHandle
 };
 
+use auxtools::{
+	raw_types::values::{ValueData, ValueTag},
+	*
+};
 use clap::{Arg, Command};
 use instruction_hooking::disassemble_env;
 
-use super::server_types::*;
-use auxtools::raw_types::values::{ValueData, ValueTag};
-use auxtools::*;
+use super::{
+	instruction_hooking::{get_hooked_offsets, hook_instruction, unhook_instruction},
+	server_types::*
+};
+use crate::mem_profiler;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 enum Variables {
@@ -24,13 +28,13 @@ enum Variables {
 	Locals { frame: u32 },
 	ObjectVars(Value),
 	ListContents(Value),
-	ListPair { key: Value, value: Value },
+	ListPair { key: Value, value: Value }
 }
 
 struct State {
 	stacks: debug::CallStacks,
 	variables: RefCell<Vec<Variables>>,
-	variables_to_refs: RefCell<HashMap<Variables, VariablesRef>>,
+	variables_to_refs: RefCell<HashMap<Variables, VariablesRef>>
 }
 
 impl State {
@@ -38,7 +42,7 @@ impl State {
 		Self {
 			stacks: debug::CallStacks::new(),
 			variables: RefCell::new(vec![]),
-			variables_to_refs: RefCell::new(HashMap::new()),
+			variables_to_refs: RefCell::new(HashMap::new())
 		}
 	}
 
@@ -59,19 +63,17 @@ impl State {
 
 	fn get_variables(&self, reference: VariablesRef) -> Option<Variables> {
 		let variables = self.variables.borrow();
-		variables
-			.get(reference.0 as usize - 1)
-			.map(|x| (*x).clone())
+		variables.get(reference.0 as usize - 1).map(|x| (*x).clone())
 	}
 }
 
-//
 // Server = main-thread code
 // ServerThread = networking-thread code
 //
 // We've got a couple of channels going on between Server/ServerThread
-// connection: a TcpStream sent from the ServerThread for the Server to send responses on
-// requests: requests from the debug-client for the Server to handle
+// connection: a TcpStream sent from the ServerThread for the Server to send
+// responses on requests: requests from the debug-client for the Server to
+// handle
 //
 // Limitations: only ever accepts one connection
 //
@@ -83,7 +85,7 @@ enum ServerStream {
 	Connected(TcpStream),
 
 	// The server has finished being used
-	Disconnected,
+	Disconnected
 }
 
 pub struct Server {
@@ -95,11 +97,11 @@ pub struct Server {
 	in_eval: bool,
 	eval_error: Option<String>,
 	conditional_breakpoints: HashMap<(raw_types::procs::ProcId, u16), String>,
-	app: Command<'static>,
+	app: Command<'static>
 }
 
 struct ServerThread {
-	requests: mpsc::Sender<Request>,
+	requests: mpsc::Sender<Request>
 }
 
 impl Server {
@@ -120,21 +122,18 @@ impl Server {
 					.arg(
 						Arg::new("proc")
 							.help("Path of the proc to disassemble (e.g. /proc/do_stuff)")
-							.takes_value(true),
+							.takes_value(true)
 					)
 					.arg(
 						Arg::new("id")
 							.help("Id of the proc to disassemble (for when multiple procs are defined with the same path)")
-							.takes_value(true),
+							.takes_value(true)
 					)
 			)
 			.subcommand(
 				Command::new("guest_override")
 					.about("Override the CKey used by guest connections")
-					.arg(
-						Arg::new("ckey")
-							.takes_value(true),
-					)
+					.arg(Arg::new("ckey").takes_value(true))
 			)
 			.subcommand(
 				Command::new("mem_profiler")
@@ -142,16 +141,9 @@ impl Server {
 					.subcommand(
 						Command::new("begin")
 							.about("Begins memory profiling. Output goes to the specified file path")
-							.arg(
-								Arg::new("path")
-									.help("Where to output memory profiler results")
-									.takes_value(true),
-							)
+							.arg(Arg::new("path").help("Where to output memory profiler results").takes_value(true))
 					)
-					.subcommand(
-						Command::new("end")
-							.about("Finishes current memory profiler.")
-					)
+					.subcommand(Command::new("end").about("Finishes current memory profiler."))
 			)
 	}
 
@@ -159,9 +151,7 @@ impl Server {
 		let stream = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))?;
 		let (requests_sender, requests_receiver) = mpsc::channel();
 
-		let server_thread = ServerThread {
-			requests: requests_sender,
-		};
+		let server_thread = ServerThread { requests: requests_sender };
 
 		let cloned_stream = stream.try_clone().unwrap();
 		let thread = thread::spawn(move || {
@@ -177,7 +167,7 @@ impl Server {
 			in_eval: false,
 			eval_error: None,
 			conditional_breakpoints: HashMap::new(),
-			app: Self::setup_app(),
+			app: Self::setup_app()
 		};
 
 		server.process_until_configured();
@@ -188,10 +178,7 @@ impl Server {
 		let (connection_sender, connection_receiver) = mpsc::channel();
 		let (requests_sender, requests_receiver) = mpsc::channel();
 
-		let thread = ServerThread {
-			requests: requests_sender,
-		}
-		.spawn_listener(TcpListener::bind(addr)?, connection_sender);
+		let thread = ServerThread { requests: requests_sender }.spawn_listener(TcpListener::bind(addr)?, connection_sender);
 
 		Ok(Server {
 			requests: requests_receiver,
@@ -202,7 +189,7 @@ impl Server {
 			in_eval: false,
 			eval_error: None,
 			conditional_breakpoints: HashMap::new(),
-			app: Self::setup_app(),
+			app: Self::setup_app()
 		})
 	}
 
@@ -250,7 +237,7 @@ impl Server {
 				}
 			}
 
-			None => None,
+			None => None
 		}
 	}
 
@@ -302,7 +289,7 @@ impl Server {
 		if List::is_list(value) {
 			match List::from_value(value) {
 				Ok(list) => format!("/list {{len = {}}}", list.len()),
-				Err(Runtime { message }) => format!("/list (failed to get len: {:?})", message),
+				Err(Runtime { message }) => format!("/list (failed to get len: {:?})", message)
 			}
 		} else {
 			match value.to_string() {
@@ -322,21 +309,17 @@ impl Server {
 		Variable {
 			name,
 			value: stringified,
-			variables,
+			variables
 		}
 	}
 
 	fn value_to_variables_ref(&self, value: &Value) -> Option<VariablesRef> {
 		match self.state.as_ref() {
-			Some(state) if List::is_list(value) => {
-				Some(state.get_ref(Variables::ListContents(value.clone())))
-			}
+			Some(state) if List::is_list(value) => Some(state.get_ref(Variables::ListContents(value.clone()))),
 
-			Some(state) if Self::is_object(value) => {
-				Some(state.get_ref(Variables::ObjectVars(value.clone())))
-			}
+			Some(state) if Self::is_object(value) => Some(state.get_ref(Variables::ObjectVars(value.clone()))),
 
-			_ => None,
+			_ => None
 		}
 	}
 
@@ -356,12 +339,8 @@ impl Server {
 					if value.raw.tag != raw_types::values::ValueTag::Null {
 						variables.push(Variable {
 							name: format!("[{}]", i),
-							value: format!(
-								"{} = {}",
-								Self::stringify(&key),
-								Self::stringify(&value)
-							),
-							variables: Some(state.get_ref(Variables::ListPair { key, value })),
+							value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
+							variables: Some(state.get_ref(Variables::ListPair { key, value }))
 						});
 
 						continue;
@@ -377,7 +356,8 @@ impl Server {
 	}
 
 	fn object_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
-		// Grab `value.vars`. We have a little hack for globals which use a special type.
+		// Grab `value.vars`. We have a little hack for globals which use a special
+		// type.
 		let vars = List::from_value(&unsafe {
 			if value.raw.tag == ValueTag::World && value.raw.data.id == 1 {
 				Value::new(ValueTag::GlobalVars, ValueData { id: 0 })
@@ -400,7 +380,7 @@ impl Server {
 			}
 		}
 
-		//top_variables.sort_by_key(|a| a.name.to_lowercase());
+		// top_variables.sort_by_key(|a| a.name.to_lowercase());
 		variables.sort_by_key(|a| a.name.to_lowercase());
 		top_variables.append(&mut variables);
 
@@ -411,7 +391,7 @@ impl Server {
 		let stack_id = stack_id as usize;
 		let stacks = match &self.state {
 			Some(state) => &state.stacks,
-			None => return None,
+			None => return None
 		};
 
 		if stack_id == 0 {
@@ -425,7 +405,7 @@ impl Server {
 		let stack_id = stack_id as usize;
 		let stacks = match &self.state {
 			Some(state) => &state.stacks,
-			None => return 0,
+			None => return 0
 		};
 
 		if stack_id == 0 {
@@ -445,7 +425,7 @@ impl Server {
 		let mut frame_index = frame_index as usize;
 		let stacks = match &self.state {
 			Some(state) => &state.stacks,
-			None => return None,
+			None => return None
 		};
 
 		if frame_index < stacks.active.len() {
@@ -489,10 +469,7 @@ impl Server {
 			}
 
 			None => {
-				self.notify(format!(
-					"tried to read arguments from invalid frame id: {}",
-					frame_index
-				));
+				self.notify(format!("tried to read arguments from invalid frame id: {}", frame_index));
 				vec![]
 			}
 		}
@@ -511,10 +488,7 @@ impl Server {
 			}
 
 			None => {
-				self.notify(format!(
-					"tried to read locals from invalid frame id: {}",
-					frame_index
-				));
+				self.notify(format!("tried to read locals from invalid frame id: {}", frame_index));
 				vec![]
 			}
 		}
@@ -523,14 +497,11 @@ impl Server {
 	fn handle_breakpoint_set(&mut self, instruction: InstructionRef, condition: Option<String>) {
 		let line = self.get_line_number(instruction.proc.clone(), instruction.offset);
 
-		let proc = match auxtools::Proc::find_override(
-			instruction.proc.path,
-			instruction.proc.override_id,
-		) {
+		let proc = match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
 			Some(proc) => proc,
 			None => {
 				self.send_or_disconnect(Response::BreakpointSet {
-					result: BreakpointSetResult::Failed,
+					result: BreakpointSetResult::Failed
 				});
 				return;
 			}
@@ -539,39 +510,34 @@ impl Server {
 		match hook_instruction(&proc, instruction.offset) {
 			Ok(()) => {
 				if let Some(condition) = condition {
-					self.conditional_breakpoints
-						.insert((proc.id, instruction.offset as u16), condition);
+					self.conditional_breakpoints.insert((proc.id, instruction.offset as u16), condition);
 				}
 
 				self.send_or_disconnect(Response::BreakpointSet {
-					result: BreakpointSetResult::Success { line },
+					result: BreakpointSetResult::Success { line }
 				});
 			}
 
 			Err(_) => {
 				self.send_or_disconnect(Response::BreakpointSet {
-					result: BreakpointSetResult::Failed,
+					result: BreakpointSetResult::Failed
 				});
 			}
 		}
 	}
 
 	fn handle_breakpoint_unset(&mut self, instruction: InstructionRef) {
-		let proc = match auxtools::Proc::find_override(
-			instruction.proc.path,
-			instruction.proc.override_id,
-		) {
+		let proc = match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
 			Some(proc) => proc,
 			None => {
 				self.send_or_disconnect(Response::BreakpointSet {
-					result: BreakpointSetResult::Failed,
+					result: BreakpointSetResult::Failed
 				});
 				return;
 			}
 		};
 
-		self.conditional_breakpoints
-			.remove(&(proc.id, instruction.offset as u16));
+		self.conditional_breakpoints.remove(&(proc.id, instruction.offset as u16));
 
 		match unhook_instruction(&proc, instruction.offset) {
 			Ok(()) => {
@@ -590,20 +556,20 @@ impl Server {
 				let mut ret = vec![];
 				ret.push(Stack {
 					id: 0,
-					name: state.stacks.active[0].proc.path.clone(),
+					name: state.stacks.active[0].proc.path.clone()
 				});
 
 				for (idx, stack) in state.stacks.suspended.iter().enumerate() {
 					ret.push(Stack {
 						id: (idx + 1) as u32,
-						name: stack[0].proc.path.clone(),
+						name: stack[0].proc.path.clone()
 					});
 				}
 
 				ret
 			}
 
-			None => vec![],
+			None => vec![]
 		};
 
 		self.send_or_disconnect(Response::Stacks { stacks });
@@ -628,22 +594,22 @@ impl Server {
 
 					let proc_ref = ProcRef {
 						path: stack[i].proc.path.to_owned(),
-						override_id: stack[i].proc.override_id(),
+						override_id: stack[i].proc.override_id()
 					};
 
 					frames.push(StackFrame {
 						id: frame_base + (i as u32),
 						instruction: InstructionRef {
 							proc: proc_ref.clone(),
-							offset: stack[i].offset as u32,
+							offset: stack[i].offset as u32
 						},
-						line: self.get_line_number(proc_ref, stack[i].offset as u32),
+						line: self.get_line_number(proc_ref, stack[i].offset as u32)
 					});
 				}
 
 				Response::StackFrames {
 					frames,
-					total_count: stack.len() as u32,
+					total_count: stack.len() as u32
 				}
 			}
 
@@ -651,7 +617,7 @@ impl Server {
 				self.notify("received StackFrames request when not paused");
 				Response::StackFrames {
 					frames: vec![],
-					total_count: 0,
+					total_count: 0
 				}
 			}
 		};
@@ -664,7 +630,7 @@ impl Server {
 			let response = Response::Scopes {
 				arguments: None,
 				locals: None,
-				globals: None,
+				globals: None
 			};
 
 			self.send_or_disconnect(response);
@@ -681,7 +647,7 @@ impl Server {
 		let response = Response::Scopes {
 			arguments: Some(state.get_ref(arguments)),
 			locals: Some(state.get_ref(locals)),
-			globals: Some(state.get_ref(globals)),
+			globals: Some(state.get_ref(globals))
 		};
 
 		self.send_or_disconnect(response);
@@ -691,20 +657,15 @@ impl Server {
 		let response = match &self.state {
 			Some(state) => match state.get_variables(vars) {
 				Some(vars) => match vars {
-					Variables::Arguments { frame } => Response::Variables {
-						vars: self.get_args(frame),
-					},
+					Variables::Arguments { frame } => Response::Variables { vars: self.get_args(frame) },
 					Variables::Locals { frame } => Response::Variables {
-						vars: self.get_locals(frame),
+						vars: self.get_locals(frame)
 					},
 					Variables::ObjectVars(value) => match self.object_to_variables(&value) {
 						Ok(vars) => Response::Variables { vars },
 
 						Err(e) => {
-							self.notify(format!(
-								"runtime occured while processing Variables request: {:?}",
-								e
-							));
+							self.notify(format!("runtime occured while processing Variables request: {:?}", e));
 							Response::Variables { vars: vec![] }
 						}
 					},
@@ -712,10 +673,7 @@ impl Server {
 						Ok(vars) => Response::Variables { vars },
 
 						Err(e) => {
-							self.notify(format!(
-								"runtime occured while processing Variables request: {:?}",
-								e
-							));
+							self.notify(format!("runtime occured while processing Variables request: {:?}", e));
 							Response::Variables { vars: vec![] }
 						}
 					},
@@ -724,8 +682,8 @@ impl Server {
 						vars: vec![
 							self.value_to_variable("key".to_owned(), &key),
 							self.value_to_variable("value".to_owned(), &value),
-						],
-					},
+						]
+					}
 				},
 
 				None => {
@@ -745,19 +703,13 @@ impl Server {
 
 	fn handle_command(&mut self, frame_id: Option<u32>, command: &str) -> String {
 		// How many matches variables can you spot? It could be better...
-		let response = match self
-			.app
-			.try_get_matches_from_mut(command.split_ascii_whitespace())
-		{
+		let response = match self.app.try_get_matches_from_mut(command.split_ascii_whitespace()) {
 			Ok(matches) => {
 				match matches.subcommand() {
 					Some(("disassemble", matches)) => {
 						if let Some(proc) = matches.value_of("proc") {
 							// Default id to 0 in the worst way possible
-							let id = matches
-								.value_of("id")
-								.and_then(|x| x.parse::<u32>().ok())
-								.unwrap_or(0);
+							let id = matches.value_of("id").and_then(|x| x.parse::<u32>().ok()).unwrap_or(0);
 
 							self.handle_disassemble(proc, id)
 						} else if let Some(frame_id) = frame_id {
@@ -782,7 +734,7 @@ impl Server {
 							}
 						},
 
-						None => "no ckey provided".to_owned(),
+						None => "no ckey provided".to_owned()
 					},
 
 					Some(("mem_profiler", matches)) => match matches.subcommand() {
@@ -791,7 +743,7 @@ impl Server {
 								.map(|_| "Memory profiler enabled".to_owned())
 								.unwrap_or_else(|e| format!("Failed: {}", e)),
 
-							None => "no path provided".to_owned(),
+							None => "no path provided".to_owned()
 						},
 
 						Some(("end", _)) => {
@@ -799,13 +751,13 @@ impl Server {
 							"Memory profiler disabled".to_owned()
 						}
 
-						_ => "unknown memory profiler sub-command".to_owned(),
+						_ => "unknown memory profiler sub-command".to_owned()
 					},
 
-					_ => "unknown command".to_owned(),
+					_ => "unknown command".to_owned()
 				}
 			}
-			Err(e) => e.to_string(),
+			Err(e) => e.to_string()
 		};
 
 		response
@@ -817,7 +769,7 @@ impl Server {
 			Usr,
 			Src,
 			Arg(u32),
-			Local(u32),
+			Local(u32)
 		}
 
 		let (ctx, instance, args) = match frame_id {
@@ -828,10 +780,7 @@ impl Server {
 				let frame = match self.get_stack_frame(frame_id) {
 					Some(x) => x,
 					None => {
-						self.notify(format!(
-							"tried to evaluate expression with invalid frame id: {}",
-							frame_id
-						));
+						self.notify(format!("tried to evaluate expression with invalid frame id: {}", frame_id));
 						return None;
 					}
 				};
@@ -849,18 +798,14 @@ impl Server {
 				}
 
 				for (idx, local) in frame.locals.iter().enumerate() {
-					args.push((
-						(&local.0).into(),
-						local.1.clone(),
-						ArgType::Local(idx as u32),
-					));
+					args.push(((&local.0).into(), local.1.clone(), ArgType::Local(idx as u32)));
 				}
 
 				(frame.context, frame.instance, args)
 			}
 		};
 
-		let arg_names: Vec<&str> = args.iter().map(|(name, _, _)| name.as_str()).collect();
+		let arg_names: Vec<&str> = args.iter().map(|(name, ..)| name.as_str()).collect();
 		let arg_values: Vec<&Value> = args.iter().map(|(_, value, _)| value).collect();
 
 		let expr = match dmasm::compiler::compile_expr(command, &arg_names) {
@@ -871,17 +816,13 @@ impl Server {
 			}
 		};
 
-		let assembly =
-			match dmasm::assembler::assemble(&expr, &mut crate::assemble_env::AssembleEnv) {
-				Ok(assembly) => assembly,
-				Err(err) => {
-					self.notify(format!(
-						"expression {} failed to assemble: {:#?}",
-						command, err
-					));
-					return None;
-				}
-			};
+		let assembly = match dmasm::assembler::assemble(&expr, &mut crate::assemble_env::AssembleEnv) {
+			Ok(assembly) => assembly,
+			Err(err) => {
+				self.notify(format!("expression {} failed to assemble: {:#?}", command, err));
+				return None;
+			}
+		};
 
 		let proc = match Proc::find("/proc/auxtools_expr_stub") {
 			Some(proc) => proc,
@@ -899,8 +840,8 @@ impl Server {
 		let result = match proc.call(&arg_values) {
 			Ok(res) => {
 				if let Ok(list) = res.as_list() {
-					// The rest are the potentially mutated parameters. We need to commit them to the function that called us.
-					// TODO: This sucks, obviously.
+					// The rest are the potentially mutated parameters. We need to commit them to
+					// the function that called us. TODO: This sucks, obviously.
 					let len = list.len();
 					for i in 2..=len {
 						let value = list.get(i).unwrap();
@@ -945,10 +886,7 @@ impl Server {
 			}
 
 			Err(_) => {
-				self.notify(format!(
-					"Value::call failed when evaluating expression {}",
-					command
-				));
+				self.notify(format!("Value::call failed when evaluating expression {}", command));
 				None
 			}
 		};
@@ -956,10 +894,7 @@ impl Server {
 		self.in_eval = false;
 
 		if let Some(err) = self.eval_error.take() {
-			self.notify(format!(
-				"runtime occured when executing expression: {}",
-				err
-			));
+			self.notify(format!("runtime occured when executing expression: {}", err));
 		}
 
 		result
@@ -970,7 +905,7 @@ impl Server {
 			let response = self.handle_command(frame_id, &command[1..]);
 			self.send_or_disconnect(Response::Eval(EvalResponse {
 				value: response,
-				variables: None,
+				variables: None
 			}));
 			return;
 		}
@@ -979,19 +914,19 @@ impl Server {
 			Some(result) => {
 				let variables = match context {
 					Some(str) if str == "repl" => None,
-					_ => self.value_to_variables_ref(&result),
+					_ => self.value_to_variables_ref(&result)
 				};
 
 				self.send_or_disconnect(Response::Eval(EvalResponse {
 					value: Self::stringify(&result),
-					variables,
+					variables
 				}));
 			}
 
 			None => {
 				self.send_or_disconnect(Response::Eval(EvalResponse {
 					value: "<no value>".to_owned(),
-					variables: None,
+					variables: None
 				}));
 			}
 		}
@@ -1028,7 +963,7 @@ impl Server {
 				}
 			}
 
-			None => "Proc not found".to_owned(),
+			None => "Proc not found".to_owned()
 		};
 
 		return response;
@@ -1039,35 +974,28 @@ impl Server {
 		match request {
 			Request::Disconnect => unreachable!(),
 			Request::CatchRuntimes { should_catch } => self.should_catch_runtimes = should_catch,
-			Request::BreakpointSet {
-				instruction,
-				condition,
-			} => self.handle_breakpoint_set(instruction, condition),
+			Request::BreakpointSet { instruction, condition } => self.handle_breakpoint_set(instruction, condition),
 			Request::BreakpointUnset { instruction } => self.handle_breakpoint_unset(instruction),
 			Request::Stacks => self.handle_stacks(),
 			Request::Scopes { frame_id } => self.handle_scopes(frame_id),
 			Request::Variables { vars } => self.handle_variables(vars),
-			Request::Eval {
-				frame_id,
-				command,
-				context,
-			} => self.handle_eval(frame_id, &command, context),
+			Request::Eval { frame_id, command, context } => self.handle_eval(frame_id, &command, context),
 
 			Request::StackFrames {
 				stack_id,
 				start_frame,
-				count,
+				count
 			} => self.handle_stack_frames(stack_id, start_frame, count),
 
 			Request::LineNumber { proc, offset } => {
 				self.send_or_disconnect(Response::LineNumber {
-					line: self.get_line_number(proc, offset),
+					line: self.get_line_number(proc, offset)
 				});
 			}
 
 			Request::Offset { proc, line } => {
 				self.send_or_disconnect(Response::Offset {
-					offset: self.get_offset(proc, line),
+					offset: self.get_offset(proc, line)
 				});
 			}
 
@@ -1086,12 +1014,12 @@ impl Server {
 					Some(frame) => Some(InstructionRef {
 						proc: ProcRef {
 							path: frame.proc.path.to_owned(),
-							override_id: frame.proc.override_id(),
+							override_id: frame.proc.override_id()
 						},
-						offset: frame.offset as u32,
+						offset: frame.offset as u32
 					}),
 
-					None => None,
+					None => None
 				};
 
 				self.send_or_disconnect(Response::CurrentInstruction(response));
@@ -1129,7 +1057,7 @@ impl Server {
 				}
 			}
 
-			_ => (),
+			_ => ()
 		}
 	}
 
@@ -1144,11 +1072,7 @@ impl Server {
 		self.send_or_disconnect(Response::Notification { message });
 	}
 
-	pub fn handle_breakpoint(
-		&mut self,
-		_ctx: *mut raw_types::procs::ExecutionContext,
-		reason: BreakpointReason,
-	) -> ContinueKind {
+	pub fn handle_breakpoint(&mut self, _ctx: *mut raw_types::procs::ExecutionContext, reason: BreakpointReason) -> ContinueKind {
 		// Ignore all breakpoints unless we're connected
 		if !self.check_connected() {
 			return ContinueKind::Continue;
@@ -1166,10 +1090,7 @@ impl Server {
 		if let BreakpointReason::Breakpoint = reason {
 			let proc = unsafe { (*(*_ctx).proc_instance).proc };
 			let offset = unsafe { (*_ctx).bytecode_offset };
-			let condition = self
-				.conditional_breakpoints
-				.get(&(proc, offset))
-				.map(|x| x.clone());
+			let condition = self.conditional_breakpoints.get(&(proc, offset)).map(|x| x.clone());
 
 			if let Some(condition) = condition {
 				if let Some(result) = self.eval_expr(Some(0), &condition) {
@@ -1179,7 +1100,8 @@ impl Server {
 					}
 				}
 
-				// We might have just executed some code so invalidate the stacks we already fetched
+				// We might have just executed some code so invalidate the stacks we already
+				// fetched
 				self.state.as_mut().unwrap().invalidate_stacks();
 			}
 		}
@@ -1196,12 +1118,7 @@ impl Server {
 			}
 
 			// Hijack eval too so that we can refresh our state after it
-			if let Request::Eval {
-				frame_id,
-				command,
-				context,
-			} = request
-			{
+			if let Request::Eval { frame_id, command, context } = request {
 				self.handle_eval(frame_id, &command, context);
 				self.state.as_mut().unwrap().invalidate_stacks();
 				continue;
@@ -1232,7 +1149,8 @@ impl Server {
 		should_pause
 	}
 
-	/// Block while processing all received requests normally until the debug client is configured
+	/// Block while processing all received requests normally until the debug
+	/// client is configured
 	pub fn process_until_configured(&mut self) {
 		self.wait_for_connection();
 
@@ -1295,11 +1213,7 @@ impl Drop for Server {
 }
 
 impl ServerThread {
-	fn spawn_listener(
-		self,
-		listener: TcpListener,
-		connection_sender: mpsc::Sender<TcpStream>,
-	) -> JoinHandle<()> {
+	fn spawn_listener(self, listener: TcpListener, connection_sender: mpsc::Sender<TcpStream>) -> JoinHandle<()> {
 		thread::spawn(move || match listener.accept() {
 			Ok((stream, _)) => {
 				match connection_sender.send(stream.try_clone().unwrap()) {

@@ -1,9 +1,14 @@
-use detour::RawDetour;
-use std::ffi::{c_void, CString};
-use std::os::raw::c_char;
-use std::{cell::UnsafeCell, collections::HashMap, fs::File, io};
+use std::{
+	cell::UnsafeCell,
+	collections::HashMap,
+	ffi::{c_void, CString},
+	fs::File,
+	io,
+	os::raw::c_char
+};
 
 use auxtools::{raw_types::procs::ProcId, *};
+use detour::RawDetour;
 
 static mut THREAD_ID: u32 = 0;
 static MALLOC_SYMBOL: &[u8] = b"malloc\0";
@@ -33,21 +38,14 @@ fn setup_hooks() {
 				return;
 			}
 
-			let malloc =
-				libloaderapi::GetProcAddress(module, MALLOC_SYMBOL.as_ptr() as *const c_char);
-			let realloc =
-				libloaderapi::GetProcAddress(module, REALLOC_SYMBOL.as_ptr() as *const c_char);
+			let malloc = libloaderapi::GetProcAddress(module, MALLOC_SYMBOL.as_ptr() as *const c_char);
+			let realloc = libloaderapi::GetProcAddress(module, REALLOC_SYMBOL.as_ptr() as *const c_char);
 			let free = libloaderapi::GetProcAddress(module, FREE_SYMBOL.as_ptr() as *const c_char);
 			let new = libloaderapi::GetProcAddress(module, NEW_SYMBOL.as_ptr() as *const c_char);
-			let delete =
-				libloaderapi::GetProcAddress(module, DELETE_SYMBOL.as_ptr() as *const c_char);
+			let delete = libloaderapi::GetProcAddress(module, DELETE_SYMBOL.as_ptr() as *const c_char);
 
 			// ¯\_(ツ)_/¯
-			if malloc.is_null()
-				|| realloc.is_null()
-				|| free.is_null()
-				|| new.is_null() || delete.is_null()
-			{
+			if malloc.is_null() || realloc.is_null() || free.is_null() || new.is_null() || delete.is_null() {
 				return;
 			}
 
@@ -176,14 +174,14 @@ static mut STATE: UnsafeCell<Option<State>> = UnsafeCell::new(None);
 
 struct State {
 	file: File,
-	live_allocs: HashMap<*const c_void, Allocation>,
+	live_allocs: HashMap<*const c_void, Allocation>
 }
 
 impl State {
 	fn new(dump_path: &str) -> io::Result<State> {
 		Ok(State {
 			file: File::create(dump_path)?,
-			live_allocs: HashMap::new(),
+			live_allocs: HashMap::new()
 		})
 	}
 
@@ -241,7 +239,7 @@ impl State {
 
 struct Allocation {
 	proc: ProcId,
-	size: usize,
+	size: usize
 }
 
 pub fn begin(path: &str) -> io::Result<()> {

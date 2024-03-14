@@ -1,39 +1,40 @@
-use crate::*;
+use std::{
+	cell::RefCell,
+	collections::{hash_map::Entry, HashMap},
+	fmt
+};
+
 use ahash::RandomState;
 use fxhash::FxHashMap;
-use std::cell::RefCell;
-use std::collections::{hash_map::Entry, HashMap};
-use std::fmt;
 
-//
+use crate::*;
+
 // ### A note on Override IDs
 //
 // Procs in DM can be defined multiple times.
 //
 // ```
 // /proc/hello() // Override #0 or base proc
-//		world << "Hello"
+// 		world << "Hello"
 //
-//	/hello() // Override #1
-//		..() // Calls override #0
-//		world << "World"
+// 	/hello() // Override #1
+// 		..() // Calls override #0
+// 		world << "World"
 //
-//	/hello() // Override #2
-//		..() // Calls override #1
-//		world << "!!!"
-//	```
+// 	/hello() // Override #2
+// 		..() // Calls override #1
+// 		world << "!!!"
+// 	```
 //
-//	To get the nth override, use [get_proc_override]: `let hello = get_proc_override("/proc/hello", n).unwrap()`
+// 	To get the nth override, use [get_proc_override]: `let hello = get_proc_override("/proc/hello", n).unwrap()`
 // [get_proc] retrieves the base proc.
-//
-//
 
 /// Used to hook and call procs.
 #[derive(Clone)]
 pub struct Proc {
 	pub id: raw_types::procs::ProcId,
 	pub entry: *mut raw_types::procs::ProcEntry,
-	pub path: String,
+	pub path: String
 }
 
 impl Proc {
@@ -50,19 +51,16 @@ impl Proc {
 	pub fn from_id(id: raw_types::procs::ProcId) -> Option<Self> {
 		let mut proc_entry: *mut raw_types::procs::ProcEntry = std::ptr::null_mut();
 		unsafe {
-			assert_eq!(
-				raw_types::funcs::get_proc_array_entry(&mut proc_entry, id),
-				1
-			);
+			assert_eq!(raw_types::funcs::get_proc_array_entry(&mut proc_entry, id), 1);
 		}
 		if proc_entry.is_null() {
 			return None;
 		}
 		let proc_name = strip_path(unsafe { StringRef::from_id((*proc_entry).path).into() });
 		Some(Proc {
-			id: id,
+			id,
 			entry: proc_entry,
-			path: proc_name.clone(),
+			path: proc_name.clone()
 		})
 	}
 
@@ -83,18 +81,14 @@ impl Proc {
 	pub fn parameter_names(&self) -> Vec<StringRef> {
 		unsafe {
 			let (data, count) = raw_types::misc::get_parameters((*self.entry).metadata.get_parameters());
-			(0..count)
-				.map(|i| StringRef::from_variable_id((*data.add(i as usize)).name))
-				.collect()
+			(0..count).map(|i| StringRef::from_variable_id((*data.add(i as usize)).name)).collect()
 		}
 	}
 
 	pub fn local_names(&self) -> Vec<StringRef> {
 		unsafe {
 			let (names, count) = raw_types::misc::get_locals((*self.entry).metadata.get_locals());
-			(0..count)
-				.map(|i| StringRef::from_variable_id(*names.add(i as usize)))
-				.collect()
+			(0..count).map(|i| StringRef::from_variable_id(*names.add(i as usize))).collect()
 		}
 	}
 
@@ -126,7 +120,7 @@ impl Proc {
 	pub fn call(&self, args: &[&Value]) -> runtime::DMResult {
 		let mut ret = raw_types::values::Value {
 			tag: raw_types::values::ValueTag::Null,
-			data: raw_types::values::ValueData { id: 0 },
+			data: raw_types::values::ValueData { id: 0 }
 		};
 
 		unsafe {
@@ -147,7 +141,7 @@ impl Proc {
 				args.as_ptr(),
 				args.len(),
 				0,
-				0,
+				0
 			) == 1
 			{
 				return Ok(Value::from_raw_owned(ret));
@@ -160,7 +154,7 @@ impl Proc {
 	pub fn override_id(&self) -> u32 {
 		PROC_OVERRIDE_IDS.with(|override_ids| match override_ids.borrow().get(&self.id) {
 			Some(id) => *id,
-			None => 0,
+			None => 0
 		})
 	}
 }
@@ -219,7 +213,7 @@ pub fn get_proc_override<S: Into<String>>(path: S, override_id: u32) -> Option<P
 	let s = strip_path(path.into());
 	PROCS_BY_NAME.with(|h| match h.borrow().get(&s)?.get(override_id as usize) {
 		Some(p) => Some(p.clone()),
-		None => None,
+		None => None
 	})
 }
 
