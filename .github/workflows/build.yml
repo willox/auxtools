@@ -39,6 +39,8 @@ jobs:
 
       - name: Build
         run: cargo build --target=${{ matrix.os.target }} --release --verbose
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
 
       - name: Upload debug-server (Windows)
         uses: actions/upload-artifact@v2
@@ -52,3 +54,5 @@ jobs:
       - name: Run Tests (Windows)
         if: ${{ matrix.os.name == 'win' }}
         run: cargo test --target=${{matrix.os.target}} --verbose
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
