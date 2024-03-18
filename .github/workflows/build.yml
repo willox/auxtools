@@ -1,0 +1,58 @@
+name: Build Auxtools
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: linux
+            runner: ubuntu-latest
+            target: i686-unknown-linux-gnu
+          - name: win
+            runner: windows-latest
+            target: i686-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.os.target }}
+
+      - name: Install Dependencies (Linux)
+        if: ${{ matrix.os.name == 'linux' }}
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install libgcc-s1:i386 g++-multilib zlib1g-dev:i386 libssl-dev:i386
+
+      - name: Build
+        run: cargo build --target=${{ matrix.os.target }} --release --verbose
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
+
+      - name: Upload debug-server (Windows)
+        uses: actions/upload-artifact@v2
+        if: ${{ matrix.os.name == 'win' }}
+        with:
+          name: debug-server-windows
+          path: |
+            target/i686-pc-windows-msvc/release/debug_server.dll
+            target/i686-pc-windows-msvc/release/debug_server.pdb
+
+      - name: Run Tests (Windows)
+        if: ${{ matrix.os.name == 'win' }}
+        run: cargo test --target=${{matrix.os.target}} --verbose
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
