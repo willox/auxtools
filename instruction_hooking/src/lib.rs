@@ -60,7 +60,7 @@ fn instruction_hooking_init() -> Result<(), String> {
 	}
 
 	#[cfg(windows)]
-	let versioned_hook = if cfg!(windows) && auxtools::version::get().0 == 514 {
+	let versioned_hook = if auxtools::version::get().0 == 514 {
 		execute_instruction_hook_514 as *const ()
 	} else {
 		execute_instruction_hook as *const ()

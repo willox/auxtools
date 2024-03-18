@@ -1,0 +1,70 @@
+name: Build Auxtools
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            TOOLCHAIN: stable-i686-pc-windows-msvc
+            TARGET: i686-pc-windows-msvc
+          - os: ubuntu-latest
+            TOOLCHAIN: i686-unknown-linux-gnu
+            TARGET: i686-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache Cargo
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install Dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install libgcc-s1:i386 g++-multilib zlib1g-dev:i386 libssl-dev:i386
+
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{matrix.TOOLCHAIN}}
+          target: ${{matrix.TARGET}}
+          override: true
+
+      - name: Build
+        run: cargo build --target=${{matrix.TARGET}} --release --verbose
+
+      - name: Upload debug-server (Windows)
+        uses: actions/upload-artifact@v2
+        if: matrix.os == 'windows-latest'
+        with:
+          name: debug-server-windows
+          path: |
+            target/i686-pc-windows-msvc/release/debug_server.dll
+            target/i686-pc-windows-msvc/release/debug_server.pdb
+
+      - name: Run Tests (Windows)
+        if: matrix.os == 'windows-latest'
+        run: cargo test --target=${{matrix.TARGET}} --verbose
