@@ -23,7 +23,7 @@ jobs:
             runner: windows-latest
             target: i686-pc-windows-msvc
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
