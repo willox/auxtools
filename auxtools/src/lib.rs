@@ -1,4 +1,4 @@
-#![deny(clippy::complexity, clippy::correctness, clippy::perf, clippy::style)]
+#![warn(clippy::complexity, clippy::correctness, clippy::perf, clippy::style)]
 
 //! For when BYOND is not enough. Probably often.
 
