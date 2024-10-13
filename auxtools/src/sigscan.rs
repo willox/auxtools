@@ -167,9 +167,9 @@ impl Signature {
 		scanner.find(&self.bytes).map(|address| unsafe {
 			match self.treatment {
 				SignatureTreatment::NoOffset | SignatureTreatment::OffsetByInt(0) => std::mem::transmute(address as *const std::ffi::c_void),
-				SignatureTreatment::OffsetByInt(i) => *(address.offset(i) as *const *const std::ffi::c_void),
+				SignatureTreatment::OffsetByInt(i) => (address.offset(i) as *const *const std::ffi::c_void).read_unaligned(),
 				SignatureTreatment::OffsetByCall => {
-					let offset = *(address.offset(1) as *const isize);
+					let offset = (address.offset(1) as *const isize).read_unaligned();
 					address.offset(5).offset(offset) as *const () as *const std::ffi::c_void
 				}
 			}
