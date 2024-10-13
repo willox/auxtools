@@ -36,6 +36,9 @@ thread_local! {
 }
 
 pub unsafe fn parse_args<'a>(argc: c_int, argv: *const *const c_char) -> Vec<Cow<'a, str>> {
+	if argc == 0 || argv.is_null() {
+		return Vec::new();
+	}
 	slice::from_raw_parts(argv, argc as usize)
 		.iter()
 		.map(|ptr| CStr::from_ptr(*ptr))
