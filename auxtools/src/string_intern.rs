@@ -7,7 +7,7 @@ macro_rules! byond_string {
 	($s:literal) => {
 		unsafe {
 			static mut STORE: $crate::InternedString = $crate::InternedString($s, std::cell::UnsafeCell::new(None));
-			$crate::inventory::submit!(unsafe { &STORE });
+			$crate::inventory::submit!(unsafe { &*::std::ptr::addr_of!(STORE) });
 			let x = &*STORE.1.get();
 			x.as_ref().unwrap()
 		}

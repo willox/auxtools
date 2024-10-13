@@ -180,7 +180,9 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 ///
 /// Here we define a hook that multiplies a number passed to it by two.
 /// It can now be used to hook procs, for example
-/// `hooks::hook("/proc/double_up", double_up);` ```ignore
+/// `hooks::hook("/proc/double_up", double_up);`
+///
+/// ```ignore
 /// #[hook]
 /// fn double_up(num: Value) {
 ///     if let Some(num) = num.as_number() {
@@ -189,9 +191,10 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 ///     Value::null()
 /// }
 /// ```
-/// 
+///
 /// This function is used to hook `/mob/proc/on_honked`.
 /// By specifying the proc path, we hook the proc immediately upon startup.
+///
 /// ```ignore
 /// #[hook("/mob/proc/on_honked")]
 /// fn on_honked(honker: Value) {
@@ -200,7 +203,6 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 ///     Value::null()
 /// }
 /// ```
-
 #[proc_macro_attribute]
 pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let input = syn::parse_macro_input!(item as syn::ItemFn);
@@ -250,12 +252,9 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 		if let syn::Pat::Ident(p) = &*arg.pat {
 			arg_names.push(p.ident.clone());
 			let index = arg_names.len() - 1;
-			proc_arg_unpacker.push(
-				(quote! {
-					&args[#index]
-				})
-				.into()
-			);
+			proc_arg_unpacker.push(quote! {
+				&args[#index]
+			});
 		}
 	}
 	let _default_null = quote! {

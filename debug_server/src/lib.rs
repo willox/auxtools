@@ -93,7 +93,7 @@ fn enable_debugging(mode: Value, port: Value) {
 	unsafe {
 		*DEBUG_SERVER.get() = Some(server);
 		debug_server_instruction_hook = DebugServerInstructionHook {
-			debug_server: &mut DEBUG_SERVER
+			debug_server: &mut *std::ptr::addr_of_mut!(DEBUG_SERVER)
 		};
 
 		INSTRUCTION_HOOKS.get_mut().push(Box::new(debug_server_instruction_hook));
