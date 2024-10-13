@@ -180,7 +180,8 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 ///
 /// Here we define a hook that multiplies a number passed to it by two.
 /// It can now be used to hook procs, for example
-/// `hooks::hook("/proc/double_up", double_up);` ```ignore
+/// `hooks::hook("/proc/double_up", double_up);`
+/// ```ignore
 /// #[hook]
 /// fn double_up(num: Value) {
 ///     if let Some(num) = num.as_number() {
@@ -189,7 +190,7 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 ///     Value::null()
 /// }
 /// ```
-/// 
+///
 /// This function is used to hook `/mob/proc/on_honked`.
 /// By specifying the proc path, we hook the proc immediately upon startup.
 /// ```ignore
