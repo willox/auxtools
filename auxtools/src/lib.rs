@@ -1,5 +1,3 @@
-#![warn(clippy::complexity, clippy::correctness, clippy::perf, clippy::style)]
-
 //! For when BYOND is not enough. Probably often.
 
 //#[cfg(not(target_pointer_width = "32"))]
@@ -294,7 +292,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 			return Some("FAILED (Could not pin the library in memory.)".to_owned());
 		}
 
-		if let Err(_) = hooks::init() {
+		if hooks::init().is_err() {
 			return Some("Failed (Couldn't initialize proc hooking)".to_owned());
 		}
 

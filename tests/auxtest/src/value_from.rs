@@ -12,8 +12,7 @@ fn test_value_from() {
 
 	// Vectors
 	// The simplest case: A Vec of Value's.
-	let mut vector: Vec<Value> = Vec::new();
-	vector.push(5.into());
+	let vector: Vec<Value> = vec![5.into()];
 	let value = Value::from(&vector);
 	let list = List::from_value(&value)?;
 	if list.len() != 1 {

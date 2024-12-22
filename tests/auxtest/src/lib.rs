@@ -17,8 +17,6 @@ fn inc_counter() {
 
 #[hook("/proc/auxtest_out")]
 fn out(msg: Value) {
-	use std::io::{self, Write};
-
-	writeln!(io::stderr(), "\n{}", msg.as_string()?).unwrap();
+	eprintln!("\n{}", msg.as_string()?);
 	Ok(Value::null())
 }
