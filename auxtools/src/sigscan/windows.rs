@@ -57,7 +57,7 @@ impl Scanner {
 
 		unsafe {
 			while data_current <= data_end {
-				if signature[signature_offset] == None || signature[signature_offset] == Some(*data_current) {
+				if signature[signature_offset].is_none() || signature[signature_offset] == Some(*data_current) {
 					if signature.len() <= signature_offset + 1 {
 						if result.is_some() {
 							// Found two matches.

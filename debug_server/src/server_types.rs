@@ -113,7 +113,7 @@ pub struct InstructionRef {
 	pub offset: u32
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub enum BreakpointReason {
 	Breakpoint,
 	Step,
@@ -121,7 +121,7 @@ pub enum BreakpointReason {
 	Runtime(String)
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub enum ContinueKind {
 	Continue,
 	StepOver { stack_id: u32 },
@@ -129,20 +129,20 @@ pub enum ContinueKind {
 	StepOut { stack_id: u32 }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Stack {
 	pub id: u32,
 	pub name: String
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct StackFrame {
 	pub id: u32,
 	pub instruction: InstructionRef,
 	pub line: Option<u32>
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum BreakpointSetResult {
 	Success { line: Option<u32> },
 	Failed
@@ -151,14 +151,14 @@ pub enum BreakpointSetResult {
 #[derive(Clone, Hash, Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub struct VariablesRef(pub i32);
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Variable {
 	pub name: String,
 	pub value: String,
 	pub variables: Option<VariablesRef>
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct EvalResponse {
 	pub value: String,
 	pub variables: Option<VariablesRef>

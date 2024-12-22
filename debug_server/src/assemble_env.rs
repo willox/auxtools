@@ -1,5 +1,4 @@
 use auxtools::*;
-use dmasm;
 
 pub struct AssembleEnv;
 

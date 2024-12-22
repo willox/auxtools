@@ -20,10 +20,26 @@ macro_rules! signature {
 }
 
 #[macro_export]
+macro_rules! count {
+    () => (0usize);
+    ( $x:tt $($xs:tt)* ) => (1_usize + count!($($xs)*));
+}
+
+#[macro_export]
 macro_rules! signatures {
 	( $( $name:ident => $sig:expr ),*) => {
 		struct Signatures {
 			$( pub $name: $crate::sigscan::SignatureMap, )*
+		}
+
+		impl Signatures {
+			#[allow(dead_code)]
+			pub fn check_all(&self, scanner: &$crate::sigscan::Scanner) -> [(&'static str, bool); count!($($name)*)] {
+				let version = $crate::version::get().1;
+				[$(
+					(stringify!($name), self.$name.find(scanner, version).is_some()),
+				)*]
+			}
 		}
 
 		static SIGNATURES0: $crate::sigscan::once_cell::sync::Lazy<Signatures> = $crate::sigscan::once_cell::sync::Lazy::new(|| Signatures {
@@ -164,9 +180,9 @@ pub struct Signature {
 
 impl Signature {
 	pub fn find(&self, scanner: &Scanner) -> Option<*const std::ffi::c_void> {
-		scanner.find(&self.bytes).map(|address| unsafe {
+		scanner.find(self.bytes).map(|address| unsafe {
 			match self.treatment {
-				SignatureTreatment::NoOffset | SignatureTreatment::OffsetByInt(0) => std::mem::transmute(address as *const std::ffi::c_void),
+				SignatureTreatment::NoOffset | SignatureTreatment::OffsetByInt(0) => address as *const std::ffi::c_void,
 				SignatureTreatment::OffsetByInt(i) => (address.offset(i) as *const *const std::ffi::c_void).read_unaligned(),
 				SignatureTreatment::OffsetByCall => {
 					let offset = (address.offset(1) as *const isize).read_unaligned();

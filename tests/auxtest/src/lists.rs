@@ -5,14 +5,14 @@ fn test_lists() {
 	let list_a = List::new();
 
 	// Should be empty
-	if list_a.len() != 0 {
+	if !list_a.is_empty() {
 		return Err(runtime!("test_lists: list_a's len != 0"));
 	}
 
 	// Add 3 values
-	list_a.append(&Value::from(101));
-	list_a.append(&Value::from(102));
-	list_a.append(&Value::from(103));
+	list_a.append(Value::from(101));
+	list_a.append(Value::from(102));
+	list_a.append(Value::from(103));
 
 	// Should contain 3 things
 	if list_a.len() != 3 {
@@ -32,7 +32,7 @@ fn test_lists() {
 	}
 
 	// Remove list_a[2]
-	list_a.remove(&Value::from(102));
+	list_a.remove(Value::from(102));
 
 	// Now list_a[2] should be 103
 	if list_a.get(2)?.as_number()? != 103.0 {

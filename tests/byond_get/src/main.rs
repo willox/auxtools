@@ -53,7 +53,7 @@ fn main() {
 			continue;
 		}
 
-		let local_path = file.enclosed_name().unwrap().strip_prefix("byond/").unwrap();
+		let local_path = file.enclosed_name().unwrap().strip_prefix("byond/").unwrap().to_owned();
 
 		let mut path = destination.to_path_buf();
 		path.push(local_path);

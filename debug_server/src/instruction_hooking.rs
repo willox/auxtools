@@ -381,7 +381,7 @@ pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookE
 	unsafe {
 		ORIGINAL_BYTECODE.lock().unwrap().insert(
 			PtrKey::new(opcode_ptr),
-			std::slice::from_raw_parts(opcode_ptr, instruction_length as usize).to_vec()
+			std::slice::from_raw_parts(opcode_ptr, instruction_length).to_vec()
 		);
 	}
 

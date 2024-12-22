@@ -1,5 +1,3 @@
-#![warn(clippy::complexity, clippy::correctness, clippy::perf, clippy::style)]
-
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, spanned::Spanned, Lit};
@@ -201,7 +199,6 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 ///     Value::null()
 /// }
 /// ```
-
 #[proc_macro_attribute]
 pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let input = syn::parse_macro_input!(item as syn::ItemFn);
@@ -251,12 +248,9 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 		if let syn::Pat::Ident(p) = &*arg.pat {
 			arg_names.push(p.ident.clone());
 			let index = arg_names.len() - 1;
-			proc_arg_unpacker.push(
-				(quote! {
-					&args[#index]
-				})
-				.into()
-			);
+			proc_arg_unpacker.push(quote! {
+				&args[#index]
+			});
 		}
 	}
 	let _default_null = quote! {
