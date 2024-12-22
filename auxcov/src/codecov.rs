@@ -201,7 +201,7 @@ impl Tracker {
 impl Drop for Tracker {
 	fn drop(&mut self) {
 		let _result = self.finalize(); // dropping the result here because what can ya
-		                       // do?
+		                         // do?
 	}
 }
 
@@ -354,7 +354,7 @@ impl TrackerContext {
 
 		// reee wtf mozilla, what is this shitty rust?
 		let result = catch_unwind(|| {
-			output_cobertura(None, &result_tuples, Some(output_path), false);
+			output_cobertura(None, &result_tuples, Some(output_path), false, true);
 		});
 
 		if result.is_err() {

@@ -14,12 +14,12 @@ cc = "1.0"
 [dependencies]
 auxtools = { path = "../auxtools" }
 dmasm = { git = "https://github.com/willox/dmasm" }
-detour = { version = "0.8.1", default-features = false }
-symbolic-common = "12.1"
-symbolic-demangle = { version = "12.1", default-features = false }
+detour = { version = "0.8", default-features = false }
+symbolic-common = "12"
+symbolic-demangle = { version = "12", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.9", features = ["winuser", "libloaderapi", "errhandlingapi"] }
+winapi = { version = "0.3", features = ["winuser", "libloaderapi", "errhandlingapi"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
