@@ -16,7 +16,7 @@ extern "system" fn exception_filter(_: *mut EXCEPTION_POINTERS) -> LONG {
 		}
 	}
 
-	return EXCEPTION_EXECUTE_HANDLER;
+	EXCEPTION_EXECUTE_HANDLER
 }
 
 #[init(full)]

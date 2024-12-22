@@ -73,7 +73,7 @@ fn instruction_hooking_init() -> Result<(), String> {
 
 		hook.enable().map_err(|_| "Couldn't enable execute_instruction detour")?;
 
-		execute_instruction_original = std::mem::transmute(hook.trampoline());
+		execute_instruction_original = hook.trampoline() as *const () as *const c_void;
 
 		// We never remove or disable the hook, so just forget about it.
 		std::mem::forget(hook);

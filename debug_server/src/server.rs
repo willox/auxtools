@@ -148,7 +148,7 @@ impl Server {
 	}
 
 	pub fn connect(addr: &SocketAddr) -> std::io::Result<Server> {
-		let stream = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))?;
+		let stream = TcpStream::connect_timeout(addr, std::time::Duration::from_secs(5))?;
 		let (requests_sender, requests_receiver) = mpsc::channel();
 
 		let server_thread = ServerThread { requests: requests_sender };
@@ -171,7 +171,7 @@ impl Server {
 		};
 
 		server.process_until_configured();
-		return Ok(server);
+		Ok(server)
 	}
 
 	pub fn listen(addr: &SocketAddr) -> std::io::Result<Server> {
@@ -231,9 +231,9 @@ impl Server {
 				}
 
 				if reached_offset {
-					return current_line_number;
+					current_line_number
 				} else {
-					return None;
+					None
 				}
 			}
 
@@ -242,38 +242,31 @@ impl Server {
 	}
 
 	fn get_offset(&self, proc: ProcRef, line: u32) -> Option<u32> {
-		match auxtools::Proc::find_override(proc.path, proc.override_id) {
-			Some(proc) => {
-				let mut offset = None;
-				let mut at_offset = false;
+		let proc = auxtools::Proc::find_override(proc.path, proc.override_id)?;
+		let mut offset = None;
+		let mut at_offset = false;
 
-				let bytecode = unsafe { proc.bytecode() };
+		let bytecode = unsafe { proc.bytecode() };
 
-				let mut env = disassemble_env::DisassembleEnv;
-				let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+		let mut env = disassemble_env::DisassembleEnv;
+		let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
 
-				for node in nodes {
-					if let dmasm::Node::Instruction(ins, debug) = node {
-						if at_offset {
-							offset = Some(debug.offset);
-							break;
-						}
-
-						if let dmasm::Instruction::DbgLine(current_line) = ins {
-							if current_line == line {
-								at_offset = true;
-							}
-						}
-					}
+		for node in nodes {
+			if let dmasm::Node::Instruction(ins, debug) = node {
+				if at_offset {
+					offset = Some(debug.offset);
+					break;
 				}
 
-				return offset;
-			}
-
-			None => {
-				return None;
+				if let dmasm::Instruction::DbgLine(current_line) = ins {
+					if current_line == line {
+						at_offset = true;
+					}
+				}
 			}
 		}
+
+		offset
 	}
 
 	fn is_object(value: &Value) -> bool {
@@ -352,7 +345,7 @@ impl Server {
 			variables.push(self.value_to_variable(format!("[{}]", i), &key));
 		}
 
-		return Ok(variables);
+		Ok(variables)
 	}
 
 	fn object_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
@@ -481,7 +474,7 @@ impl Server {
 				let mut vars = vec![self.value_to_variable(".".to_owned(), &frame.dot)];
 
 				for (name, local) in &frame.locals {
-					vars.push(self.value_to_variable(String::from(name), &local));
+					vars.push(self.value_to_variable(String::from(name), local));
 				}
 
 				vars
@@ -901,8 +894,8 @@ impl Server {
 	}
 
 	fn handle_eval(&mut self, frame_id: Option<u32>, command: &str, context: Option<String>) {
-		if command.starts_with('#') {
-			let response = self.handle_command(frame_id, &command[1..]);
+		if let Some(command) = command.strip_prefix('#') {
+			let response = self.handle_command(frame_id, command);
 			self.send_or_disconnect(Response::Eval(EvalResponse {
 				value: response,
 				variables: None
@@ -933,7 +926,7 @@ impl Server {
 	}
 
 	fn handle_disassemble(&mut self, path: &str, id: u32) -> String {
-		let response = match auxtools::Proc::find_override(path, id) {
+		match auxtools::Proc::find_override(path, id) {
 			Some(proc) => {
 				// Make sure to temporarily remove all breakpoints in this proc
 				let breaks = get_hooked_offsets(&proc);
@@ -964,9 +957,7 @@ impl Server {
 			}
 
 			None => "Proc not found".to_owned()
-		};
-
-		return response;
+		}
 	}
 
 	// returns true if we need to break
@@ -1010,17 +1001,13 @@ impl Server {
 			}
 
 			Request::CurrentInstruction { frame_id } => {
-				let response = match self.get_stack_frame(frame_id) {
-					Some(frame) => Some(InstructionRef {
-						proc: ProcRef {
-							path: frame.proc.path.to_owned(),
-							override_id: frame.proc.override_id()
-						},
-						offset: frame.offset as u32
-					}),
-
-					None => None
-				};
+				let response = self.get_stack_frame(frame_id).map(|frame| InstructionRef {
+					proc: ProcRef {
+						path: frame.proc.path.to_owned(),
+						override_id: frame.proc.override_id()
+					},
+					offset: frame.offset as u32
+				});
 
 				self.send_or_disconnect(Response::CurrentInstruction(response));
 			}
@@ -1050,14 +1037,10 @@ impl Server {
 	}
 
 	fn wait_for_connection(&mut self) {
-		match &self.stream {
-			ServerStream::Waiting(receiver) => {
-				if let Ok(stream) = receiver.recv() {
-					self.stream = ServerStream::Connected(stream);
-				}
+		if let ServerStream::Waiting(receiver) = &self.stream {
+			if let Ok(stream) = receiver.recv() {
+				self.stream = ServerStream::Connected(stream);
 			}
-
-			_ => ()
 		}
 	}
 
@@ -1074,23 +1057,17 @@ impl Server {
 
 	pub fn handle_breakpoint(&mut self, _ctx: *mut raw_types::procs::ExecutionContext, reason: BreakpointReason) -> ContinueKind {
 		// Ignore all breakpoints unless we're connected
-		if !self.check_connected() {
+		if !self.check_connected() || (matches!(reason, BreakpointReason::Runtime(_)) && !self.should_catch_runtimes) {
 			return ContinueKind::Continue;
-		}
-
-		if let BreakpointReason::Runtime(_) = reason {
-			if !self.should_catch_runtimes {
-				return ContinueKind::Continue;
-			}
 		}
 
 		self.state = Some(State::new());
 
 		// Exit now if this is a conditional breakpoint and the condition doesn't pass!
-		if let BreakpointReason::Breakpoint = reason {
+		if reason == BreakpointReason::Breakpoint {
 			let proc = unsafe { (*(*_ctx).proc_instance).proc };
 			let offset = unsafe { (*_ctx).bytecode_offset };
-			let condition = self.conditional_breakpoints.get(&(proc, offset)).map(|x| x.clone());
+			let condition = self.conditional_breakpoints.get(&(proc, offset)).cloned();
 
 			if let Some(condition) = condition {
 				if let Some(result) = self.eval_expr(Some(0), &condition) {

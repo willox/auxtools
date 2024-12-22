@@ -23,3 +23,6 @@ winapi = { version = "0.3", features = ["winuser", "libloaderapi", "errhandlinga
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[lints]
+workspace = true

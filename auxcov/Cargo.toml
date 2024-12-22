@@ -16,3 +16,6 @@ auxtools = { path = "../auxtools" }
 instruction_hooking = { path = "../instruction_hooking" }
 dmasm = { git = "https://github.com/willox/dmasm" }
 grcov = "0.8"
+
+[lints]
+workspace = true
