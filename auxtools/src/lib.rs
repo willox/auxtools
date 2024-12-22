@@ -404,3 +404,24 @@ byond_ffi_fn! { auxtools_full_shutdown(_input) {
 	};
 	Some("SUCCESS".to_owned())
 } }
+
+byond_ffi_fn! { auxtools_check_signatures(_input) {
+	let byondcore = match sigscan::Scanner::for_module(BYONDCORE) {
+		Some(v) => v,
+		None => return Some("FAILED (Couldn't create scanner for byondcore.dll)".to_owned())
+	};
+	if let Err(e) = version::init() {
+		return Some(format!("FAILED ({})", e));
+	}
+	let mut missing = Vec::<&'static str>::new();
+	for (name, found) in SIGNATURES0.check_all(&byondcore) {
+		if !found {
+			missing.push(name);
+		}
+	}
+	if missing.is_empty() {
+		Some("SUCCESS".to_owned())
+	} else {
+		Some(format!("MISSING: {}", missing.join(", ")))
+	}
+} }
