@@ -68,7 +68,7 @@ impl fmt::Display for Value {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		unsafe {
 			match self.tag {
-				ValueTag::Null => write!(f, "{}", "null"),
+				ValueTag::Null => write!(f, "null"),
 				ValueTag::Number => write!(f, "{}", self.data.number),
 				ValueTag::String => {
 					let id = self.data.string;
@@ -86,7 +86,7 @@ impl fmt::Debug for Value {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		unsafe {
 			match self.tag {
-				ValueTag::Null => write!(f, "{}", "null"),
+				ValueTag::Null => write!(f, "null"),
 				ValueTag::Number => write!(f, "{:?}", self.data.number),
 				ValueTag::String => {
 					let id = self.data.string;

@@ -29,9 +29,9 @@ pub struct Tracker {
 impl Tracker {
 	pub fn new() -> Tracker {
 		let mut hittable_lines = HashMap::<String, HashSet<u32>>::new();
-		let mut i: u32 = 0;
+		let mut i = 0_u32;
 		while let Some(proc) = Proc::from_id(raw_types::procs::ProcId(i)) {
-			i = i + 1;
+			i += 1;
 
 			let mut current_file_option;
 			let bytecode;
@@ -63,7 +63,7 @@ impl Tracker {
 									continue;
 								}
 
-								hittable_lines.entry(file_name).or_insert(HashSet::new()).insert(line);
+								hittable_lines.entry(file_name).or_default().insert(line);
 							}
 						}
 						_ => {}
@@ -123,7 +123,7 @@ impl Tracker {
 			return;
 		}
 
-		let filename_id = StringId::from(ctx.filename);
+		let filename_id = ctx.filename;
 		let proc_map_index = proc_instance.proc.0 as usize;
 		let line = ctx.line as usize;
 
@@ -158,16 +158,13 @@ impl Tracker {
 			}
 		}
 
-		if let Some(remove_index) = remove_index_option {
-			self.contexts.remove(remove_index);
-			if let Err(error) = result {
-				return Err(error);
+		match remove_index_option {
+			Some(remove_index) => {
+				self.contexts.remove(remove_index);
+				result.map(|_| true)
 			}
-
-			return Ok(true);
+			None => Ok(false)
 		}
-
-		Ok(false)
 	}
 
 	fn finalize(&mut self) -> Result<(), Vec<Error>> {
@@ -177,9 +174,7 @@ impl Tracker {
 			if let Err(error) = result {
 				match &mut errors_option {
 					None => {
-						let mut new_error_vec = Vec::new();
-						new_error_vec.push(error);
-						errors_option = Some(new_error_vec);
+						errors_option = Some(vec![error]);
 					}
 					Some(existing_vec) => {
 						existing_vec.push(error);
@@ -201,7 +196,7 @@ impl Tracker {
 impl Drop for Tracker {
 	fn drop(&mut self) {
 		let _result = self.finalize(); // dropping the result here because what can ya
-		                       // do?
+		                         // do?
 	}
 }
 
@@ -346,15 +341,12 @@ impl TrackerContext {
 		let output_path = Path::new(&self.output_file_name);
 		let mut path_buf = output_path.to_path_buf();
 		if path_buf.pop() {
-			let create_dir_result = create_dir_all(path_buf);
-			if let Err(create_dir_error) = create_dir_result {
-				return Err(create_dir_error);
-			}
+			create_dir_all(path_buf)?;
 		}
 
 		// reee wtf mozilla, what is this shitty rust?
 		let result = catch_unwind(|| {
-			output_cobertura(None, &result_tuples, Some(output_path), false);
+			output_cobertura(None, &result_tuples, Some(output_path), false, true);
 		});
 
 		if result.is_err() {

@@ -40,12 +40,7 @@ where
 // that.
 #[hook("/proc/start_code_coverage")]
 fn start_code_coverage(coverage_file: Value) {
-	let coverage_file_string_result = coverage_file.as_string();
-	if let Err(runtime) = coverage_file_string_result {
-		return Err(runtime);
-	}
-
-	let coverage_file_string = coverage_file_string_result.unwrap();
+	let coverage_file_string = coverage_file.as_string()?;
 
 	let mut init_result = false;
 	with_tracker_option(
@@ -64,12 +59,7 @@ fn start_code_coverage(coverage_file: Value) {
 
 #[hook("/proc/stop_code_coverage")]
 fn stop_code_coverage(coverage_file: Value) {
-	let coverage_file_string_result = coverage_file.as_string();
-	if let Err(runtime) = coverage_file_string_result {
-		return Err(runtime);
-	}
-
-	let coverage_file_string = coverage_file_string_result.unwrap();
+	let coverage_file_string = coverage_file.as_string()?;
 
 	let mut result = Ok(Value::null());
 	with_tracker_option(

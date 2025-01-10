@@ -248,7 +248,7 @@ impl Value {
 	pub fn to_dmstring(&self) -> DMResult<string::StringRef> {
 		match self.raw.tag {
 			raw_types::values::ValueTag::Null | raw_types::values::ValueTag::Number | raw_types::values::ValueTag::String => {
-				return Ok(string::StringRef::new(format!("{}", self.raw).as_str())?)
+				return string::StringRef::new(format!("{}", self.raw).as_str())
 			}
 
 			_ => {}

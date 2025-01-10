@@ -10,7 +10,7 @@ fn test_weak_values(someval: Value) {
 
 	Proc::find("/proc/del_value")
 		.ok_or_else(|| runtime!("test_weak_values: /proc/del_value not defined"))?
-		.call(&[&someval])?;
+		.call(&[someval])?;
 
 	Proc::find("/proc/create_datum_for_weak")
 		.ok_or_else(|| runtime!("test_weak_values: /proc/create_datum_for_weak not defined"))?

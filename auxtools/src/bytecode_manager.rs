@@ -77,11 +77,11 @@ pub fn set_bytecode(proc: &Proc, mut bytecode: Vec<u32>) {
 		(*ptr).as_mut().unwrap()
 	};
 
-	if !state.original.contains_key(&proc.id) {
+	state.original.entry(proc.id).or_insert_with(|| {
 		let (ptr, len) = unsafe { proc.bytecode_mut_ptr() };
 
-		state.original.insert(proc.id, (ptr, len));
-	}
+		(ptr, len)
+	});
 
 	let (ptr, len) = {
 		let len = bytecode.len();

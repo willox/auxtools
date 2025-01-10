@@ -80,7 +80,7 @@ pub fn init() -> Result<(), String> {
 		let runtime_hook = RawDetour::new(raw_types::funcs::runtime_byond as *const (), runtime_hook as *const ()).unwrap();
 
 		runtime_hook.enable().unwrap();
-		runtime_original = std::mem::transmute(runtime_hook.trampoline());
+		runtime_original = runtime_hook.trampoline() as *const () as *const c_void;
 
 		let call_hook = RawDetour::new(
 			raw_types::funcs::call_proc_by_id_byond as *const (),
@@ -89,7 +89,7 @@ pub fn init() -> Result<(), String> {
 		.unwrap();
 
 		call_hook.enable().unwrap();
-		call_proc_by_id_original = std::mem::transmute(call_hook.trampoline());
+		call_proc_by_id_original = call_hook.trampoline() as *const () as *const c_void;
 
 		DETOURS.with(|detours_cell| {
 			let mut detours = detours_cell.borrow_mut();
@@ -121,11 +121,11 @@ thread_local! {
 fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook, hook_path: String) -> Result<(), HookFailure> {
 	PROC_HOOKS.with(|h| {
 		let mut map = h.borrow_mut();
-		if map.contains_key(&id) {
-			return Err(HookFailure::AlreadyHooked);
-		} else {
-			map.insert(id, (hook, hook_path));
+		if let std::collections::hash_map::Entry::Vacant(e) = map.entry(id) {
+			e.insert((hook, hook_path));
 			Ok(())
+		} else {
+			Err(HookFailure::AlreadyHooked)
 		}
 	})
 }
@@ -187,7 +187,7 @@ extern "C" fn call_proc_by_id_hook(
 
 			match result {
 				Ok(r) => {
-					let result_raw = (&r).raw;
+					let result_raw = r.raw;
 					// Stealing our reference out of the Value
 					std::mem::forget(r);
 					Some(result_raw)

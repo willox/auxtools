@@ -16,7 +16,7 @@ doctest = false
 proc-macro2 = "1.0"
 quote = "1.0"
 hex = "0.4"
+syn = { version = "2", features = ["full"] }
 
-[dependencies.syn]
-version = "1.0"
-features = ["full"]
+[lints]
+workspace = true
