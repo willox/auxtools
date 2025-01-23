@@ -1,26 +1,15 @@
+mod args;
 mod result;
 
+use self::{
+	args::Args,
+	result::{extract_test_result, TestResult}
+};
 use byond_get::OsType;
 use cfg_if::cfg_if;
-use clap::Parser;
 use color_eyre::eyre::{Result, WrapErr};
-use result::TestResult;
-use std::{path::PathBuf, process::Command};
+use std::process::Command;
 use tempdir::TempDir;
-
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-pub struct Args {
-	/// Path to the auxtools DLL to use.
-	#[arg(short, long)]
-	pub auxtools_path: PathBuf,
-
-	/// Version of BYOND to use.
-	pub version: u16,
-
-	/// Build of BYOND to use.
-	pub build: u16
-}
 
 static TEST_DM: &[u8] = include_bytes!("dm/auxsigcheck.dm");
 static TEST_DME: &[u8] = include_bytes!("dm/auxsigcheck.dme");
@@ -39,7 +28,7 @@ cfg_if! {
 
 fn main() -> Result<()> {
 	color_eyre::install()?;
-	let args = Args::parse();
+	let args = Args::new();
 	let auxtools_path = std::path::absolute(args.auxtools_path).wrap_err("failed to get absolute auxtools path")?;
 	let tmpdir = TempDir::new("auxsigcheck").wrap_err("failed to crate tempdir")?;
 	let base_path = tmpdir.path();
@@ -75,7 +64,7 @@ fn main() -> Result<()> {
 	}
 
 	let stderr = String::from_utf8_lossy(&test_run.stderr).into_owned();
-	match result::extract_test_result(&stderr) {
+	match extract_test_result(&stderr) {
 		TestResult::Success => println!("success"),
 		TestResult::Failed(reason) => println!("failed: {reason}"),
 		TestResult::Missing(sigs) => println!("missing: {sigs}")
