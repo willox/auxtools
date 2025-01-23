@@ -1,5 +1,6 @@
 [workspace]
-members = ["auxcov", "auxtools", "auxtools-impl", "debug_server", "instruction_hooking", "tests/auxtest", "tests/byond_get", "tests/test_runner"]
+members = ["auxcov", "auxtools", "auxtools-impl", "debug_server", "instruction_hooking", "tests/auxsigcheck", "tests/auxtest", "tests/test_runner"]
+default-members = ["auxtools", "auxtools-impl", "debug_server", "instruction_hooking"]
 resolver = "2"
 
 [workspace.package]

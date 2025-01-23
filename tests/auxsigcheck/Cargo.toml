@@ -1,0 +1,18 @@
+[package]
+name = "auxsigcheck"
+rust-version = "1.79"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+byond-get = { git = "https://github.com/absolucy/byond-get" }
+cfg-if = "1"
+clap = { version = "4", features = ["derive"] }
+color-eyre = "0.6"
+tempdir = "0.3"
+
+[lints]
+workspace = true
