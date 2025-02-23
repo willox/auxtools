@@ -14,7 +14,7 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 auxtools = { path = "../auxtools" }
 instruction_hooking = { path = "../instruction_hooking" }
-dmasm = { git = "https://github.com/willox/dmasm" }
+dmasm = { workspace = true }
 grcov = "0.8"
 
 [lints]

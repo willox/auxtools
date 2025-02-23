@@ -13,7 +13,7 @@ cc = "1.0"
 
 [dependencies]
 auxtools = { path = "../auxtools" }
-dmasm = { git = "https://github.com/willox/dmasm" }
+dmasm = { workspace = true }
 detour = { version = "0.8", default-features = false }
 symbolic-common = "12"
 symbolic-demangle = { version = "12", default-features = false }
