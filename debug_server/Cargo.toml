@@ -1,6 +1,6 @@
 [package]
 name = "debug_server"
-version = "2.3.3"
+version = "2.3.4"
 publish = false
 authors.workspace = true
 edition.workspace = true
@@ -18,7 +18,7 @@ lazy_static = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 bincode = "1"
 clap = "3"
-dmasm = { git = "https://github.com/willox/dmasm" }
+dmasm = { workspace = true }
 region = "3"
 detour = { workspace = true }
 
