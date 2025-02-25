@@ -52,7 +52,7 @@ impl StringRef {
 		}
 	}
 
-	pub fn get_id(&self) -> raw_types::strings::StringId {
+	pub const fn get_id(&self) -> raw_types::strings::StringId {
 		unsafe { self.value.raw.data.string }
 	}
 

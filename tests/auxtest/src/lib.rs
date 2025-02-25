@@ -18,5 +18,5 @@ fn inc_counter() {
 #[hook("/proc/auxtest_out")]
 fn out(msg: Value) {
 	eprintln!("\n{}", msg.as_string()?);
-	Ok(Value::null())
+	Ok(Value::NULL)
 }

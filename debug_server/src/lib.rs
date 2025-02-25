@@ -71,7 +71,7 @@ fn enable_debugging(mode: Value, port: Value) {
 
 	let server = match mode.as_str() {
 		"NONE" => {
-			return Ok(Value::null());
+			return Ok(Value::NULL);
 		}
 
 		"LAUNCHED" => server::Server::connect(&addr).map_err(|e| runtime!("Couldn't create debug server: {}", e))?,
@@ -99,5 +99,5 @@ fn enable_debugging(mode: Value, port: Value) {
 		INSTRUCTION_HOOKS.get_mut().push(Box::new(debug_server_instruction_hook));
 	}
 
-	Ok(Value::null())
+	Ok(Value::NULL)
 }

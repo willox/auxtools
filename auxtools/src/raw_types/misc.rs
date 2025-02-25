@@ -1,3 +1,4 @@
+#![allow(non_camel_case_types)]
 use std::ffi::c_void;
 
 use super::strings;
@@ -111,13 +112,13 @@ pub struct ParametersData {
 }
 
 impl Parameters_V1 {
-	pub fn count(&self) -> usize {
+	pub const fn count(&self) -> usize {
 		(self.params_count_mul_4 / 4) as usize
 	}
 }
 
 impl Parameters_V2 {
-	pub fn count(&self) -> usize {
+	pub const fn count(&self) -> usize {
 		(self.params_count_mul_4 / 4) as usize
 	}
 }

@@ -97,7 +97,7 @@ impl List {
 		self.len() == 0
 	}
 
-	pub fn is_list(value: &Value) -> bool {
+	pub const fn is_list(value: &Value) -> bool {
 		matches!(
 			value.raw.tag,
 			raw_types::values::ValueTag::List

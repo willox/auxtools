@@ -131,19 +131,7 @@ impl Proc {
 
 			let args: Vec<_> = args.iter().map(|e| e.raw).collect();
 
-			if raw_types::funcs::call_proc_by_id(
-				&mut ret,
-				Value::null().raw,
-				0,
-				self.id,
-				0,
-				Value::null().raw,
-				args.as_ptr(),
-				args.len(),
-				0,
-				0
-			) == 1
-			{
+			if raw_types::funcs::call_proc_by_id(&mut ret, Value::NULL.raw, 0, self.id, 0, Value::NULL.raw, args.as_ptr(), args.len(), 0, 0) == 1 {
 				return Ok(Value::from_raw_owned(ret));
 			}
 		}

@@ -47,7 +47,7 @@ struct Detours {
 }
 
 impl Detours {
-	pub fn new() -> Self {
+	pub const fn new() -> Self {
 		Self {
 			runtime_detour: None,
 			call_proc_detour: None
@@ -55,7 +55,7 @@ impl Detours {
 	}
 }
 
-thread_local!(static DETOURS: RefCell<Detours> = RefCell::new(Detours::new()));
+thread_local!(static DETOURS: RefCell<Detours> = const { RefCell::new(Detours::new()) });
 
 pub enum HookFailure {
 	NotInitialized,
@@ -197,7 +197,7 @@ extern "C" fn call_proc_by_id_hook(
 						.unwrap()
 						.call(&[&Value::from_string(format!("{} HookPath: {}", e.message.as_str(), path.as_str())).unwrap()])
 						.unwrap();
-					Some(Value::null().raw)
+					Some(Value::NULL.raw)
 				}
 			}
 		}

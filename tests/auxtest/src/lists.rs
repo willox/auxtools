@@ -47,7 +47,7 @@ fn test_lists() {
 	}
 
 	for n in 1..=6 {
-		if list_b.get(n)? != Value::null() {
+		if list_b.get(n)? != Value::NULL {
 			return Err(runtime!("test_lists: list_b[{}] != null", n));
 		}
 	}

@@ -54,14 +54,14 @@ fn start_code_coverage(coverage_file: Value) {
 		return Err(runtime!("A code coverage context for {} already exists!", coverage_file_string));
 	}
 
-	Ok(Value::null())
+	Ok(Value::NULL)
 }
 
 #[hook("/proc/stop_code_coverage")]
 fn stop_code_coverage(coverage_file: Value) {
 	let coverage_file_string = coverage_file.as_string()?;
 
-	let mut result = Ok(Value::null());
+	let mut result = Ok(Value::NULL);
 	with_tracker_option(
 		|tracker| {
 			let inner_result = tracker.finalize_context(&coverage_file_string);
@@ -70,7 +70,7 @@ fn stop_code_coverage(coverage_file: Value) {
 					if !had_entry {
 						Err(runtime!("A code coverage context for {} does not exist!", coverage_file_string))
 					} else {
-						Ok(Value::null())
+						Ok(Value::NULL)
 					}
 				}
 				Err(error) => Err(runtime!("A error occurred while trying to save the coverage file: {}", error))
@@ -82,4 +82,5 @@ fn stop_code_coverage(coverage_file: Value) {
 	result
 }
 
+#[allow(clippy::missing_const_for_fn)]
 pub fn anti_dce_stub() {}

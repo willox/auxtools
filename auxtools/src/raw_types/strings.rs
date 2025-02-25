@@ -5,7 +5,7 @@ use std::os::raw::c_char;
 pub struct StringId(pub u32);
 
 impl StringId {
-	pub fn valid(&self) -> bool {
+	pub const fn valid(&self) -> bool {
 		self.0 != 0xFFFF
 	}
 }

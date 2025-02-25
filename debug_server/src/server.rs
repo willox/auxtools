@@ -193,7 +193,7 @@ impl Server {
 		})
 	}
 
-	pub fn is_in_eval(&self) -> bool {
+	pub const fn is_in_eval(&self) -> bool {
 		self.in_eval
 	}
 
@@ -635,7 +635,7 @@ impl Server {
 		let arguments = Variables::Arguments { frame: frame_id };
 		let locals = Variables::Locals { frame: frame_id };
 
-		let globals = Variables::ObjectVars(Value::globals());
+		let globals = Variables::ObjectVars(Value::GLOBAL);
 
 		let response = Response::Scopes {
 			arguments: Some(state.get_ref(arguments)),

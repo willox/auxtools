@@ -38,6 +38,31 @@ impl Drop for Value {
 }
 
 impl Value {
+	/// Equivalent to DM's `global.vars`.
+	pub const GLOBAL: Self = Self {
+		raw: raw_types::values::Value {
+			tag: raw_types::values::ValueTag::World,
+			data: raw_types::values::ValueData { id: 1 }
+		},
+		phantom: PhantomData {}
+	};
+	/// Equivalent to DM's null.
+	pub const NULL: Self = Self {
+		raw: raw_types::values::Value {
+			tag: raw_types::values::ValueTag::Null,
+			data: raw_types::values::ValueData { number: 0.0 }
+		},
+		phantom: PhantomData {}
+	};
+	/// Equivalent to DM's `world`.
+	pub const WORLD: Self = Self {
+		raw: raw_types::values::Value {
+			tag: raw_types::values::ValueTag::World,
+			data: raw_types::values::ValueData { id: 0 }
+		},
+		phantom: PhantomData {}
+	};
+
 	/// Creates a new value from raw tag and data.
 	/// Use if you know what you are doing.
 	pub unsafe fn new(tag: raw_types::values::ValueTag, data: raw_types::values::ValueData) -> Value {
@@ -51,41 +76,26 @@ impl Value {
 	}
 
 	/// Equivalent to DM's `global.vars`.
-	pub fn globals() -> Value {
-		Value {
-			raw: raw_types::values::Value {
-				tag: raw_types::values::ValueTag::World,
-				data: raw_types::values::ValueData { id: 1 }
-			},
-			phantom: PhantomData {}
-		}
+	#[deprecated(note = "please use the `GLOBAL` const instead")]
+	pub const fn globals() -> Value {
+		Self::GLOBAL
 	}
 
 	/// Equivalent to DM's `world`.
-	pub fn world() -> Value {
-		Value {
-			raw: raw_types::values::Value {
-				tag: raw_types::values::ValueTag::World,
-				data: raw_types::values::ValueData { id: 0 }
-			},
-			phantom: PhantomData {}
-		}
+	#[deprecated(note = "please use the `WORLD` const instead")]
+	pub const fn world() -> Value {
+		Self::WORLD
 	}
 
 	/// Equivalent to DM's `null`.
-	pub fn null() -> Value {
-		Value {
-			raw: raw_types::values::Value {
-				tag: raw_types::values::ValueTag::Null,
-				data: raw_types::values::ValueData { number: 0.0 }
-			},
-			phantom: PhantomData {}
-		}
+	#[deprecated(note = "please use the `NULL` const instead")]
+	pub const fn null() -> Value {
+		Self::NULL
 	}
 
 	/// Gets a turf by ID, without bounds checking. Use turf_by_id if you're not
 	/// sure about how to check the bounds.
-	pub unsafe fn turf_by_id_unchecked(id: u32) -> Value {
+	pub const unsafe fn turf_by_id_unchecked(id: u32) -> Value {
 		Value {
 			raw: raw_types::values::Value {
 				tag: raw_types::values::ValueTag::Turf,
@@ -97,7 +107,7 @@ impl Value {
 
 	/// Gets a turf by ID, with bounds checking.
 	pub fn turf_by_id(id: u32) -> DMResult {
-		let world = Value::world();
+		let world = Self::WORLD;
 		let max_x = world.get_number(crate::byond_string!("maxx"))? as u32;
 		let max_y = world.get_number(crate::byond_string!("maxy"))? as u32;
 		let max_z = world.get_number(crate::byond_string!("maxz"))? as u32;
@@ -110,7 +120,7 @@ impl Value {
 
 	/// Gets a turf by coordinates.
 	pub fn turf(x: u32, y: u32, z: u32) -> DMResult {
-		let world = Value::world();
+		let world = Self::WORLD;
 		let max_x = world.get_number(crate::byond_string!("maxx"))? as u32;
 		let max_y = world.get_number(crate::byond_string!("maxy"))? as u32;
 		let max_z = world.get_number(crate::byond_string!("maxz"))? as u32;
@@ -227,7 +237,7 @@ impl Value {
 
 			if raw_types::funcs::call_datum_proc_by_name(
 				&mut ret,
-				Value::null().raw,
+				Value::NULL.raw,
 				2,
 				name_ref.value.raw.data.string,
 				self.raw,
@@ -347,7 +357,7 @@ impl Value {
 
 	/// same as from_raw but does not increment the reference count (assumes we
 	/// already own this reference)
-	pub unsafe fn from_raw_owned(v: raw_types::values::Value) -> Value {
+	pub const unsafe fn from_raw_owned(v: raw_types::values::Value) -> Value {
 		Value {
 			raw: v,
 			phantom: PhantomData {}
