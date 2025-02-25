@@ -1,3 +1,4 @@
+#![allow(clippy::missing_const_for_fn)]
 use std::sync::OnceLock;
 
 use super::{misc, strings, values};

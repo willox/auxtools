@@ -185,7 +185,7 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 ///     if let Some(num) = num.as_number() {
 ///         Value::from(num * 2.0);
 ///     }
-///     Value::null()
+///     Value::NULL
 /// }
 /// ```
 ///
@@ -196,7 +196,7 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 /// fn on_honked(honker: Value) {
 ///     src.call("gib", &[]);
 ///     honker.call("laugh", &[]);
-///     Value::null()
+///     Value::NULL
 /// }
 /// ```
 #[proc_macro_attribute]
@@ -255,14 +255,14 @@ pub fn hook(attr: TokenStream, item: TokenStream) -> TokenStream {
 	}
 	let _default_null = quote! {
 		#[allow(unreachable_code)]
-		auxtools::Value::null()
+		auxtools::Value::NULL
 	};
 	let result = quote! {
 		#cthook_prelude
 		#signature {
 			if #args_len > args.len() {
 				for i in 0..#args_len - args.len() {
-					args.push(auxtools::Value::null())
+					args.push(auxtools::Value::NULL)
 				}
 			}
 			let (#arg_names) = (#proc_arg_unpacker);

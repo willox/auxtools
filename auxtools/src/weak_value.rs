@@ -83,7 +83,7 @@ impl WeakValue {
 	pub fn upgrade_or_null(&self) -> Value {
 		match self.upgrade() {
 			Some(v) => v,
-			None => Value::null()
+			None => Value::NULL
 		}
 	}
 }
