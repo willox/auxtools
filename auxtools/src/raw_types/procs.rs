@@ -115,10 +115,93 @@ pub struct ProcInstance {
 	argslist_idx: values::ValueData,
 	unk_1: u32,
 	unk_2: u32,
-	pub args_count: u32,
-	pub args: *mut values::Value,
+	inner: ProcInstanceInner
+}
+
+impl ProcInstance {
+	#[inline(never)]
+	fn args_count_pre516(this: &Self) -> u32 {
+		unsafe { this.inner.pre516.args_count }
+	}
+
+	#[inline(never)]
+	fn args_count_post516(this: &Self) -> u32 {
+		unsafe { this.inner.post516.args_count }
+	}
+
+	pub fn args_count(&self) -> u32 {
+		static REDIRECT: OnceLock<fn(&ProcInstance) -> u32> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match crate::version::BYOND_VERSION_MAJOR {
+				..516 => Self::args_count_pre516,
+				_ => Self::args_count_post516
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn args_pre516(this: &Self) -> *mut values::Value {
+		unsafe { this.inner.pre516.args }
+	}
+
+	#[inline(never)]
+	fn args_post516(this: &Self) -> *mut values::Value {
+		unsafe { this.inner.post516.args }
+	}
+
+	pub fn args(&self) -> *mut values::Value {
+		static REDIRECT: OnceLock<fn(&ProcInstance) -> *mut values::Value> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match crate::version::BYOND_VERSION_MAJOR {
+				..516 => Self::args_pre516,
+				_ => Self::args_post516
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn time_to_resume_pre516(this: &Self) -> u32 {
+		unsafe { this.inner.pre516.time_to_resume }
+	}
+
+	#[inline(never)]
+	fn time_to_resume_post516(this: &Self) -> u32 {
+		unsafe { this.inner.post516.time_to_resume }
+	}
+
+	pub fn time_to_resume(&self) -> u32 {
+		static REDIRECT: OnceLock<fn(&ProcInstance) -> u32> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match crate::version::BYOND_VERSION_MAJOR {
+				..516 => Self::time_to_resume_pre516,
+				_ => Self::time_to_resume_post516
+			}
+		})(self)
+	}
+}
+#[repr(C)]
+union ProcInstanceInner {
+	pre516: ProcInstanceInnerPre516,
+	post516: ProcInstanceInnerPost516
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct ProcInstanceInnerPre516 {
+	args_count: u32,
+	args: *mut values::Value,
 	unk_3: [u8; 0x58],
-	pub time_to_resume: u32
+	time_to_resume: u32
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ProcInstanceInnerPost516 {
+	unk_3: u32,
+	args_count: u32,
+	args: *mut values::Value,
+	unk_4: [u8; 0x58],
+	time_to_resume: u32
 }
 
 #[repr(C)]
