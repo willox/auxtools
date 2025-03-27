@@ -855,7 +855,7 @@ impl Server {
 									(*instance).src = value.raw;
 								}
 								ArgType::Arg(idx) => {
-									let args = (*instance).args;
+									let args = (*instance).args();
 									let arg = args.add(*idx as usize);
 									let _ = Value::from_raw_owned(*arg);
 									(*arg) = value.raw;
