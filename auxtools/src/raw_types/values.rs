@@ -30,6 +30,13 @@ pub enum ValueTag {
 	AreaContents = 0x19,
 	WorldContents = 0x1A,
 	ObjContents = 0x1C,
+
+	DatumTypepath = 0x20,
+	Datum = 0x21,
+	SaveFile = 0x23,
+	ProcRef = 0x26,
+	File = 0x27,
+	Number = 0x2A,
 	MobVars = 0x2C,
 	ObjVars = 0x2D,
 	TurfVars = 0x2E,
@@ -44,6 +51,8 @@ pub enum ValueTag {
 	TurfUnderlays = 0x37,
 	AreaOverlays = 0x38,
 	AreaUnderlays = 0x39,
+	Appearance = 0x3A,
+	Pointer = 0x3C,
 	ImageOverlays = 0x40,
 	ImageUnderlays = 0x41,
 	ImageVars = 0x42,
@@ -55,13 +64,12 @@ pub enum ValueTag {
 	MobVisLocs = 0x50,
 	WorldVars = 0x51,
 	GlobalVars = 0x52,
+	Filters = 0x53,
 	ImageVisContents = 0x54,
-
-	Datum = 0x21,
-	SaveFile = 0x23,
-
-	Number = 0x2A,
-	Appearance = 0x3A
+	Alist = 0x55,
+	PixLoc = 0x56,
+	Vector = 0x57,
+	Callee = 0x58
 }
 
 impl fmt::Display for Value {

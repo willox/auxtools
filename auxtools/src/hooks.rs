@@ -4,8 +4,8 @@ use std::{
 	os::raw::c_char
 };
 
-use detour::RawDetour;
 use fxhash::FxHashMap;
+use retour::RawDetour;
 
 use super::{proc::Proc, raw_types, value::Value};
 use crate::runtime::DMResult;

@@ -8,7 +8,7 @@ use std::{
 };
 
 use auxtools::{raw_types::procs::ProcId, *};
-use detour::RawDetour;
+use retour::RawDetour;
 
 static mut THREAD_ID: u32 = 0;
 static MALLOC_SYMBOL: &[u8] = b"malloc\0";

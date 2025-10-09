@@ -1,7 +1,7 @@
 pub mod disassemble_env;
 
 use auxtools::*;
-use detour::RawDetour;
+use retour::RawDetour;
 use std::{any::Any, cell::UnsafeCell, ffi::c_void};
 
 #[cfg(windows)]

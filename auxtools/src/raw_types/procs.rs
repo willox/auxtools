@@ -215,7 +215,7 @@ pub struct ExecutionContext {
 	test_flag: u8,
 	unk_0: u8,
 	cached_datum: values::Value,
-	unk_1: [u8; 0x10],
+	unk_1: [u8; 0x14],
 	pub dot: values::Value,
 	pub locals: *mut values::Value,
 	stack: *mut values::Value,

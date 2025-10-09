@@ -14,7 +14,7 @@ cc = "1.0"
 [dependencies]
 auxtools = { path = "../auxtools" }
 dmasm = { workspace = true }
-detour = { version = "0.8", default-features = false }
+retour = { workspace = true }
 symbolic-common = "12"
 symbolic-demangle = { version = "12", default-features = false }
 
