@@ -205,7 +205,251 @@ pub struct ProcInstanceInnerPost516 {
 }
 
 #[repr(C)]
-pub struct ExecutionContext {
+pub union ExecutionContext {
+	pub pre1668: ExecutionContextPre1668,
+	pub post1668: ExecutionContextPost1668,
+}
+
+impl ExecutionContext {
+	pub fn proc_instance(&self) -> *mut ProcInstance {
+		static REDIRECT: OnceLock<fn(&ExecutionContext) -> *mut ProcInstance> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match (crate::version::BYOND_VERSION_MAJOR, crate::version::BYOND_VERSION_MINOR) {
+				(..=515, _) | (516, ..=1667) => Self::proc_instance_pre1668,
+				_ => Self::proc_instance_post1668,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn proc_instance_pre1668(this: &Self) -> *mut ProcInstance {
+		unsafe { this.pre1668.proc_instance }
+	}
+
+	#[inline(never)]
+	fn proc_instance_post1668(this: &Self) -> *mut ProcInstance {
+		unsafe { this.post1668.proc_instance }
+	}
+
+	pub fn parent_context(&self) -> *mut ExecutionContext {
+		static REDIRECT: OnceLock<fn(&ExecutionContext) -> *mut ExecutionContext> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match (crate::version::BYOND_VERSION_MAJOR, crate::version::BYOND_VERSION_MINOR) {
+				(..=515, _) | (516, ..=1667) => Self::parent_context_pre1668,
+				_ => Self::parent_context_post1668,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn parent_context_pre1668(this: &Self) -> *mut ExecutionContext {
+		unsafe { this.pre1668.parent_context }
+	}
+
+	#[inline(never)]
+	fn parent_context_post1668(this: &Self) -> *mut ExecutionContext {
+		unsafe { this.post1668.parent_context }
+	}
+
+	pub fn filename(&self) -> strings::StringId {
+		static REDIRECT: OnceLock<fn(&ExecutionContext) -> strings::StringId> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match (crate::version::BYOND_VERSION_MAJOR, crate::version::BYOND_VERSION_MINOR) {
+				(..=515, _) | (516, ..=1667) => Self::filename_pre1668,
+				_ => Self::filename_post1668,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn filename_pre1668(this: &Self) -> strings::StringId {
+		unsafe { this.pre1668.filename }
+	}
+
+	#[inline(never)]
+	fn filename_post1668(this: &Self) -> strings::StringId {
+		unsafe { this.post1668.filename }
+	}
+
+	pub fn line(&self) -> u32 {
+		static REDIRECT: OnceLock<fn(&ExecutionContext) -> u32> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match (crate::version::BYOND_VERSION_MAJOR, crate::version::BYOND_VERSION_MINOR) {
+				(..=515, _) | (516, ..=1667) => Self::line_pre1668,
+				_ => Self::line_post1668,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn line_pre1668(this: &Self) -> u32 {
+		unsafe { this.pre1668.line }
+	}
+
+	#[inline(never)]
+	fn line_post1668(this: &Self) -> u32 {
+		unsafe { this.post1668.line }
+	}
+
+	pub fn bytecode(&self) -> *mut u32 {
+		static REDIRECT: OnceLock<fn(&ExecutionContext) -> *mut u32> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match (crate::version::BYOND_VERSION_MAJOR, crate::version::BYOND_VERSION_MINOR) {
+				(..=515, _) | (516, ..=1667) => Self::bytecode_pre1668,
+				_ => Self::bytecode_post1668,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn bytecode_pre1668(this: &Self) -> *mut u32 {
+		unsafe { this.pre1668.bytecode }
+	}
+
+	#[inline(never)]
+	fn bytecode_post1668(this: &Self) -> *mut u32 {
+		unsafe { this.post1668.bytecode }
+	}
+
+	pub fn bytecode_offset(&self) -> u16 {
+		static REDIRECT: OnceLock<fn(&ExecutionContext) -> u16> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match (crate::version::BYOND_VERSION_MAJOR, crate::version::BYOND_VERSION_MINOR) {
+				(..=515, _) | (516, ..=1667) => Self::bytecode_offset_pre1668,
+				_ => Self::bytecode_offset_post1668,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn bytecode_offset_pre1668(this: &Self) -> u16 {
+		unsafe { this.pre1668.bytecode_offset }
+	}
+
+	#[inline(never)]
+	fn bytecode_offset_post1668(this: &Self) -> u16 {
+		unsafe { this.post1668.bytecode_offset }
+	}
+
+	pub fn dot(&self) -> values::Value {
+		static REDIRECT: OnceLock<fn(&ExecutionContext) -> values::Value> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match (crate::version::BYOND_VERSION_MAJOR, crate::version::BYOND_VERSION_MINOR) {
+				(..=515, _) | (516, ..=1667) => Self::dot_pre1668,
+				_ => Self::dot_post1668,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn dot_pre1668(this: &Self) -> values::Value {
+		unsafe { this.pre1668.dot }
+	}
+
+	#[inline(never)]
+	fn dot_post1668(this: &Self) -> values::Value {
+		unsafe { this.post1668.dot }
+	}
+
+	pub fn dot_ptr(&mut self) -> *mut values::Value {
+		static REDIRECT: OnceLock<fn(&mut ExecutionContext) -> *mut values::Value> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match (crate::version::BYOND_VERSION_MAJOR, crate::version::BYOND_VERSION_MINOR) {
+				(..=515, _) | (516, ..=1667) => Self::dot_ptr_pre1668,
+				_ => Self::dot_ptr_post1668,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn dot_ptr_pre1668(this: &mut Self) -> *mut values::Value {
+		unsafe { &mut this.pre1668.dot as *mut values::Value }
+	}
+
+	#[inline(never)]
+	fn dot_ptr_post1668(this: &mut Self) -> *mut values::Value {
+		unsafe { &mut this.post1668.dot as *mut values::Value }
+	}
+
+	pub fn locals(&self) -> *mut values::Value {
+		static REDIRECT: OnceLock<fn(&ExecutionContext) -> *mut values::Value> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match (crate::version::BYOND_VERSION_MAJOR, crate::version::BYOND_VERSION_MINOR) {
+				(..=515, _) | (516, ..=1667) => Self::locals_pre1668,
+				_ => Self::locals_post1668,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn locals_pre1668(this: &Self) -> *mut values::Value {
+		unsafe { this.pre1668.locals }
+	}
+
+	#[inline(never)]
+	fn locals_post1668(this: &Self) -> *mut values::Value {
+		unsafe { this.post1668.locals }
+	}
+
+	pub fn locals_count(&self) -> u16 {
+		static REDIRECT: OnceLock<fn(&ExecutionContext) -> u16> = OnceLock::new();
+		REDIRECT.get_or_init(|| unsafe {
+			match (crate::version::BYOND_VERSION_MAJOR, crate::version::BYOND_VERSION_MINOR) {
+				(..=515, _) | (516, ..=1667) => Self::locals_count_pre1668,
+				_ => Self::locals_count_post1668,
+			}
+		})(self)
+	}
+
+	#[inline(never)]
+	fn locals_count_pre1668(this: &Self) -> u16 {
+		unsafe { this.pre1668.locals_count }
+	}
+
+	#[inline(never)]
+	fn locals_count_post1668(this: &Self) -> u16 {
+		unsafe { this.post1668.locals_count }
+	}
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ExecutionContextPre1668 {
+	pub proc_instance: *mut ProcInstance,
+	pub parent_context: *mut ExecutionContext,
+	pub filename: strings::StringId,
+	pub line: u32,
+	pub bytecode: *mut u32,
+	pub bytecode_offset: u16,
+	test_flag: u8,
+	unk_0: u8,
+	cached_datum: values::Value,
+	unk_1: [u8; 0x10],
+	pub dot: values::Value,
+	pub locals: *mut values::Value,
+	stack: *mut values::Value,
+	pub locals_count: u16,
+	stack_size: u16,
+	unk_2: u32,
+	current_iterator: *mut values::Value,
+	iterator_allocated: u32,
+	iterator_length: u32,
+	iterator_index: u32,
+	unk_3: u32,
+	unk_4: [u8; 0x03],
+	iterator_filtered_type: u8,
+	unk_5: u8,
+	unk_6: u8,
+	unk_7: u8,
+	infinite_loop_count: u32,
+	unk_8: [u8; 0x02],
+	paused: u8,
+	unk_9: [u8; 0x33],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ExecutionContextPost1668 {
 	pub proc_instance: *mut ProcInstance,
 	pub parent_context: *mut ExecutionContext,
 	pub filename: strings::StringId,

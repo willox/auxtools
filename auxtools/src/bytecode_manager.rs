@@ -33,7 +33,7 @@ pub fn init() {
 fn get_active_bytecode_ptrs() -> HashSet<*mut u32> {
 	fn visit(dst: &mut HashSet<*mut u32>, frames: Vec<debug::StackFrame>) {
 		for frame in frames {
-			let ptr = unsafe { (*frame.context).bytecode };
+			let ptr = unsafe { (*frame.context).bytecode() };
 
 			dst.insert(ptr);
 		}

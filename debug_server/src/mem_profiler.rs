@@ -227,7 +227,7 @@ impl State {
 				return None;
 			}
 
-			let instance = (*ctx).proc_instance;
+			let instance = (*ctx).proc_instance();
 			if instance.is_null() {
 				return None;
 			}
