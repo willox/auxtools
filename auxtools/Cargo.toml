@@ -23,7 +23,7 @@ dashmap = "6"
 ahash = "0.8"
 fxhash = "0.2"
 ctor = "0.2"
-detour = { workspace = true }
+retour = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["winuser", "libloaderapi", "psapi", "processthreadsapi"] }

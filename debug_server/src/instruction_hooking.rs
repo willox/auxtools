@@ -76,7 +76,7 @@ lazy_static! {
 
 fn is_generated_proc(ctx: *mut raw_types::procs::ExecutionContext) -> bool {
 	unsafe {
-		let instance = (*ctx).proc_instance;
+		let instance = (*ctx).proc_instance();
 		if let Some(proc) = Proc::from_id((*instance).proc) {
 			return proc.path.ends_with("(init)");
 		}
@@ -120,25 +120,25 @@ fn handle_breakpoint(ctx: *mut raw_types::procs::ExecutionContext, reason: Break
 		ContinueKind::StepOver { stack_id } => {
 			let ctx = get_proc_ctx(stack_id);
 			DebuggerAction::StepOver {
-				target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance })
+				target: ProcInstanceRef::new(unsafe { (*ctx).proc_instance() })
 			}
 		}
 		ContinueKind::StepInto { stack_id } => {
 			let ctx = get_proc_ctx(stack_id);
 			DebuggerAction::StepInto {
-				parent: ProcInstanceRef::new(unsafe { (*ctx).proc_instance })
+				parent: ProcInstanceRef::new(unsafe { (*ctx).proc_instance() })
 			}
 		}
 		ContinueKind::StepOut { stack_id } => {
 			unsafe {
 				// Just continue the code if we've got no parent
 				let ctx = get_proc_ctx(stack_id);
-				let parent = (*ctx).parent_context;
+				let parent = (*ctx).parent_context();
 				if parent.is_null() {
 					DebuggerAction::None
 				} else {
 					DebuggerAction::StepOut {
-						target: ProcInstanceRef::new((*parent).proc_instance)
+						target: ProcInstanceRef::new((*parent).proc_instance())
 					}
 				}
 			}
@@ -151,11 +151,11 @@ fn proc_instance_is_in_stack(mut ctx: *mut raw_types::procs::ExecutionContext, p
 		let mut found = false;
 
 		while !ctx.is_null() {
-			if proc_ref.is((*ctx).proc_instance) {
+			if proc_ref.is((*ctx).proc_instance()) {
 				found = true;
 				break;
 			}
-			ctx = (*ctx).parent_context;
+			ctx = (*ctx).parent_context();
 		}
 
 		found
@@ -220,7 +220,7 @@ impl InstructionHook for Server {
 			}
 		}
 
-		let opcode_ptr = unsafe { (*ctx).bytecode.add((*ctx).bytecode_offset as usize) };
+		let opcode_ptr = unsafe { (*ctx).bytecode().add((*ctx).bytecode_offset() as usize) };
 		let opcode = unsafe { *opcode_ptr };
 		let is_dbgline = opcode == OPCODE_DBGLINE;
 
@@ -248,7 +248,7 @@ impl InstructionHook for Server {
 				// 1) The target context has disappeared - this means it has returned or runtimed
 				// 2) We're inside the target context and on a DbgLine instruction
 				DebuggerAction::StepOver { target } => {
-					if is_dbgline && target.is((*ctx).proc_instance) {
+					if is_dbgline && target.is((*ctx).proc_instance()) {
 						CURRENT_ACTION = DebuggerAction::BreakOnNext;
 					} else {
 						// If the context isn't in any stacks, it has just returned. Break!
@@ -267,7 +267,7 @@ impl InstructionHook for Server {
 				// 3) We're inside the parent context and on a DbgLine instruction
 				DebuggerAction::StepInto { parent } => {
 					if !is_generated_proc(ctx) {
-						let is_in_parent = parent.is((*ctx).proc_instance);
+						let is_in_parent = parent.is((*ctx).proc_instance());
 
 						if is_dbgline && is_in_parent {
 							CURRENT_ACTION = DebuggerAction::BreakOnNext;
@@ -291,7 +291,7 @@ impl InstructionHook for Server {
 				// Just breaks the moment we're in the target instance
 				DebuggerAction::StepOut { target } => {
 					if !is_generated_proc(ctx) {
-						if target.is((*ctx).proc_instance) {
+						if target.is((*ctx).proc_instance()) {
 							CURRENT_ACTION = DebuggerAction::None;
 							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
 							did_breakpoint = true;

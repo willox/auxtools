@@ -119,13 +119,13 @@ impl Tracker {
 
 	// returns true if we need to pause
 	pub fn process_dbg_line(&mut self, ctx: &raw_types::procs::ExecutionContext, proc_instance: &raw_types::procs::ProcInstance) {
-		if ctx.line == 0 || !ctx.filename.valid() {
+		if ctx.line() == 0 || !ctx.filename().valid() {
 			return;
 		}
 
-		let filename_id = ctx.filename;
+		let filename_id = ctx.filename();
 		let proc_map_index = proc_instance.proc.0 as usize;
-		let line = ctx.line as usize;
+		let line = ctx.line() as usize;
 
 		let mut known_file_name: Option<String> = None;
 		for context in &mut self.contexts {
@@ -206,7 +206,7 @@ impl InstructionHook for Tracker {
 		let proc_instance_ref;
 		unsafe {
 			ctx_ref = &*ctx;
-			proc_instance_ref = &*ctx_ref.proc_instance;
+			proc_instance_ref = &*ctx_ref.proc_instance();
 		}
 
 		self.process_dbg_line(ctx_ref, proc_instance_ref);

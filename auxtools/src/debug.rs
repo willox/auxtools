@@ -25,16 +25,16 @@ pub struct CallStacks {
 
 impl StackFrame {
 	unsafe fn from_context(context: *mut procs::ExecutionContext) -> StackFrame {
-		let instance = (*context).proc_instance;
+		let instance = (*context).proc_instance();
 
 		let proc = Proc::from_id((*instance).proc).unwrap();
-		let offset = (*context).bytecode_offset;
+		let offset = (*context).bytecode_offset();
 		let param_names = proc.parameter_names();
 		let local_names = proc.local_names();
 
 		let usr = Value::from_raw((*instance).usr);
 		let src = Value::from_raw((*instance).src);
-		let dot = Value::from_raw((*context).dot);
+		let dot = Value::from_raw((*context).dot());
 
 		// Make sure to handle arguments/locals with no names (when there are more
 		// values than names)
@@ -45,11 +45,11 @@ impl StackFrame {
 			})
 			.collect();
 
-		let locals = (0..(*context).locals_count)
+		let locals = (0..(*context).locals_count())
 			.map(|i| {
 				(
 					local_names.get(i as usize).unwrap().clone(),
-					Value::from_raw(*((*context).locals).add(i as usize))
+					Value::from_raw(*((*context).locals()).add(i as usize))
 				)
 			})
 			.collect();
@@ -57,9 +57,9 @@ impl StackFrame {
 		// Only populate the line number if we've got a file-name
 		let mut file_name = None;
 		let mut line_number = None;
-		if (*context).filename.valid() {
-			file_name = Some(StringRef::from_id((*context).filename));
-			line_number = Some((*context).line);
+		if (*context).filename().valid() {
+			file_name = Some(StringRef::from_id((*context).filename()));
+			line_number = Some((*context).line());
 		}
 
 		// TODO: When set this? For all sleepers?
@@ -125,7 +125,7 @@ impl CallStacks {
 
 			unsafe {
 				frames.push(StackFrame::from_context(context));
-				context = (*context).parent_context;
+				context = (*context).parent_context();
 			}
 		}
 

@@ -843,8 +843,9 @@ impl Server {
 						unsafe {
 							match slot {
 								ArgType::Dot => {
-									let _ = Value::from_raw_owned((*ctx).dot);
-									(*ctx).dot = value.raw;
+									let dot_ptr = (*ctx).dot_ptr();
+									let _ = Value::from_raw_owned(*dot_ptr);
+									*dot_ptr = value.raw;
 								}
 								ArgType::Usr => {
 									let _ = Value::from_raw_owned((*instance).usr);
@@ -861,7 +862,7 @@ impl Server {
 									(*arg) = value.raw;
 								}
 								ArgType::Local(idx) => {
-									let locals = (*ctx).locals;
+									let locals = (*ctx).locals();
 									let local = locals.add(*idx as usize);
 									let _ = Value::from_raw_owned(*local);
 									(*local) = value.raw;
@@ -1065,8 +1066,8 @@ impl Server {
 
 		// Exit now if this is a conditional breakpoint and the condition doesn't pass!
 		if reason == BreakpointReason::Breakpoint {
-			let proc = unsafe { (*(*_ctx).proc_instance).proc };
-			let offset = unsafe { (*_ctx).bytecode_offset };
+			let proc = unsafe { (*(*_ctx).proc_instance()).proc };
+			let offset = unsafe { (*_ctx).bytecode_offset() };
 			let condition = self.conditional_breakpoints.get(&(proc, offset)).cloned();
 
 			if let Some(condition) = condition {
