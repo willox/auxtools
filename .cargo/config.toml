@@ -2,4 +2,4 @@
 rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.i686-unknown-linux-gnu]
-rustflags = ["-C", "linker-features=-lld"]
+linker = "gcc"
