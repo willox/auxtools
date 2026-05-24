@@ -1,3 +1,5 @@
+mod versioned_struct;
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, spanned::Spanned, Lit};
@@ -19,6 +21,11 @@ fn from_signature(s: String) -> Vec<Option<u8>> {
 			}
 		})
 		.collect()
+}
+
+#[proc_macro_attribute]
+pub fn versioned(attr: TokenStream, item: TokenStream) -> TokenStream {
+	versioned_struct::versioned(attr.into(), item.into()).into()
 }
 
 #[proc_macro]

@@ -19,7 +19,7 @@ impl List {
 
 	/// Creates a new empty list.
 	pub fn new() -> Self {
-		Self::with_size(0)
+		Self::default()
 	}
 
 	/// Creates a new list filled with `capacity` nulls.
@@ -158,5 +158,11 @@ impl From<List> for Value {
 impl From<&List> for Value {
 	fn from(list: &List) -> Self {
 		list.value.clone()
+	}
+}
+
+impl Default for List {
+	fn default() -> Self {
+		Self::with_size(0)
 	}
 }
