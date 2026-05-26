@@ -164,98 +164,114 @@ fn generate_union(struct_ident: &Ident, vis: &Visibility, attrs: &[Attribute], v
 	}
 }
 
-fn build_dispatch_chain(variants: &[VersionVariant], helper_names: &[Ident]) -> TokenStream {
+fn build_dispatch_chain(struct_ident: &Ident, variants: &[VersionVariant], helper_names: &[Ident]) -> TokenStream {
 	let fallback = helper_names.last().unwrap();
-	let mut chain = quote! { Self::#fallback };
+	let mut chain = quote! { #struct_ident::#fallback };
 
 	for (variant, helper) in variants[..variants.len() - 1].iter().zip(&helper_names[..helper_names.len() - 1]).rev() {
 		let cond = variant.condition.as_ref().unwrap();
 		chain = quote! {
-			if #cond { Self::#helper } else { #chain }
+			if #cond { #struct_ident::#helper } else { #chain }
 		};
 	}
 
 	chain
 }
 
-fn generate_field_accessor(struct_ident: &Ident, field: &Field, variants: &[VersionVariant]) -> TokenStream {
+fn generate_field_statics(struct_ident: &Ident, field: &Field, variants: &[VersionVariant]) -> TokenStream {
 	let field_name = field.ident.as_ref().unwrap();
 	let field_ty = &field.ty;
-
-	let helper_names: Vec<Ident> = variants
-		.iter()
-		.map(|v| format_ident!("__versioned_{}_{}", field_name, variant_field_name(v)))
-		.collect();
-
-	let dispatch = build_dispatch_chain(variants, &helper_names);
-
-	let helpers = variants.iter().zip(&helper_names).map(|(v, helper_name)| {
-		let union_field = variant_field_name(v);
-		quote! {
-			#[inline(never)]
-			fn #helper_name(this: &Self) -> #field_ty {
-				unsafe { this.#union_field.#field_name }
-			}
-		}
-	});
+	let static_name = format_ident!("__VERSIONED_{}_{}", struct_ident, field_name);
+	let static_name_mut = format_ident!("__VERSIONED_MUT_{}_{}", struct_ident, field_name);
+	let fallback = variants.last().unwrap();
+	let fallback_fn = format_ident!("__versioned_{}_{}", field_name, variant_field_name(fallback));
+	let fallback_fn_mut = format_ident!("__versioned_{}_{}_mut", field_name, variant_field_name(fallback));
 
 	quote! {
-		pub fn #field_name(&self) -> #field_ty {
-			static REDIRECT: ::std::sync::OnceLock<fn(&#struct_ident) -> #field_ty> =
-				::std::sync::OnceLock::new();
-			REDIRECT.get_or_init(|| unsafe { #dispatch })(self)
-		}
-		#(#helpers)*
+		#[allow(non_upper_case_globals)]
+		static mut #static_name: fn(&#struct_ident) -> &#field_ty = #struct_ident::#fallback_fn;
+		#[allow(non_upper_case_globals)]
+		static mut #static_name_mut: fn(&mut #struct_ident) -> &mut #field_ty = #struct_ident::#fallback_fn_mut;
 	}
 }
 
-fn generate_field_ptr_accessor(struct_ident: &Ident, field: &Field, variants: &[VersionVariant]) -> TokenStream {
-	let field_name = field.ident.as_ref().unwrap();
-	let field_ty = &field.ty;
-	let ptr_name = format_ident!("{}_ptr", field_name);
+fn generate_init_fn(struct_ident: &Ident, pub_fields: &[&VersionedField], variants: &[VersionVariant]) -> TokenStream {
+	let init_fn_name = format_ident!("__versioned_init_{}", struct_ident.to_string().to_lowercase());
 
-	let helper_names: Vec<Ident> = variants
+	let assignments: Vec<_> = pub_fields
 		.iter()
-		.map(|v| format_ident!("__versioned_{}_{}_ptr", field_name, variant_field_name(v)))
+		.map(|vf| {
+			let field_name = vf.field.ident.as_ref().unwrap();
+			let static_name = format_ident!("__VERSIONED_{}_{}", struct_ident, field_name);
+			let static_name_mut = format_ident!("__VERSIONED_MUT_{}_{}", struct_ident, field_name);
+
+			let helper_names: Vec<Ident> = variants
+				.iter()
+				.map(|v| format_ident!("__versioned_{}_{}", field_name, variant_field_name(v)))
+				.collect();
+			let helper_names_mut: Vec<Ident> = variants
+				.iter()
+				.map(|v| format_ident!("__versioned_{}_{}_mut", field_name, variant_field_name(v)))
+				.collect();
+
+			let dispatch = build_dispatch_chain(struct_ident, variants, &helper_names);
+			let dispatch_mut = build_dispatch_chain(struct_ident, variants, &helper_names_mut);
+
+			quote! {
+				#static_name = #dispatch;
+				#static_name_mut = #dispatch_mut;
+			}
+		})
 		.collect();
 
-	let dispatch = build_dispatch_chain(variants, &helper_names);
-
-	let helpers = variants.iter().zip(&helper_names).map(|(v, helper_name)| {
-		let union_field = variant_field_name(v);
-		quote! {
-			#[inline(never)]
-			fn #helper_name(this: &mut Self) -> *mut #field_ty {
-				unsafe { ::std::ptr::addr_of_mut!(this.#union_field.#field_name) }
-			}
-		}
-	});
-
 	quote! {
-		pub fn #ptr_name(&mut self) -> *mut #field_ty {
-			static REDIRECT: ::std::sync::OnceLock<fn(&mut #struct_ident) -> *mut #field_ty> =
-				::std::sync::OnceLock::new();
-			REDIRECT.get_or_init(|| unsafe { #dispatch })(self)
+		fn #init_fn_name() -> Result<(), String> {
+			unsafe {
+				#(#assignments)*
+			}
+			Ok(())
 		}
-		#(#helpers)*
+		crate::inventory::submit!(crate::init::PartialInitFunc(#init_fn_name));
 	}
 }
 
-fn generate_impl(struct_ident: &Ident, variants: &[VersionVariant], fields: &[VersionedField]) -> TokenStream {
-	let pub_all_fields: Vec<_> = fields
-		.iter()
-		.filter(|vf| matches!(vf.version_info, FieldVersionInfo::AllVersions) && matches!(vf.field.vis, Visibility::Public(_)))
-		.collect();
+fn generate_impl(struct_ident: &Ident, variants: &[VersionVariant], pub_fields: &[&VersionedField]) -> TokenStream {
+	let methods = pub_fields.iter().map(|vf| {
+		let field = &vf.field;
+		let field_name = field.ident.as_ref().unwrap();
+		let field_ty = &field.ty;
+		let field_name_mut = format_ident!("{}_mut", field_name);
+		let static_name = format_ident!("__VERSIONED_{}_{}", struct_ident, field_name);
+		let static_name_mut = format_ident!("__VERSIONED_MUT_{}_{}", struct_ident, field_name);
 
-	let value_accessors = pub_all_fields.iter().map(|vf| generate_field_accessor(struct_ident, &vf.field, variants));
-	let ptr_accessors = pub_all_fields
-		.iter()
-		.map(|vf| generate_field_ptr_accessor(struct_ident, &vf.field, variants));
+		let helpers = variants.iter().map(|v| {
+			let helper_name = format_ident!("__versioned_{}_{}", field_name, variant_field_name(v));
+			let helper_name_mut = format_ident!("__versioned_{}_{}_mut", field_name, variant_field_name(v));
+			let union_field = variant_field_name(v);
+			quote! {
+				fn #helper_name(this: &Self) -> &#field_ty {
+					unsafe { &this.#union_field.#field_name }
+				}
+				fn #helper_name_mut(this: &mut Self) -> &mut #field_ty {
+					unsafe { &mut this.#union_field.#field_name }
+				}
+			}
+		});
+
+		quote! {
+			#(#helpers)*
+			pub fn #field_name(&self) -> &#field_ty {
+				unsafe { #static_name(self) }
+			}
+			pub fn #field_name_mut(&mut self) -> &mut #field_ty {
+				unsafe { #static_name_mut(self) }
+			}
+		}
+	});
 
 	quote! {
 		impl #struct_ident {
-			#(#value_accessors)*
-			#(#ptr_accessors)*
+			#(#methods)*
 		}
 	}
 }
@@ -281,16 +297,31 @@ pub fn versioned(attr: TokenStream, item: TokenStream) -> TokenStream {
 		Err(e) => return e.to_compile_error()
 	};
 
+	let pub_all_fields: Vec<&VersionedField> = fields
+		.iter()
+		.filter(|vf| matches!(vf.version_info, FieldVersionInfo::AllVersions) && matches!(vf.field.vis, Visibility::Public(_)))
+		.collect();
+
 	let variant_structs = args
 		.variants
 		.iter()
 		.map(|v| generate_variant_struct(&input.ident, &input.attrs, v, &fields));
 	let union_def = generate_union(&input.ident, &input.vis, &input.attrs, &args.variants);
-	let impl_block = generate_impl(&input.ident, &args.variants, &fields);
+	let field_statics = pub_all_fields
+		.iter()
+		.map(|vf| generate_field_statics(&input.ident, &vf.field, &args.variants));
+	let init_fn = if pub_all_fields.is_empty() {
+		quote! {}
+	} else {
+		generate_init_fn(&input.ident, &pub_all_fields, &args.variants)
+	};
+	let impl_block = generate_impl(&input.ident, &args.variants, &pub_all_fields);
 
 	quote! {
 		#(#variant_structs)*
 		#union_def
+		#(#field_statics)*
+		#init_fn
 		#impl_block
 	}
 }

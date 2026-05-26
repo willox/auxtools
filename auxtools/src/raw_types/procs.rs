@@ -47,15 +47,15 @@ pub struct ProcInstance {
 
 impl ProcInstance {
 	pub fn args_count(&self) -> u32 {
-		self.inner.args_count()
+		*self.inner.args_count()
 	}
 
 	pub fn args(&self) -> *mut values::Value {
-		self.inner.args()
+		*self.inner.args()
 	}
 
 	pub fn time_to_resume(&self) -> u32 {
-		self.inner.time_to_resume()
+		*self.inner.time_to_resume()
 	}
 }
 
