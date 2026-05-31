@@ -33,7 +33,7 @@ pub fn init() {
 fn get_active_bytecode_ptrs() -> HashSet<*mut u32> {
 	fn visit(dst: &mut HashSet<*mut u32>, frames: Vec<debug::StackFrame>) {
 		for frame in frames {
-			let ptr = unsafe { (*frame.context).bytecode() };
+			let ptr = unsafe { *(*frame.context).bytecode() };
 
 			dst.insert(ptr);
 		}
@@ -59,7 +59,7 @@ pub fn shutdown() {
 		let proc = Proc::from_id(id).unwrap();
 
 		unsafe {
-			raw_types::misc::set_bytecode((*proc.entry).metadata.get_bytecode(), ptr, len);
+			raw_types::misc::set_bytecode(*(*proc.entry).metadata.bytecode(), ptr, len);
 		}
 	}
 
@@ -104,6 +104,6 @@ pub fn set_bytecode(proc: &Proc, mut bytecode: Vec<u32>) {
 	let len = u16::try_from(len).unwrap();
 
 	unsafe {
-		raw_types::misc::set_bytecode((*proc.entry).metadata.get_bytecode(), ptr, len);
+		raw_types::misc::set_bytecode(*(*proc.entry).metadata.bytecode(), ptr, len);
 	}
 }
