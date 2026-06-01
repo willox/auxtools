@@ -1,11 +1,29 @@
+use super::{funcs, lists, strings};
 use std::{ffi::CStr, fmt};
 
-use super::{funcs, lists, strings};
+macro_rules! value_tags {
+	(
+		$($variant:ident = $val:expr),* $(,)?
+	) => {
+		#[repr(u8)]
+		#[derive(PartialEq, Copy, Clone, Debug, Hash)]
+		#[non_exhaustive]
+		pub enum ValueTag {
+			$($variant = $val),*
+		}
 
-#[repr(u8)]
-#[derive(PartialEq, Copy, Clone, Debug, Hash)]
-#[non_exhaustive]
-pub enum ValueTag {
+		impl ValueTag {
+			pub const fn from_u8(value: u8) -> Option<Self> {
+				match value {
+					$($val => Some(Self::$variant),)*
+					_ => None,
+				}
+			}
+		}
+	};
+}
+
+value_tags! {
 	Null = 0x00,
 	Turf = 0x01,
 	Obj = 0x02,
