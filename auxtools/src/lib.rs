@@ -214,8 +214,8 @@ signatures! {
 	),
 
 	set_assoc_element => version_dependent_signature!(
-		// FIXME: works 1667>, not on 1648
-		1647.. => "55 89 E5 57 56 53 83 EC ?? F3 ?? ?? ?? ?? 66 0F ?? ??",
+		1660.. => "55 89 E5 57 56 53 83 EC ?? F3 ?? ?? ?? ?? 66 0F ?? ??",
+		1647..1660 => "55 89 E5 57 56 53 83 EC 6C F3 ?? ?? ?? ?? 89 45 ?? 89 55 ??",
 		1602..1647 => "55 89 E5 83 EC 68 89 75 F8 8B 75 08 89 5D F4 89 C3 8B 45 0C 89 7D FC 80 FB 3C 89 D7 88 5D BF 89 ??",
 		..1602 => "55 B9 7C 00 00 00 89 E5 83 EC 58 89 7D ?? 8B 7D ?? 89 5D ?? 89 C3 8B 45 ??"
 	),
@@ -230,7 +230,8 @@ signatures! {
 	),
 	remove_from_list => version_dependent_signature!(
 		// FIXME: signature is broken by 1681
-		1647.. => (call, "E8 ?? ?? ?? ?? 83 C4 ?? 09 C6 39 5C ?? ??"),
+		1674.. => "55 66 0F 6E CA 66 0F 6E C0 57 66 0F 62 C1 56 66 0F 6F C8 66 0F 7E C2 53",
+		1647..1674 => (call, "E8 ?? ?? ?? ?? 83 C4 ?? 09 C6 39 5C ?? ??"),
 		..1647 => "55 89 E5 83 EC 48 3C 54 89 5D ?? 89 C3 89 75 ?? 8B 75 ?? 89 7D ?? 8B 7D ??"
 	),
 	get_length => version_dependent_signature!(
@@ -302,16 +303,10 @@ fn pin_dll() -> Result<(), ()> {
 byond_ffi_fn! { auxtools_init(_input) {
 	let ret = auxtools_init_impl();
 
-	if ret.is_none() {
-		warn!("Main function returned None. This probably means something went wrong.");
-	} else {
-		ret.as_ref().inspect(|res| {
-			if *res != "SUCCESS" {
-				error!("{}", res);
-			} else {
-				info!("Successfully loaded.");
-			}
-		});
+	match &ret {
+		Some(val) if val == "SUCCESS" => info!("Successfully loaded."),
+		Some(err) => error!("{}", err),
+		None => warn!("Main function returned None. This probably means something went wrong."),
 	}
 
 	ret

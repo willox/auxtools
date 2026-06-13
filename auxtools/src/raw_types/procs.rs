@@ -77,7 +77,7 @@ struct ProcInstanceInner {
 }
 
 #[versioned(
-	Pre1668 if crate::version::get().major <= 515 || (crate::version::get().major == 516 && crate::version::get().minor <= 1667),
+	Pre1668 if crate::version::get().major <= 515 || (crate::version::get().major == 516 && crate::version::get().build <= 1667),
 	Post1668,
 )]
 #[repr(C)]

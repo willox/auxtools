@@ -1,7 +1,7 @@
 use super::*;
 use std::{ffi::CString, os::raw::c_char};
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct ByondVersion {
 	pub major: u32,
 	pub build: u32,
@@ -94,5 +94,5 @@ pub fn init() -> Result<(), String> {
 }
 
 pub fn get() -> ByondVersion {
-	unsafe { BYOND_VERSION.clone() }
+	unsafe { BYOND_VERSION }
 }
