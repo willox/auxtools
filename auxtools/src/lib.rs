@@ -521,14 +521,3 @@ byond_ffi_fn! { auxtools_check_signatures(_input) {
 		Some(format!("MISSING: {}", missing.join(", ")))
 	}
 } }
-
-static mut ESP: usize = 0;
-
-#[unsafe(no_mangle)]
-#[inline(always)]
-pub fn print_esp() {
-	unsafe {
-		std::arch::asm!("mov {}, esp", out(reg) ESP);
-		info!("esp = {ESP:08X}");
-	}
-}
