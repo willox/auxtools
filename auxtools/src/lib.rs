@@ -9,6 +9,7 @@ pub mod debug;
 mod hooks;
 mod init;
 mod list;
+pub mod native_hooks;
 mod proc;
 pub mod raw_types;
 mod runtime;
@@ -28,13 +29,13 @@ use std::{
 pub use auxtools_impl::{full_shutdown, hook, init, pin_dll, runtime_handler, shutdown};
 /// Used by the [pin_dll] macro to set dll pinning
 pub use ctor;
-pub use hooks::{CompileTimeHook, RuntimeErrorHook};
+pub use hooks::{install_interceptor, CallProcByIdInterceptor, CompileTimeHook, RuntimeErrorHook};
 use init::{get_init_level, set_init_level, InitLevel};
 pub use init::{FullInitFunc, FullShutdownFunc, PartialInitFunc, PartialShutdownFunc};
 /// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
 pub use inventory;
 pub use list::List;
-pub use proc::Proc;
+pub use proc::{get_proc, Proc};
 pub use raw_types::variables::VariableNameIdTable;
 pub use runtime::{DMResult, Runtime};
 pub use string::StringRef;
@@ -325,6 +326,7 @@ byond_ffi_fn! { auxtools_init(_input) {
 				return Some(format!("FAILED (Could not hook proc {}: {:?})", cthook.proc_path, e));
 			}
 		}
+		native_hooks::init();
 		set_init_level(InitLevel::None);
 	}
 

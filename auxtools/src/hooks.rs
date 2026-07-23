@@ -114,8 +114,26 @@ pub fn shutdown() {
 
 pub type ProcHook = fn(&Value, &Value, Vec<Value>) -> DMResult;
 
+pub type CallProcByIdInterceptor = fn(
+	*mut raw_types::values::Value,
+	raw_types::values::Value,
+	u32,
+	raw_types::procs::ProcId,
+	u32,
+	raw_types::values::Value,
+	*mut raw_types::values::Value,
+	usize,
+	u32,
+	u32
+) -> u8;
+
 thread_local! {
 	static PROC_HOOKS: RefCell<FxHashMap<raw_types::procs::ProcId, (ProcHook, String)>> = RefCell::new(FxHashMap::default());
+	static INTERCEPTOR: RefCell<Option<CallProcByIdInterceptor>> = const { RefCell::new(None) };
+}
+
+pub fn install_interceptor(func: CallProcByIdInterceptor) {
+	INTERCEPTOR.with(|h| h.replace(Some(func)));
 }
 
 fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook, hook_path: String) -> Result<(), HookFailure> {
@@ -169,6 +187,16 @@ extern "C" fn call_proc_by_id_hook(
 	_unknown2: u32,
 	_unknown3: u32
 ) -> u8 {
+	let maybe_interceptor = INTERCEPTOR.with(|h| *h.borrow());
+	if let Some(func) = maybe_interceptor {
+		if func(
+			ret, usr_raw, _proc_type, proc_id, _unknown1, src_raw, args_ptr, num_args, _unknown2, _unknown3
+		) == 1
+		{
+			return 1;
+		}
+	}
+
 	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
 		Some((hook, path)) => {
 			let (src, usr, args) = unsafe {

@@ -15,7 +15,13 @@ pub struct ProcEntry {
 	pub category: strings::StringId,
 	flags: u32,
 	unk_1: u32,
-	pub metadata: ProcMetadata
+	pub metadata: ProcMetadata,
+	/// Parent/super proc id for `..()` calls. Equals the `next_override` chain
+	/// field (offset +0x28). `0xFFFF` = no parent (proc is at the root of its
+	/// override chain). RE-verified from byondcore.dll 516.1669
+	/// op_02C_CallParent. Correct for Post1630 builds (516.1669+); ProcEntry
+	/// real stride = 44 bytes.
+	pub parent_proc_id: ProcId
 }
 
 #[versioned(

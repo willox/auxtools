@@ -139,6 +139,17 @@ impl Proc {
 		Err(runtime!("External proc call failed"))
 	}
 
+	/// Returns the parent (super) proc in the type hierarchy, or None if this
+	/// proc has no parent (`ProcEntry::parent_proc_id == 0xFFFF`).
+	pub fn parent(&self) -> Option<Proc> {
+		let raw = unsafe { (*self.entry).parent_proc_id };
+		if raw.0 == 0xFFFF {
+			None
+		} else {
+			Proc::from_id(raw)
+		}
+	}
+
 	pub fn override_id(&self) -> u32 {
 		PROC_OVERRIDE_IDS.with(|override_ids| match override_ids.borrow().get(&self.id) {
 			Some(id) => *id,
