@@ -54,7 +54,9 @@ struct RestoreJmpBuf
 
 extern "C"
 {
-	DEFINE_byond_REGPARM3(call_proc_by_id, Value, (Value, uint32_t, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
+	uint32_t byond_build = 0;
+
+	void *call_proc_by_id_byond = nullptr;
 	DEFINE_byond(call_datum_proc_by_name, Value, (Value, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
 	DEFINE_byond(get_proc_array_entry, void *, (uint32_t));
 	DEFINE_byond_REGPARM3(get_string_id, uint32_t, (const char *, uint8_t, uint8_t, uint8_t));
@@ -64,8 +66,8 @@ extern "C"
 	DEFINE_byond(inc_ref_count, void, (Value));
 	DEFINE_byond(dec_ref_count, void, (Value));
 	DEFINE_byond_REGPARM3(get_list_by_id, void *, (uint32_t));
-	DEFINE_byond_REGPARM3(get_assoc_element, Value, (Value, Value));
-	DEFINE_byond_REGPARM3(set_assoc_element, void, (Value, Value, Value));
+	void *get_assoc_element_byond = nullptr;
+	void *set_assoc_element_byond = nullptr;
 	DEFINE_byond(create_list, uint32_t, (uint32_t));
 	DEFINE_byond_REGPARM2(append_to_list, void, (Value, Value));
 	DEFINE_byond_REGPARM2(remove_from_list, void, (Value, Value));
@@ -90,7 +92,21 @@ extern "C" uint8_t call_proc_by_id(
 
 	BYOND_TRY
 	{
-		*out = call_proc_by_id_byond(usr, proc_type, proc_id, unk_0, src, args, args_count, unk_1, unk_2);
+		#ifdef _WIN32
+		using FnCallProcById = Value (*)(Value, uint32_t, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t);
+		*out = reinterpret_cast<FnCallProcById>(call_proc_by_id_byond)(usr, proc_type, proc_id, unk_0, src, args, args_count, unk_1, unk_2);
+		#else
+		if (byond_build >= 1647)
+		{
+			using FnCallProcById = Value (*)(Value, uint32_t, uint32_t, uint32_t, Value, const Value *, uint32_t, void *, uint32_t);
+			*out = reinterpret_cast<FnCallProcById>(call_proc_by_id_byond)(usr, proc_type == 0 ? 0x12 : proc_type, proc_id, unk_0, src, args, args_count, nullptr, unk_2);
+		}
+		else
+		{
+			using FnCallProcById = Value (LINUX_REGPARM3 *)(Value, uint32_t, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t);
+			*out = reinterpret_cast<FnCallProcById>(call_proc_by_id_byond)(usr, proc_type, proc_id, unk_0, src, args, args_count, unk_1, unk_2);
+		}
+		#endif
 		return 1;
 	}
 	BYOND_CATCH
@@ -262,7 +278,21 @@ extern "C" uint8_t get_assoc_element(Value *out, Value datum, Value index)
 	{
 		clean(datum);
 		clean(index);
-		*out = get_assoc_element_byond(datum, index);
+		#ifdef _WIN32
+		using FnGetAssocElement = Value (*)(Value, Value);
+		*out = reinterpret_cast<FnGetAssocElement>(get_assoc_element_byond)(datum, index);
+		#else
+		if (byond_build >= 1647)
+		{
+			using FnGetAssocElement = Value (*)(Value, Value);
+			*out = reinterpret_cast<FnGetAssocElement>(get_assoc_element_byond)(datum, index);
+		}
+		else
+		{
+			using FnGetAssocElement = Value (LINUX_REGPARM3 *)(Value, Value);
+			*out = reinterpret_cast<FnGetAssocElement>(get_assoc_element_byond)(datum, index);
+		}
+		#endif
 		return 1;
 	}
 	BYOND_CATCH
@@ -280,7 +310,21 @@ extern "C" uint8_t set_assoc_element(Value datum, Value index, Value value)
 		clean(datum);
 		clean(index);
 		clean(value);
-		set_assoc_element_byond(datum, index, value);
+		#ifdef _WIN32
+		using FnSetAssocElement = void (*)(Value, Value, Value);
+		reinterpret_cast<FnSetAssocElement>(set_assoc_element_byond)(datum, index, value);
+		#else
+		if (byond_build >= 1647)
+		{
+			using FnSetAssocElement = void (*)(Value, Value, Value);
+			reinterpret_cast<FnSetAssocElement>(set_assoc_element_byond)(datum, index, value);
+		}
+		else
+		{
+			using FnSetAssocElement = void (LINUX_REGPARM3 *)(Value, Value, Value);
+			reinterpret_cast<FnSetAssocElement>(set_assoc_element_byond)(datum, index, value);
+		}
+		#endif
 		return 1;
 	}
 	BYOND_CATCH

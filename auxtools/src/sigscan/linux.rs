@@ -8,9 +8,7 @@ use libc::{dl_iterate_phdr, dl_phdr_info, Elf32_Phdr, PT_LOAD};
 #[repr(C)]
 struct CallbackData {
 	module_name_ptr: *const c_char,
-	memory_start: usize,
-	memory_len: usize,
-	memory_area: Option<&'static [u8]>
+	memory_areas: Vec<(usize, usize)>
 }
 
 pub struct Scanner {
@@ -27,15 +25,12 @@ extern "C" fn dl_phdr_callback(info: *mut dl_phdr_info, _size: usize, data: *mut
 	}
 
 	let headers: &'static [Elf32_Phdr] = unsafe { std::slice::from_raw_parts(info.dlpi_phdr, info.dlpi_phnum as usize) };
-	let elf_header = headers.iter().filter(|p| p.p_type == PT_LOAD).next().unwrap();
 
-	let start = (info.dlpi_addr + elf_header.p_vaddr) as usize;
-	let end = start + elf_header.p_memsz as usize;
-	let len = end - start;
-
-	cb_data.memory_start = start;
-	cb_data.memory_len = len;
-	cb_data.memory_area = Some(unsafe { std::slice::from_raw_parts(start as *const u8, len) });
+	// checks whether the segment is loadable and executable (executable flag is 1), adds to memory areas if it is
+	for elf_header in headers.iter().filter(|p| p.p_type == PT_LOAD && p.p_flags & 1 == 1) {
+		let start = (info.dlpi_addr + elf_header.p_vaddr) as usize;
+		cb_data.memory_areas.push((start, elf_header.p_memsz as usize));
+	}
 	0
 }
 
@@ -51,43 +46,47 @@ impl Scanner {
 		let module_name_ptr = module_name.as_ptr();
 		let mut data = CallbackData {
 			module_name_ptr,
-			memory_start: 0,
-			memory_len: 0,
-			memory_area: None
+			memory_areas: Vec::new()
 		};
 		unsafe { dl_iterate_phdr(Some(dl_phdr_callback), &mut data as *mut CallbackData as *mut c_void) };
 
-		let mut data_current = data.memory_start as *mut u8;
-		let data_end = (data.memory_start + data.memory_len) as *mut u8;
-
-		if data_current.is_null() || data_end == data_current {
-			// There's no more bytes to scan or the module wasn't found.
+		if data.memory_areas.is_empty() {
+			// The module wasn't found.
 			return None;
 		}
 
-		let mut signature_offset = 0;
 		let mut result: Option<*mut u8> = None;
 
-		unsafe {
-			while data_current <= data_end {
-				if signature[signature_offset] == None || signature[signature_offset] == Some(*data_current) {
-					if signature.len() <= signature_offset + 1 {
-						if result.is_some() {
-							// Found two matches.
-							return None;
+		for (memory_start, memory_len) in data.memory_areas {
+			if memory_len < signature.len() {
+				continue;
+			}
+
+			let mut data_current = memory_start as *mut u8;
+			let data_end = (memory_start + memory_len - signature.len() + 1) as *mut u8;
+			let mut signature_offset = 0;
+
+			unsafe {
+				while data_current < data_end {
+					if signature[signature_offset] == None || signature[signature_offset] == Some(*data_current) {
+						if signature.len() <= signature_offset + 1 {
+							if result.is_some() {
+								// Found two matches.
+								return None;
+							}
+							result = Some(data_current.offset(-(signature_offset as isize)));
+							data_current = data_current.offset(-(signature_offset as isize));
+							signature_offset = 0;
+						} else {
+							signature_offset += 1;
 						}
-						result = Some(data_current.offset(-(signature_offset as isize)));
+					} else {
 						data_current = data_current.offset(-(signature_offset as isize));
 						signature_offset = 0;
-					} else {
-						signature_offset += 1;
 					}
-				} else {
-					data_current = data_current.offset(-(signature_offset as isize));
-					signature_offset = 0;
-				}
 
-				data_current = data_current.offset(1);
+					data_current = data_current.offset(1);
+				}
 			}
 		}
 

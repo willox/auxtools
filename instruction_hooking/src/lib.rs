@@ -1,6 +1,6 @@
 pub mod disassemble_env;
 
-use auxtools::*;
+use auxtools::{*, raw_types::funcs::CURRENT_EXECUTION_CONTEXT};
 use retour::RawDetour;
 use std::{any::Any, cell::UnsafeCell, ffi::c_void};
 
@@ -16,6 +16,7 @@ signatures! {
 #[cfg(unix)]
 signatures! {
 	execute_instruction => version_dependent_signature!(
+		1647.. => "0F B7 46 ?? 8B 56 ?? 66 89 ?? ?? ?? ?? ?? 89 85 ?? ?? ?? ??",
 		1616.. => "0F B7 C0 8D 14 ?? 8B 02 8B 52 ?? 8B 4E ?? 8B 5E ?? 89 46 ?? 89 56 ?? 89 0C 24",
 		..1616 => "0F B7 47 ?? 8B 57 ?? 0F B7 D8 8B 0C ?? 81 F9 ?? ?? 00 00 77 ?? FF 24 8D ?? ?? ?? ??"
 	)
@@ -38,9 +39,11 @@ pub trait InstructionHook: InstructionHookToAny {
 
 pub static mut INSTRUCTION_HOOKS: UnsafeCell<Vec<Box<dyn InstructionHook>>> = UnsafeCell::new(Vec::new());
 
+#[unsafe(no_mangle)]
+pub static mut execute_instruction_original: *const c_void = std::ptr::null();
+
 extern "C" {
 	// Trampoline to the original un-hooked BYOND execute_instruction code
-	static mut execute_instruction_original: *const c_void;
 
 	// Our version of execute_instruction. It hasn't got a calling convention rust
 	// knows about, so don't call it.
@@ -49,6 +52,10 @@ extern "C" {
 	// The 514 version of the instruction hook.
 	#[cfg(windows)]
 	fn execute_instruction_hook_514();
+
+	// 516 has a different call convention
+	#[cfg(unix)]
+	fn execute_instruction_hook_516();
 }
 
 #[init(full)]
@@ -60,13 +67,17 @@ fn instruction_hooking_init() -> Result<(), String> {
 	}
 
 	#[cfg(windows)]
-	let versioned_hook = if auxtools::version::get().0 == 514 {
+	let versioned_hook = if auxtools::version::get().major == 514 {
 		execute_instruction_hook_514 as *const ()
 	} else {
 		execute_instruction_hook as *const ()
 	};
 	#[cfg(unix)]
-	let versioned_hook = execute_instruction_hook as *const ();
+	let versioned_hook = if auxtools::version::get().build >= 1647 {
+		execute_instruction_hook_516 as *const ()
+	} else {
+		execute_instruction_hook as *const ()
+	};
 
 	unsafe {
 		let hook = RawDetour::new(execute_instruction as *const (), versioned_hook).map_err(|_| "Couldn't detour execute_instruction")?;
@@ -93,7 +104,13 @@ fn instruction_hooking_shutdown() {
 // This function has to leave `*CURRENT_EXECUTION_CONTEXT` in EAX, so make sure
 // to return it.
 #[no_mangle]
-extern "C" fn handle_instruction(ctx: *mut raw_types::procs::ExecutionContext) -> *const raw_types::procs::ExecutionContext {
+extern "C" fn handle_instruction() -> *const raw_types::procs::ExecutionContext {
+	let ctx = unsafe { *CURRENT_EXECUTION_CONTEXT };
+	if ctx.is_null() {
+		error!("Cannot handle instruction, CURRENT_EXECUTION_CONTEXT is null.");
+		return ctx
+	}
+
 	unsafe {
 		for vec_box in &mut *INSTRUCTION_HOOKS.get() {
 			vec_box.handle_instruction(ctx);

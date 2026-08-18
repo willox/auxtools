@@ -24,6 +24,8 @@ ahash = "0.8"
 fxhash = "0.2"
 ctor = "0.2"
 retour = { workspace = true }
+log = { version = "0.4", features = [ "release_max_level_off" ] }
+colog = "1.4"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["winuser", "libloaderapi", "psapi", "processthreadsapi"] }

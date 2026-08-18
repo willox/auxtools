@@ -108,6 +108,7 @@ fn get_proc_ctx(stack_id: u32) -> *mut raw_types::procs::ExecutionContext {
 }
 
 fn handle_breakpoint(ctx: *mut raw_types::procs::ExecutionContext, reason: BreakpointReason) -> DebuggerAction {
+	info!("Handling breakpoint ({reason:?})");
 	let action = unsafe {
 		match &mut *DEBUG_SERVER.get() {
 			Some(server) => server.handle_breakpoint(ctx, reason),
@@ -355,8 +356,10 @@ fn find_instruction<'a>(env: &'a mut DisassembleEnv, proc: &'a Proc, offset: u32
 }
 
 pub fn hook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionHookError> {
+	info!(target: "debug_server", "Debug Server: Hooking instruction ({}:{offset})", proc.path);
 	let mut env = disassemble_env::DisassembleEnv;
 	let (_, debug) = find_instruction(&mut env, proc, offset).ok_or(InstructionHookError::InvalidOffset)?;
+	info!("Debug Server: Found instruction: {debug:?}");
 
 	let instruction_length = debug.bytecode.len();
 

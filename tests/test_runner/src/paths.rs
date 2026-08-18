@@ -45,10 +45,19 @@ pub fn find_dll() -> PathBuf {
 	path.pop();
 
 	#[cfg(unix)]
-	path.push("libauxtest.so");
+	let filename = "libauxtest.so";
 
 	#[cfg(windows)]
-	path.push("auxtest.dll");
+	let filename = "auxtest.dll";
+
+	path.push(filename);
+	if path.is_file() {
+		return path;
+	}
+
+	path.pop();
+	path.push("deps");
+	path.push(filename);
 
 	assert!(path.is_file(), "couldn't find auxtest");
 	path
@@ -61,9 +70,8 @@ pub fn find_dme() -> PathBuf {
 	path
 }
 
-pub fn find_dmb() -> PathBuf {
+pub fn dmb_path() -> PathBuf {
 	let mut path = std::env::current_dir().unwrap();
 	path.push("tests/auxtest_host/auxtest_host.dmb");
-	assert!(path.is_file(), "couldn't find auxtest_host.dmb");
 	path
 }

@@ -1,8 +1,19 @@
 use super::*;
 use std::{ffi::CString, os::raw::c_char};
 
-pub static mut BYOND_VERSION_MAJOR: u32 = 0;
-pub static mut BYOND_VERSION_MINOR: u32 = 0;
+#[derive(Copy, Clone)]
+pub struct ByondVersion {
+	pub major: u32,
+	pub build: u32,
+}
+
+impl From<ByondVersion> for (u32, u32) {
+	fn from(value: ByondVersion) -> (u32, u32) {
+		(value.major, value.build)
+	}
+}
+
+pub static mut BYOND_VERSION: ByondVersion = unsafe { std::mem::zeroed() };
 
 #[cfg(windows)]
 static GET_BYOND_VERSION_SYMBOL: &[u8] = b"?GetByondVersion@ByondLib@@QAEJXZ\0";
@@ -75,13 +86,13 @@ pub fn init() -> Result<(), String> {
 	}
 
 	unsafe {
-		BYOND_VERSION_MAJOR = get_byond_version();
-		BYOND_VERSION_MINOR = get_byond_build();
+		BYOND_VERSION.major = get_byond_version();
+		BYOND_VERSION.build = get_byond_build();
 	}
 
 	Ok(())
 }
 
-pub fn get() -> (u32, u32) {
-	unsafe { (BYOND_VERSION_MAJOR, BYOND_VERSION_MINOR) }
+pub fn get() -> ByondVersion {
+	unsafe { BYOND_VERSION }
 }

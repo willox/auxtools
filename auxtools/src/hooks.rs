@@ -1,3 +1,5 @@
+use log::{info, warn};
+
 use std::{
 	cell::RefCell,
 	ffi::{c_void, CStr},
@@ -39,6 +41,11 @@ extern "C" {
 		unk_1: u32,
 		unk_2: u32
 	) -> raw_types::values::Value;
+
+	fn call_proc_by_id_hook_trampoline_1647(
+		ret: *mut raw_types::values::Value,
+		proc_instance: *mut raw_types::procs::ProcInstance
+	);
 }
 
 struct Detours {
@@ -82,11 +89,13 @@ pub fn init() -> Result<(), String> {
 		runtime_hook.enable().unwrap();
 		runtime_original = runtime_hook.trampoline() as *const () as *const c_void;
 
-		let call_hook = RawDetour::new(
-			raw_types::funcs::call_proc_by_id_byond as *const (),
+		let call_proc_trampoline = if cfg!(unix) && crate::version::get().build >= 1647 {
+			call_proc_by_id_hook_trampoline_1647 as *const ()
+		} else {
 			call_proc_by_id_hook_trampoline as *const ()
-		)
-		.unwrap();
+		};
+
+		let call_hook = RawDetour::new(raw_types::funcs::CALL_PROC_BY_ID_HOOK_TARGET as *const (), call_proc_trampoline).unwrap();
 
 		call_hook.enable().unwrap();
 		call_proc_by_id_original = call_hook.trampoline() as *const () as *const c_void;
@@ -150,6 +159,7 @@ impl Proc {
 #[no_mangle]
 extern "C" fn on_runtime(error: *const c_char) {
 	let str = unsafe { CStr::from_ptr(error) }.to_string_lossy();
+	warn!("Runtime hooked! Reason: {str:?}");
 
 	for func in inventory::iter::<RuntimeErrorHook> {
 		func.0(&str);
@@ -169,8 +179,16 @@ extern "C" fn call_proc_by_id_hook(
 	_unknown2: u32,
 	_unknown3: u32
 ) -> u8 {
-	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
+	match PROC_HOOKS.with(|h| {
+		let hooks = h.borrow();
+		let hook_entry = hooks.get(&proc_id).or_else(|| {
+			let proc_path = Proc::from_id(proc_id)?.path;
+			hooks.values().find(|(_, path)| *path == proc_path)
+		});
+
+		match hook_entry {
 		Some((hook, path)) => {
+			info!("Proc ({path}) hooked!\nproc_id: {}\nnum_args: {}\nargs_ptr: 0x{:08X}", proc_id.0, num_args, args_ptr as usize);
 			let (src, usr, args) = unsafe {
 				(
 					Value::from_raw(src_raw),
@@ -202,6 +220,7 @@ extern "C" fn call_proc_by_id_hook(
 			}
 		}
 		None => None
+		}
 	}) {
 		Some(result) => {
 			unsafe {

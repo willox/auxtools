@@ -129,10 +129,10 @@ pub fn set_bytecode(id: BytecodeId, new_bytecode: *mut u32, new_bytecode_count: 
 		assert_eq!(super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()), 1);
 	}
 
-	let (major, minor) = version::get();
+	let (major, build) = version::get().into();
 
 	// Lame
-	if major > 513 || minor >= 1539 {
+	if major > 513 || build >= 1539 {
 		let misc = misc as *mut Misc_V2;
 		unsafe {
 			(*misc).bytecode.bytecode = new_bytecode;
@@ -153,10 +153,10 @@ pub fn get_bytecode(id: BytecodeId) -> (*mut u32, u16) {
 		assert_eq!(super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()), 1);
 	}
 
-	let (major, minor) = version::get();
+	let (major, build) = version::get().into();
 
 	// Lame
-	if major > 513 || minor >= 1539 {
+	if major > 513 || build >= 1539 {
 		let misc = misc as *mut Misc_V2;
 		return unsafe { ((*misc).bytecode.bytecode, (*misc).bytecode.count) };
 	}
@@ -171,10 +171,10 @@ pub fn get_locals(id: LocalsId) -> (*const strings::VariableId, usize) {
 		assert_eq!(super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()), 1);
 	}
 
-	let (major, minor) = version::get();
+	let (major, build) = version::get().into();
 
 	// Lame
-	if major > 513 || minor >= 1539 {
+	if major > 513 || build >= 1539 {
 		let misc = misc as *mut Misc_V2;
 		return unsafe { ((*misc).locals.names, (*misc).locals.count as usize) };
 	}
@@ -189,10 +189,10 @@ pub fn get_parameters(id: ParametersId) -> (*const ParametersData, usize) {
 		assert_eq!(super::funcs::get_misc_by_id(&mut misc, id.as_misc_id()), 1);
 	}
 
-	let (major, minor) = version::get();
+	let (major, build) = version::get().into();
 
 	// Lame
-	if major > 513 || minor >= 1539 {
+	if major > 513 || build >= 1539 {
 		let misc = misc as *mut Misc_V2;
 		return unsafe { ((*misc).parameters.data, (*misc).parameters.count()) };
 	}

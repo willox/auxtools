@@ -21,6 +21,7 @@ clap = "3"
 dmasm = { workspace = true }
 region = "3"
 retour = { workspace = true }
+log = { version = "0.4", features = [ "release_max_level_off" ] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "libloaderapi", "errhandlingapi"] }

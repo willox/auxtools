@@ -6,6 +6,7 @@ use super::{lists, misc, procs, strings, values, variables};
 pub static mut CURRENT_EXECUTION_CONTEXT: *mut *mut procs::ExecutionContext = std::ptr::null_mut();
 pub static mut SUSPENDED_PROCS_BUFFER: *mut procs::SuspendedProcsBuffer = std::ptr::null_mut();
 pub static mut SUSPENDED_PROCS: *mut procs::SuspendedProcs = std::ptr::null_mut();
+pub static mut CALL_PROC_BY_ID_HOOK_TARGET: *const c_void = std::ptr::null();
 
 pub static mut VARIABLE_NAMES: *const variables::VariableNameIdTable = std::ptr::null();
 
@@ -13,6 +14,7 @@ pub static mut VARIABLE_NAMES: *const variables::VariableNameIdTable = std::ptr:
 // Rust shouldn't call these so we're going to treat them as void ptrs for
 // simplicity
 extern "C" {
+	pub static mut byond_build: u32;
 	pub static mut call_proc_by_id_byond: *const c_void;
 	pub static mut call_datum_proc_by_name_byond: *const c_void;
 	pub static mut get_proc_array_entry_byond: *const c_void;

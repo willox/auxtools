@@ -71,3 +71,50 @@ fn assert_meow_equals_one(value: Value) -> Result<(), Runtime> {
 
 	Ok(())
 }
+
+#[hook("/proc/auxtest_value_from_number")]
+fn value_from_number() {
+	let value = Value::from(30);
+	if value.as_number()? != 30.0 {
+		return Err(runtime!("value_from_number: Value failed to convert i32"));
+	}
+
+	Ok(Value::from(true))
+}
+
+#[hook("/proc/auxtest_value_from_vec")]
+fn value_from_vec() {
+	let vector: Vec<Value> = vec![5.into()];
+	let value = Value::from(&vector);
+	let list = List::from_value(&value)?;
+	if list.len() != 1 {
+		return Err(runtime!("value_from_vec: Vec with one entry did not produce len 1"));
+	}
+
+	let value = list.get(1)?.as_number()?;
+	if value != 5.0 {
+		return Err(runtime!("value_from_vec: list[1] was {} instead of 5", value));
+	}
+
+	Ok(Value::from(true))
+}
+
+#[hook("/proc/auxtest_value_from_hashmap_value_key")]
+fn value_from_hashmap_value_key() {
+	let mut hashmap: HashMap<Value, Value> = HashMap::new();
+	hashmap.insert(Value::from_string("meow")?, 1.into());
+	let value = Value::try_from(&hashmap)?;
+	assert_meow_equals_one(value)?;
+
+	Ok(Value::from(true))
+}
+
+#[hook("/proc/auxtest_value_from_hashmap_string_key")]
+fn value_from_hashmap_string_key() {
+	let mut hashmap: HashMap<String, Value> = HashMap::new();
+	hashmap.insert("meow".to_owned(), 1.into());
+	let value = Value::try_from(&hashmap)?;
+	assert_meow_equals_one(value)?;
+
+	Ok(Value::from(true))
+}

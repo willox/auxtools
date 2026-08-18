@@ -35,7 +35,7 @@ macro_rules! signatures {
 		impl Signatures {
 			#[allow(dead_code)]
 			pub fn check_all(&self, scanner: &$crate::sigscan::Scanner) -> [(&'static str, bool); count!($($name)*)] {
-				let version = $crate::version::get().1;
+				let version = $crate::version::get().build;
 				[$(
 					(stringify!($name), self.$name.find(scanner, version).is_some()),
 				)*]
@@ -99,7 +99,7 @@ macro_rules! universal_signature {
 macro_rules! find_signature_inner {
 	($scanner:ident, $name:ident, $type:ty) => {
 		let $name: $type;
-		if let Some(ptr) = SIGNATURES0.$name.find(&$scanner, $crate::version::get().1) {
+		if let Some(ptr) = SIGNATURES0.$name.find(&$scanner, $crate::version::get().build) {
 			$name = ptr as $type;
 		} else {
 			return Some(format!("FAILED (Couldn't find {})", stringify!($name)));
@@ -111,7 +111,7 @@ macro_rules! find_signature_inner {
 macro_rules! find_signature_inner_result {
 	($scanner:ident, $name:ident, $type:ty) => {
 		let $name: $type;
-		if let Some(ptr) = SIGNATURES0.$name.find(&$scanner, $crate::version::get().1) {
+		if let Some(ptr) = SIGNATURES0.$name.find(&$scanner, $crate::version::get().build) {
 			$name = ptr as $type;
 		} else {
 			return Err(format!("FAILED (Couldn't find {})", stringify!($name)));

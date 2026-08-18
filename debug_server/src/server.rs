@@ -963,6 +963,7 @@ impl Server {
 
 	// returns true if we need to break
 	fn handle_request(&mut self, request: Request) -> bool {
+		info!("Debug Server: Received request ({request:?})");
 		match request {
 			Request::Disconnect => unreachable!(),
 			Request::CatchRuntimes { should_catch } => self.should_catch_runtimes = should_catch,

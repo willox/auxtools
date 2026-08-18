@@ -79,3 +79,74 @@ fn test_strings() {
 		Ok(Value::from(true))
 	}
 }
+
+#[hook("/proc/auxtest_string_id_and_entry")]
+fn string_id_and_entry() {
+	use raw_types::{funcs, strings};
+
+	unsafe {
+		let contents = CString::new("relatively unique testing string").unwrap();
+		let mut id = strings::StringId(0);
+		let mut entry: *mut strings::StringEntry = std::ptr::null_mut();
+
+		if funcs::get_string_id(&mut id, contents.as_ptr()) != 1 {
+			return Err(runtime!("string_id_and_entry: get_string_id failed"));
+		}
+
+		if funcs::get_string_table_entry(&mut entry, id) != 1 {
+			return Err(runtime!("string_id_and_entry: get_string_table_entry failed"));
+		}
+
+		if entry.is_null() {
+			return Err(runtime!("string_id_and_entry: string entry is null"));
+		}
+
+		if std::ffi::CStr::from_ptr((*entry).data).to_bytes() != contents.as_bytes() {
+			return Err(runtime!("string_id_and_entry: string table entry data mismatch"));
+		}
+	}
+
+	Ok(Value::from(true))
+}
+
+#[hook("/proc/auxtest_string_value_refcount")]
+fn string_value_refcount() {
+	use raw_types::{funcs, strings, values};
+
+	unsafe {
+		let contents = CString::new("string refcount test").unwrap();
+		let mut id = strings::StringId(0);
+		let mut entry: *mut strings::StringEntry = std::ptr::null_mut();
+
+		assert_eq!(funcs::get_string_id(&mut id, contents.as_ptr()), 1);
+		assert_eq!(funcs::get_string_table_entry(&mut entry, id), 1);
+
+		if (*entry).ref_count != 0 {
+			return Err(runtime!("string_value_refcount: new string refcount != 0"));
+		}
+
+		{
+			let value = Value::new(values::ValueTag::String, values::ValueData { string: id });
+			if (*entry).ref_count != 1 {
+				return Err(runtime!("string_value_refcount: Value::new did not increment refcount"));
+			}
+			drop(value);
+		}
+
+		if (*entry).ref_count != 0 {
+			return Err(runtime!("string_value_refcount: Value drop did not decrement refcount"));
+		}
+	}
+
+	Ok(Value::from(true))
+}
+
+#[hook("/proc/auxtest_string_value_roundtrip")]
+fn string_value_roundtrip() {
+	let value = Value::from_string("roundtrip string")?;
+	if value.as_string()? != "roundtrip string" {
+		return Err(runtime!("string_value_roundtrip: string did not roundtrip"));
+	}
+
+	Ok(Value::from(true))
+}

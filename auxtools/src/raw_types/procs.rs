@@ -19,7 +19,7 @@ pub struct ProcEntry {
 }
 
 #[versioned(
-	Pre1630 if crate::version::BYOND_VERSION_MINOR <= 1627,
+	Pre1630 if crate::version::get().build <= 1627,
 	Post1630,
 )]
 #[repr(C)]
@@ -60,7 +60,7 @@ impl ProcInstance {
 }
 
 #[versioned(
-	Pre516 if crate::version::BYOND_VERSION_MAJOR < 516,
+	Pre516 if crate::version::get().major < 516,
 	Post516,
 )]
 #[repr(C)]
@@ -77,7 +77,7 @@ struct ProcInstanceInner {
 }
 
 #[versioned(
-	Pre1668 if crate::version::BYOND_VERSION_MAJOR <= 515 || (crate::version::BYOND_VERSION_MAJOR == 516 && crate::version::BYOND_VERSION_MINOR <= 1667),
+	Pre1668 if crate::version::get().major <= 515 || (crate::version::get().major == 516 && crate::version::get().build <= 1667),
 	Post1668,
 )]
 #[repr(C)]
