@@ -1,5 +1,6 @@
 use auxtools::*;
 
+mod hooks;
 mod lists;
 mod strings;
 mod value_from;

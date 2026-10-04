@@ -56,7 +56,17 @@ var/datum/weak_test_datum
 /proc/auxtest_length(value)
 	return length(value)
 
+// New() is hooked and hands back a string that nothing here ever reads
+/datum/auxtest_discard/New()
+	CRASH()
+
+/proc/auxtest_new_discard()
+	new /datum/auxtest_discard
+
 // Tests
+/proc/auxtest_hooks()
+	CRASH()
+
 /proc/auxtest_lists()
 	CRASH()
 
@@ -76,6 +86,7 @@ var/datum/weak_test_datum
 	ASSERT(init_result == "SUCCESS")
 
 	// Tests
+	ASSERT(auxtest_hooks() == TRUE)
 	ASSERT(auxtest_lists() == TRUE)
 	ASSERT(auxtest_strings() == TRUE)
 	ASSERT(auxtest_value_from() == TRUE)

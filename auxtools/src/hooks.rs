@@ -34,12 +34,12 @@ extern "C" {
 		usr: raw_types::values::Value,
 		proc_type: u32,
 		proc_id: raw_types::procs::ProcId,
-		unk_0: u32,
+		override_depth: u32,
 		src: raw_types::values::Value,
 		args: *mut raw_types::values::Value,
 		args_count_l: usize,
-		unk_1: u32,
-		unk_2: u32
+		callback: u32,
+		callback_value: u32
 	) -> raw_types::values::Value;
 }
 
@@ -172,12 +172,13 @@ extern "C" fn call_proc_by_id_hook(
 	usr_raw: raw_types::values::Value,
 	_proc_type: u32,
 	proc_id: raw_types::procs::ProcId,
-	_unknown1: u32,
+	_override_depth: u32,
 	src_raw: raw_types::values::Value,
 	args_ptr: *mut raw_types::values::Value,
 	num_args: usize,
-	_unknown2: u32,
-	_unknown3: u32
+	// the trampoline deals with these two once we return
+	_callback: u32,
+	_callback_value: u32
 ) -> u8 {
 	// copy the fn out so no borrow is held while the hook runs DM code, which
 	// can call back into here or register hooks

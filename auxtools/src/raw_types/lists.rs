@@ -19,8 +19,8 @@ pub struct AssociativeListEntry {
 	pub left: *mut AssociativeListEntry,
 	pub right: *mut AssociativeListEntry,
 	pub parent: *mut AssociativeListEntry,
-	/// 0 = red, 1 = black. Padded to 4.
-	pub color: u32
+	/// 0 = red, 1 = black.
+	pub color: u8
 }
 
 #[repr(C)]

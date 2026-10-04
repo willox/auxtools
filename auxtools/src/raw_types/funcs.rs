@@ -42,12 +42,12 @@ extern "C" {
 		usr: values::Value,
 		proc_type: u32,
 		proc_id: procs::ProcId,
-		unk_0: u32,
+		override_depth: u32,
 		src: values::Value,
 		args: *const values::Value,
 		args_count_l: usize,
-		unk_1: u32,
-		unk_2: u32
+		callback: u32,
+		callback_value: u32
 	) -> u8;
 	pub fn call_datum_proc_by_name(
 		out: *mut values::Value,
@@ -57,8 +57,8 @@ extern "C" {
 		src: values::Value,
 		args: *mut values::Value,
 		args_count_l: usize,
-		unk_0: u32,
-		unk_1: u32
+		callback: u32,
+		callback_value: u32
 	) -> u8;
 	pub fn get_proc_array_entry(out: *mut *mut procs::ProcEntry, id: procs::ProcId) -> u8;
 	pub fn get_string_id(out: *mut strings::StringId, string: *const c_char) -> u8;

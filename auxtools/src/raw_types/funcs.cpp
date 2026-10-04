@@ -80,7 +80,6 @@ extern "C"
 	DEFINE_byond(get_string_table_entry, void *, (uint32_t));
 	DEFINE_byond(inc_ref_count, void, (Value));
 	DEFINE_byond(dec_ref_count, void, (Value));
-	DEFINE_byond_REGPARM3(get_list_by_id, void *, (uint32_t));
 	DEFINE_byond(get_assoc_element, Value, (Value, Value));
 	DEFINE_byond(set_assoc_element, void, (Value, Value, Value));
 	DEFINE_byond(create_list, uint32_t, (uint32_t));
@@ -138,18 +137,18 @@ extern "C" uint8_t call_proc_by_id(
 	Value usr,
 	uint32_t proc_type,
 	uint32_t proc_id,
-	uint32_t unk_0,
+	uint32_t override_depth,
 	Value src,
 	const Value *args,
-	uint8_t args_count,
-	uint32_t unk_1,
-	uint32_t unk_2)
+	uint32_t args_count,
+	uint32_t callback,
+	uint32_t callback_value)
 {
 	RuntimeContext ctx(false);
 
 	BYOND_TRY
 	{
-		*out = call_proc_by_id_byond(usr, proc_type, proc_id, unk_0, src, args, args_count, unk_1, unk_2);
+		*out = call_proc_by_id_byond(usr, proc_type, proc_id, override_depth, src, args, args_count, callback, callback_value);
 		return 1;
 	}
 	BYOND_CATCH
@@ -165,9 +164,9 @@ extern "C" uint8_t call_datum_proc_by_name(
 	uint32_t proc_name,
 	Value src,
 	Value *args,
-	uint8_t args_count,
-	uint32_t unk_0,
-	uint32_t unk_1)
+	uint32_t args_count,
+	uint32_t callback,
+	uint32_t callback_value)
 {
 	// Intercepts, unlike `call_proc_by_id` above. The errors this function raises
 	// itself (an unknown proc name, a null receiver) happen before any DM code
@@ -181,11 +180,11 @@ extern "C" uint8_t call_datum_proc_by_name(
 	{
 		clean(usr);
 		clean(src);
-		for (int i = 0; i < args_count; i++)
+		for (uint32_t i = 0; i < args_count; i++)
 		{
 			clean(args[i]);
 		}
-		*out = call_datum_proc_by_name_byond(usr, proc_type, proc_name, src, args, args_count, unk_0, unk_1);
+		*out = call_datum_proc_by_name_byond(usr, proc_type, proc_name, src, args, args_count, callback, callback_value);
 		return 1;
 	}
 	BYOND_CATCH
@@ -296,21 +295,6 @@ extern "C" uint8_t dec_ref_count(Value value)
 	{
 		clean(value);
 		dec_ref_count_byond(value);
-		return 1;
-	}
-	BYOND_CATCH
-	{
-		return 0;
-	}
-}
-
-extern "C" uint8_t get_list_by_id(void **out, uint32_t list_id)
-{
-	RuntimeContext ctx(true);
-
-	BYOND_TRY
-	{
-		*out = get_list_by_id_byond(list_id);
 		return 1;
 	}
 	BYOND_CATCH

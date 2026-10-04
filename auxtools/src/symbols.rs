@@ -105,7 +105,8 @@ pub(crate) fn resolve_full() -> Result<(), String> {
 /// runs on every partial init and not only the first.
 pub(crate) fn resolve_partial() -> Result<(), String> {
 	let (module, build) = module_and_build()?;
-	let address = resolve(&module, build, "variable_names")?;
+	// the recipe finds the name array, which is not where the table starts on Linux
+	let address = resolve(&module, build, "variable_names")? - std::mem::offset_of!(VariableNameIdTable, entries);
 	unsafe {
 		funcs::VARIABLE_NAMES = address as *const VariableNameIdTable;
 	}
