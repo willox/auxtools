@@ -22,6 +22,9 @@ var/reboot_requested = FALSE
 /proc/tick_marker()
 	return 1
 
+/proc/alist_sample()
+	return alist("a" = 1, 7 = "seven", "n" = null)
+
 // Two seconds of runtime errors, then quiet again. The test detaches while
 // they are going and comes back after they stop.
 /proc/start_runtimes()

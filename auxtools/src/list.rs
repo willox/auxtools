@@ -3,7 +3,7 @@ use std::iter::FromIterator;
 use crate::*;
 
 /// A wrapper around [Values](struct.Value.html) that make working with lists a
-/// little easier
+/// little easier. It can also hold an `/alist`, where numbers are keys.
 pub struct List {
 	value: Value
 }
@@ -95,6 +95,52 @@ impl List {
 
 	pub fn is_empty(&self) -> bool {
 		self.len() == 0
+	}
+
+	/// Whether this is a DM `/alist`, where numbers are keys and not positions.
+	pub fn is_alist(&self) -> bool {
+		self.value.raw.tag == raw_types::values::ValueTag::Alist
+	}
+
+	/// Every key and value of an `/alist`, in the order `for (var/k in A)`
+	/// gives them.
+	///
+	/// This is a copy, so nothing here points into BYOND's tree once it returns.
+	pub fn alist_pairs(&self) -> DMResult<Vec<(Value, Value)>> {
+		if !self.is_alist() {
+			return Err(runtime!("attempted to read alist pairs of a non-alist"));
+		}
+
+		let id = unsafe { self.value.raw.data.id } as usize;
+		let record = unsafe {
+			// raw reads of BYOND's table, so a stale id has to be turned away here
+			if id >= *raw_types::funcs::ALIST_TABLE_COUNT as usize {
+				return Err(runtime!("alist id {} is outside the alist table", id));
+			}
+			// BYOND reallocates the table as it grows, so read the pointer every time
+			*(*raw_types::funcs::ALIST_TABLE).add(id)
+		};
+		if record.is_null() {
+			return Err(runtime!("alist id {} has no record", id));
+		}
+
+		let mut pairs = vec![];
+		let mut node = unsafe { (*record).root };
+		let mut pending = vec![];
+		// left, node, right, without recursing
+		while !node.is_null() || !pending.is_empty() {
+			while !node.is_null() {
+				pending.push(node);
+				node = unsafe { (*node).left };
+			}
+			let entry = pending.pop().unwrap();
+			unsafe {
+				pairs.push((Value::from_raw((*entry).key), Value::from_raw((*entry).value)));
+				node = (*entry).right;
+			}
+		}
+
+		Ok(pairs)
 	}
 
 	/// Whether DM's `islist()` says yes to this value.

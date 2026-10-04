@@ -7,6 +7,11 @@ pub static mut CURRENT_EXECUTION_CONTEXT: *mut *mut procs::ExecutionContext = st
 pub static mut SUSPENDED_PROCS_BUFFER: *mut procs::SuspendedProcsBuffer = std::ptr::null_mut();
 pub static mut SUSPENDED_PROCS: *mut procs::SuspendedProcs = std::ptr::null_mut();
 
+// BYOND's globals for the alist table: a pointer to the table, and its length.
+// The table holds one record pointer per alist id, null for a free slot.
+pub static mut ALIST_TABLE: *const *const *const lists::Alist = std::ptr::null();
+pub static mut ALIST_TABLE_COUNT: *const u32 = std::ptr::null();
+
 pub static mut VARIABLE_NAMES: *const variables::VariableNameIdTable = std::ptr::null();
 
 // Function pointers exported by C++ but set by Rust

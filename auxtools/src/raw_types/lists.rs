@@ -23,6 +23,14 @@ pub struct AssociativeListEntry {
 	pub color: u8
 }
 
+/// The 8-byte record an `/alist` id points at in the alist table.
+#[repr(C)]
+pub struct Alist {
+	pub root: *mut AssociativeListEntry,
+	// starts at 1 and nobody has worked out what it is
+	unknown: u32
+}
+
 #[repr(C)]
 pub struct List {
 	pub vector_part: *mut values::Value,

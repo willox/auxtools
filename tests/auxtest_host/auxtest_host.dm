@@ -50,6 +50,16 @@ var/datum/weak_test_datum
 		F.dir, world.contents, world.vars, global.vars,
 	)
 
+// 7 is a key here and not a position, and "n" has a null value on purpose
+/proc/auxtest_alist_sample()
+	return alist("a" = 1, 7 = "seven", "n" = null)
+
+/proc/auxtest_alist_keys(alist/A)
+	var/list/keys = list()
+	for (var/k in A)
+		keys += list(k)
+	return keys
+
 /proc/auxtest_islist(value)
 	return islist(value)
 

@@ -27,6 +27,8 @@ const PROCDEF_ACCESSOR_SIG: &str = "55 8B EC 8B 45 08 3B 05 ?? ?? ?? ?? 72 04 33
 // tail.
 const STRING_ACCESSOR_SIG: &str = "55 8B EC 8B 4D 08 3B 0D ?? ?? ?? ?? 73 ?? A1 ?? ?? ?? ?? 8B 04 88 85 C0 0F 85";
 
+const ALIST_SIG: &str = "3B 35 ?? ?? ?? ?? 73 ?? A1 ?? ?? ?? ?? C7 04 B0 00 00 00 00 46 3B 35 ?? ?? ?? ?? 72 EB";
+
 pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "get_proc_array_entry",
@@ -262,5 +264,21 @@ pub(crate) const RECIPES: &[Recipe] = &[
 		anchor: Anchor::Signature(SignatureTreatment::NoOffset, SUSPENDED_SIG),
 		hops: &[],
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(2))
+	},
+	// the alist accessor's base-less operands are count=0, table=1, and the
+	// repeated count=2
+	Recipe {
+		name: "alist_table_count",
+		versions: SUPPORTED,
+		anchor: Anchor::Signature(SignatureTreatment::NoOffset, ALIST_SIG),
+		hops: &[],
+		extract: Extract::AbsMem(OperandSelect::NthAbsMem(0))
+	},
+	Recipe {
+		name: "alist_table_ptr",
+		versions: SUPPORTED,
+		anchor: Anchor::Signature(SignatureTreatment::NoOffset, ALIST_SIG),
+		hops: &[],
+		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
 	}
 ];

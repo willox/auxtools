@@ -37,6 +37,10 @@ const RUNTIME_SIG: &str =
 const PROCDEF_ACCESSOR_SIG: &str = "8B 44 24 04 39 05 ?? ?? ?? ?? 76 ?? 6B C0 ?? 03 05 ?? ?? ?? ?? C3";
 const STRING_ACCESSOR_SIG: &str = "56 53 83 EC 14 8B 44 24 20 39 05 ?? ?? ?? ?? 76 ?? 8B 15 ?? ?? ?? ?? 8B 04 82";
 
+// The 0x0F/0x55 tag dispatch identifies the accessor that reads the alist
+// table. Operands are count=0 and pointer=1.
+const ALIST_SIG: &str = "8B 54 24 04 8B 4C 24 08 80 FA 0F 74 ?? 31 C0 80 FA 55 75 ?? 3B 0D ?? ?? ?? ?? 73 ?? A1 ?? ?? ?? ?? 8B 04 88 85 C0 74 ?? 8B 00 C3";
+
 pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "get_proc_array_entry",
@@ -291,5 +295,19 @@ pub(crate) const RECIPES: &[Recipe] = &[
 		anchor: Anchor::Signature(SignatureTreatment::NoOffset, SUSPENDED_SIG),
 		hops: &[],
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(2))
+	},
+	Recipe {
+		name: "alist_table_count",
+		versions: SUPPORTED,
+		anchor: Anchor::Signature(SignatureTreatment::NoOffset, ALIST_SIG),
+		hops: &[],
+		extract: Extract::AbsMem(OperandSelect::NthAbsMem(0))
+	},
+	Recipe {
+		name: "alist_table_ptr",
+		versions: SUPPORTED,
+		anchor: Anchor::Signature(SignatureTreatment::NoOffset, ALIST_SIG),
+		hops: &[],
+		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
 	}
 ];

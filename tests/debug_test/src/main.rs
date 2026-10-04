@@ -155,6 +155,27 @@ fn main() {
 	assert_eq!(eval(&mut client, Some(0), "breakpoint_target()"), "2");
 	println!("ok: evaluating a proc that has a breakpoint in it");
 
+	// numbers are keys in an alist, so walking it by position shows nonsense
+	let response = client.request(Request::Eval {
+		frame_id: Some(0),
+		command: "alist_sample()".to_owned(),
+		context: None
+	});
+	let Response::Eval(alist) = response else {
+		panic!("expected the result of alist_sample(), got {:?}", response);
+	};
+	assert_eq!(alist.value, "/alist {len = 3}");
+	let vars = match client.request(Request::Variables {
+		vars: alist.variables.expect("an alist should be expandable")
+	}) {
+		Response::Variables { vars } => vars,
+		other => panic!("expected Variables, got {:?}", other)
+	};
+	let mut shown: Vec<_> = vars.into_iter().map(|var| var.value).collect();
+	shown.sort();
+	assert_eq!(shown, ["\"a\" = 1", "\"n\" = null", "7 = \"seven\""]);
+	println!("ok: an alist shows its key/value pairs");
+
 	assert_eq!(eval(&mut client, None, &dis_command), clean_disassembly);
 	println!("ok: disassembly doesn't show the breakpoint");
 

@@ -294,7 +294,7 @@ impl Server {
 	fn stringify(value: &Value) -> String {
 		if List::is_list(value) {
 			match List::from_value(value) {
-				Ok(list) => format!("/list {{len = {}}}", list.len()),
+				Ok(list) => format!("/{} {{len = {}}}", if list.is_alist() { "alist" } else { "list" }, list.len()),
 				Err(Runtime { message }) => format!("/list (failed to get len: {:?})", message)
 			}
 		} else {
@@ -332,6 +332,22 @@ impl Server {
 	fn list_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
 		let state = self.state.as_ref().unwrap();
 		let list = List::from_value(value)?;
+
+		// numbers are keys in an alist, so the position walk below would read
+		// the wrong entries
+		if list.is_alist() {
+			return Ok(list
+				.alist_pairs()?
+				.into_iter()
+				.enumerate()
+				.map(|(i, (key, value))| Variable {
+					name: format!("[{}]", i + 1),
+					value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
+					variables: Some(state.get_ref(Variables::ListPair { key, value }))
+				})
+				.collect());
+		}
+
 		let len = list.len();
 
 		let mut variables = vec![];

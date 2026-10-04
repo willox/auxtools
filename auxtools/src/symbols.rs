@@ -17,7 +17,7 @@ use linux::RECIPES;
 #[cfg(windows)]
 use windows::RECIPES;
 
-use crate::raw_types::{funcs, procs, variables::VariableNameIdTable};
+use crate::raw_types::{funcs, lists, procs, variables::VariableNameIdTable};
 
 /// The BYOND major version the patterns were checked against. The same build
 /// number under another major is a different binary.
@@ -73,6 +73,8 @@ pub(crate) fn resolve_full() -> Result<(), String> {
 		funcs::CURRENT_EXECUTION_CONTEXT = address("current_execution_context")? as *mut *mut procs::ExecutionContext;
 		funcs::SUSPENDED_PROCS = address("suspended_procs")? as *mut procs::SuspendedProcs;
 		funcs::SUSPENDED_PROCS_BUFFER = address("suspended_procs_buffer")? as *mut procs::SuspendedProcsBuffer;
+		funcs::ALIST_TABLE = address("alist_table_ptr")? as *const *const *const lists::Alist;
+		funcs::ALIST_TABLE_COUNT = address("alist_table_count")? as *const u32;
 		funcs::call_proc_by_id_byond = function("call_proc_by_id")?;
 		funcs::call_datum_proc_by_name_byond = function("call_datum_proc_by_name")?;
 		funcs::get_proc_array_entry_byond = function("get_proc_array_entry")?;
