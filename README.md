@@ -15,7 +15,7 @@ Debug Server - Working with SpaceManiac's [SpacemanDMM](https://github.com/Space
 
 ## Supported BYOND versions
 
-516.1659 through 516.1688, on Windows and Linux. Those are the builds the patterns that find BYOND's functions were checked against. A newer build is still tried, and fails at init with the name of whatever stopped matching. An older build, or another major version, is refused at init with an error that names the build.
+516.1659 through 516.1688 on Windows, and 516.1664 through 516.1688 on Linux. Those are the builds the patterns that find BYOND's functions were checked against. A newer build is still tried, and fails at init with the name of whatever stopped matching. An older build, or another major version, is refused at init with an error that names the build.
 
 The patterns are run by [byond-scan](https://github.com/Absolucy/byond-scan) and live in `auxtools/src/symbols/`. They are copies of the ones in the byond-re repo's `byond_catalog`, which checks each against every local build, so a change to one has to land in both.
 

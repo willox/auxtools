@@ -87,7 +87,12 @@ pub(crate) fn resolve_full() -> Result<(), String> {
 		funcs::create_list_byond = function("create_list")?;
 		funcs::append_to_list_byond = function("append_to_list")?;
 		funcs::remove_from_list_byond = function("remove_from_list")?;
+		#[cfg(unix)]
+		{
+			funcs::remove_from_list_in_registers = build.1 < linux::REMOVE_FROM_LIST_STACK_BUILD;
+		}
 		funcs::get_length_byond = function("get_length")?;
+		funcs::value_is_list_byond = function("value_is_list")?;
 		funcs::get_misc_by_id_byond = function("get_misc_by_id")?;
 		funcs::to_string_byond = function("to_string")?;
 		funcs::runtime_byond = function("runtime")?;

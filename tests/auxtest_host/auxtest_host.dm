@@ -30,6 +30,32 @@ var/datum/weak_test_datum
 /proc/create_datum_for_weak()
 	weak_test_datum = new
 
+/mob/verb/auxtest_verb()
+	return
+
+// A spread of values for `List::is_list` to agree with `islist()` on: plain
+// lists, the special lists that hang off an object, and things that are not
+// lists at all. `M.filters[1]` is the mean one, since a single filter has the
+// same tag as the filters list it came out of.
+/proc/auxtest_islist_samples()
+	var/mob/M = new
+	M.filters += filter(type = "blur")
+	var/savefile/F = new
+	var/list/L = list(1, 2)
+	return list(
+		null, 1, "string", M, /list, &L,
+		L, alist("a" = 1), L.vars, args,
+		M.verbs, M.contents, M.vars, M.overlays, M.group, M.vis_contents,
+		M.filters, M.filters[1],
+		F.dir, world.contents, world.vars, global.vars,
+	)
+
+/proc/auxtest_islist(value)
+	return islist(value)
+
+/proc/auxtest_length(value)
+	return length(value)
+
 // Tests
 /proc/auxtest_lists()
 	CRASH()

@@ -27,7 +27,9 @@ extern "C" {
 	pub static mut create_list_byond: *const c_void;
 	pub static mut append_to_list_byond: *const c_void;
 	pub static mut remove_from_list_byond: *const c_void;
+	pub static mut remove_from_list_in_registers: bool;
 	pub static mut get_length_byond: *const c_void;
+	pub static mut value_is_list_byond: *const c_void;
 	pub static mut get_misc_by_id_byond: *const c_void;
 	pub static mut to_string_byond: *const c_void;
 	pub static mut runtime_byond: *const c_void;
@@ -71,6 +73,7 @@ extern "C" {
 	pub fn append_to_list(list: values::Value, value: values::Value) -> u8;
 	pub fn remove_from_list(list: values::Value, value: values::Value) -> u8;
 	pub fn get_length(out: *mut u32, value: values::Value) -> u8;
+	pub fn value_is_list(out: *mut u8, value: values::Value) -> u8;
 	pub fn get_misc_by_id(out: *mut *mut c_void, index: misc::MiscId) -> u8;
 	pub fn to_string(out: *mut strings::StringId, value: values::Value) -> u8;
 }

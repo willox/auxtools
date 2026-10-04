@@ -34,7 +34,7 @@ pub fn find_dreamdaemon() -> PathBuf {
 	path.push("bin/DreamDaemon");
 
 	#[cfg(windows)]
-	path.push("bin/dreamdaemon.exe");
+	path.push("bin/dd.exe");
 
 	assert!(path.is_file(), "couldn't find dreamdaemon");
 	path

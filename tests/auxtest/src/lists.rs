@@ -52,5 +52,21 @@ fn test_lists() {
 		}
 	}
 
+	// is_list should agree with DM's own islist() on everything, and len() with
+	// length() on everything that is a list
+	let samples = Proc::find("/proc/auxtest_islist_samples").unwrap().call(&[])?.as_list()?;
+	let dm_islist = Proc::find("/proc/auxtest_islist").unwrap();
+	let dm_length = Proc::find("/proc/auxtest_length").unwrap();
+	for n in 1..=samples.len() {
+		let sample = samples.get(n)?;
+		let expected = dm_islist.call(&[&sample])?.as_number()? != 0.0;
+		if List::is_list(&sample) != expected {
+			return Err(runtime!("test_lists: is_list disagrees with islist() on sample {}", n));
+		}
+		if expected && sample.as_list()?.len() as f32 != dm_length.call(&[&sample])?.as_number()? {
+			return Err(runtime!("test_lists: len disagrees with length() on sample {}", n));
+		}
+	}
+
 	Ok(Value::from(true))
 }

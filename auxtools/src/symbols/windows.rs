@@ -181,6 +181,21 @@ pub(crate) const RECIPES: &[Recipe] = &[
 		extract: Extract::Entry
 	},
 	Recipe {
+		name: "value_is_list",
+		versions: SUPPORTED,
+		// this is the function the `islist()` opcode calls. The exported
+		// `ByondValue_IsList` is not used because on 1659 it says no to a `filters`
+		// list. The prologue is a common one, and the tag-range check at the end
+		// (`83 C0 F1 83 F8 46`) is what makes it unique
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 83 EC ?? 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 F4 64 A3 00 00 00 00 89 65 ?? 8B 45 \
+			 08 0F B6 C0 83 C0 F1 83 F8 46"
+		),
+		hops: &[],
+		extract: Extract::Entry
+	},
+	Recipe {
 		name: "get_misc_by_id",
 		versions: SUPPORTED,
 		anchor: Anchor::Signature(

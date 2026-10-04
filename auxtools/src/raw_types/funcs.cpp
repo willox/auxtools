@@ -66,9 +66,9 @@ struct RestoreJmpBuf
 //   * A Value-returning regparm function spends `eax` on the hidden return
 //     buffer, so its first real argument starts at `edx`. Count the buffer.
 //   * The convention is per-function and per-build. `remove_from_list` changed
-//     from registers to the stack somewhere in (1669, 1685] with no change to
-//     its signature, while its identically-shaped sibling `append_to_list` did
-//     not move. Don't infer one row from another.
+//     from registers to the stack at 1674 with no change to its signature,
+//     while its identically-shaped sibling `append_to_list` did not move. Don't
+//     infer one row from another.
 extern "C"
 {
 	DEFINE_byond(call_proc_by_id, Value, (Value, uint32_t, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
@@ -85,12 +85,14 @@ extern "C"
 	DEFINE_byond(set_assoc_element, void, (Value, Value, Value));
 	DEFINE_byond(create_list, uint32_t, (uint32_t));
 	DEFINE_byond_REGPARM2(append_to_list, void, (Value, Value));
-	// Correct from 516.1685 on, and wrong below it. This is the one function known
-	// to have changed convention mid-range, so one declaration can't cover both
-	// eras. Running this on an older Linux build means putting REGPARM2 back, and
-	// re-reading the prologue first, because the exact build it flipped at was
-	// never bisected.
+	// The one function known to have changed convention mid-range, so it gets
+	// both declarations. Linux builds up to 516.1673 take the list in `eax:edx`,
+	// and 516.1674 on take everything on the stack. Rust sets the flag from the
+	// running build, and the `remove_from_list` wrapper below picks the matching
+	// pointer type.
 	DEFINE_byond(remove_from_list, bool, (Value, Value));
+	using Fnremove_from_list_regparm_byond = bool(LINUX_REGPARM2 *)(Value, Value);
+	bool remove_from_list_in_registers = false;
 	// The one function here whose *return* differs by platform, not just its
 	// argument placement. Windows hands the count straight back in `eax`. Linux
 	// returns a DM Value through a caller-supplied buffer, so the count has to be
@@ -100,6 +102,9 @@ extern "C"
 #else
 	DEFINE_byond(get_length, Value, (Value));
 #endif
+	// BYOND's own `islist()`. The last argument says whether a pointer to a list
+	// counts as a list.
+	DEFINE_byond(value_is_list, bool, (Value, uint8_t));
 	DEFINE_byond(get_misc_by_id, void *, (uint32_t));
 	DEFINE_byond(to_string, uint32_t, (Value));
 }
@@ -389,7 +394,14 @@ extern "C" uint8_t remove_from_list(Value list, Value value)
 	{
 		clean(list);
 		clean(value);
-		remove_from_list_byond(list, value);
+		if (remove_from_list_in_registers)
+		{
+			reinterpret_cast<Fnremove_from_list_regparm_byond>(remove_from_list_byond)(list, value);
+		}
+		else
+		{
+			remove_from_list_byond(list, value);
+		}
 		return 1;
 	}
 	BYOND_CATCH
@@ -410,6 +422,23 @@ extern "C" uint8_t get_length(uint32_t *out, Value value)
 #else
 		*out = length_value_to_count(get_length_byond(value));
 #endif
+		return 1;
+	}
+	BYOND_CATCH
+	{
+		return 0;
+	}
+}
+
+extern "C" uint8_t value_is_list(uint8_t *out, Value value)
+{
+	RuntimeContext ctx(true);
+
+	BYOND_TRY
+	{
+		clean(value);
+		// 0 is what the `islist()` opcode passes, so a pointer to a list is not a list
+		*out = value_is_list_byond(value, 0);
 		return 1;
 	}
 	BYOND_CATCH

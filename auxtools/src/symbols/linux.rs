@@ -7,7 +7,17 @@ use byond_scan::{Anchor, Extract, OperandSelect, Recipe, SignatureTreatment, Ver
 
 // Checked on every build in this range. Older builds are refused by the
 // resolver, newer ones are tried and can still fail.
-const SUPPORTED: VersionRange = VersionRange { min: 1659, max: 1688 };
+//
+// The floor is 1664 and not Windows' 1659 because of proc hooks. On 1659 GCC
+// inlined `call_proc_by_id` into the interpreter, so a DM proc call never enters
+// the function the hook patches and no `#[hook]` ever fires. 1660 to 1663 were
+// never checked.
+const SUPPORTED: VersionRange = VersionRange { min: 1664, max: 1688 };
+
+// The first build where `remove_from_list` takes its arguments on the stack.
+// Every build before it wants the list in `eax:edx`. Read off the prologue of
+// every build from 1669 to 1675.
+pub(crate) const REMOVE_FROM_LIST_STACK_BUILD: u32 = 1674;
 
 // One loader mask finds the variable-name table. Operands that don't use a
 // register are count=0, global_values=1 and variable_names=2.
@@ -200,6 +210,21 @@ pub(crate) const RECIPES: &[Recipe] = &[
 			SignatureTreatment::NoOffset,
 			"55 89 E5 57 56 53 83 EC ?? F3 0F 7E 4D 0C 8B 5D 08 66 0F 7E CA 83 EA 0C 80 FA 4B 77 ?? 66 0F 6F C1 0F B6 D2 66 0F 73 D0 20 66 0F 7E C0 \
 			 FF 24 95 ?? ?? ?? ??"
+		),
+		hops: &[],
+		extract: Extract::Entry
+	},
+	Recipe {
+		name: "value_is_list",
+		versions: SUPPORTED,
+		// this is the function the `islist()` opcode calls. The exported
+		// `ByondValue_IsList` is not used because on Windows 1659 it says no to a
+		// `filters` list, and both platforms should ask the same function.
+		// `80 FA 55` is `cmp dl, 55h`, the highest tag it accepts
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"55 89 E5 56 53 83 EC ?? F3 0F 7E 4D 08 8B 75 10 66 0F 7E CA 80 FA 55 0F 87 ?? ?? ?? ?? 80 FA 3B 76 ?? 8D 4A C4 B8 01 00 00 00 D3 E0 89 \
+			 C1"
 		),
 		hops: &[],
 		extract: Extract::Entry
