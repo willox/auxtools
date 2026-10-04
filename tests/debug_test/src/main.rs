@@ -109,6 +109,26 @@ fn paused_in(client: &mut Client) -> String {
 	}
 }
 
+/// Evals `command` and returns its one-line text and its expanded fields as
+/// "name = value" strings.
+fn eval_fields(client: &mut Client, command: &str) -> (String, Vec<String>) {
+	let response = client.request(Request::Eval {
+		frame_id: Some(0),
+		command: command.to_owned(),
+		context: None
+	});
+	let Response::Eval(eval) = response else {
+		panic!("expected the result of {:?}, got {:?}", command, response);
+	};
+	let refs = eval.variables.unwrap_or_else(|| panic!("{} should be expandable", command));
+	let vars = match client.request(Request::Variables { vars: refs }) {
+		Response::Variables { vars } => vars,
+		other => panic!("expected Variables, got {:?}", other)
+	};
+	let fields = vars.into_iter().map(|var| format!("{} = {}", var.name, var.value)).collect();
+	(eval.value, fields)
+}
+
 fn expect_breakpoint_in(client: &mut Client, proc: &str) {
 	assert_eq!(client.expect_pause(), BreakpointReason::Breakpoint);
 	assert_eq!(paused_in(client), proc);
@@ -175,6 +195,22 @@ fn main() {
 	shown.sort();
 	assert_eq!(shown, ["\"a\" = 1", "\"n\" = null", "7 = \"seven\""]);
 	println!("ok: an alist shows its key/value pairs");
+
+	// size is a float, so only its start is checked
+	let (text, fields) = eval_fields(&mut client, "vector_sample()");
+	assert_eq!(text, "vector(1,2,3)");
+	assert_eq!(fields[..4], ["x = 1", "y = 2", "z = 3", "len = 3"]);
+	assert!(fields[4].starts_with("size = 3.74"), "unexpected size: {}", fields[4]);
+	let (text, fields) = eval_fields(&mut client, "vector2_sample()");
+	assert_eq!(text, "vector(4,5)");
+	assert_eq!(fields[..4], ["x = 4", "y = 5", "z = 0", "len = 2"]);
+	println!("ok: a vector shows its components");
+
+	let (text, fields) = eval_fields(&mut client, "pixloc_sample()");
+	assert_eq!(text, "pixloc(1,1,1)");
+	assert_eq!(fields[..5], ["x = 1", "y = 1", "z = 1", "step_x = 0", "step_y = 0"]);
+	assert!(fields[5].starts_with("loc = "), "unexpected loc: {}", fields[5]);
+	println!("ok: a pixloc shows its position");
 
 	assert_eq!(eval(&mut client, None, &dis_command), clean_disassembly);
 	println!("ok: disassembly doesn't show the breakpoint");

@@ -286,13 +286,22 @@ impl Server {
 		offset
 	}
 
+	// 516 primitives have no `vars` list, so their fields are spelled out here
+	fn primitive_fields(value: &Value) -> Option<&'static [&'static str]> {
+		match value.raw.tag {
+			ValueTag::Vector => Some(&["x", "y", "z", "len", "size"]),
+			ValueTag::PixLoc => Some(&["x", "y", "z", "step_x", "step_y", "loc"]),
+			_ => None
+		}
+	}
+
 	fn is_object(value: &Value) -> bool {
 		// Hack for globals
 		if value.raw.tag == ValueTag::World && unsafe { value.raw.data.id == 1 } {
 			return true;
 		}
 
-		value.get(byond_string!("vars")).is_ok()
+		Self::primitive_fields(value).is_some() || value.get(byond_string!("vars")).is_ok()
 	}
 
 	fn stringify(value: &Value) -> String {
@@ -382,6 +391,13 @@ impl Server {
 	}
 
 	fn object_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
+		if let Some(fields) = Self::primitive_fields(value) {
+			return fields
+				.iter()
+				.map(|&name| Ok(self.value_to_variable(name.to_owned(), &value.get(StringRef::new(name)?)?)))
+				.collect();
+		}
+
 		// Grab `value.vars`. We have a little hack for globals which use a
 		// special type.
 		let vars = List::from_value(&unsafe {

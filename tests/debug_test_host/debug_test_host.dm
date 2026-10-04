@@ -25,6 +25,15 @@ var/reboot_requested = FALSE
 /proc/alist_sample()
 	return alist("a" = 1, 7 = "seven", "n" = null)
 
+/proc/vector_sample()
+	return vector(1, 2, 3)
+
+/proc/vector2_sample()
+	return vector(4, 5)
+
+/proc/pixloc_sample()
+	return pixloc(1, 1, 1)
+
 // Two seconds of runtime errors, then quiet again. The test detaches while
 // they are going and comes back after they stop.
 /proc/start_runtimes()
@@ -53,6 +62,11 @@ var/reboot_requested = FALSE
 	world.Reboot()
 
 /world/New()
+	// pixloc_sample() needs a real tile to point at
+	maxx = 5
+	maxy = 5
+	maxz = 1
+
 	var/debug_dll = world.GetConfig("env", "AUXTOOLS_DEBUG_DLL")
 	var/init_result = call_ext(debug_dll, "auxtools_init")()
 	world.log << "init_result = [init_result]"
