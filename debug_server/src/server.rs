@@ -116,7 +116,7 @@ struct ServerThread {
 impl Server {
 	pub fn setup_app() -> Command<'static> {
 		Command::new("Auxtools Debug Server")
-			.version("2.2.2")
+			.version(env!("CARGO_PKG_VERSION"))
 			.subcommand_required(true)
 			.no_binary_name(true)
 			.color(clap::ColorChoice::Never)
