@@ -16,7 +16,8 @@ mod mem_profiler_stub;
 
 use std::{
 	cell::UnsafeCell,
-	net::{IpAddr, Ipv4Addr, SocketAddr}
+	net::{IpAddr, Ipv4Addr, SocketAddr},
+	panic::{catch_unwind, AssertUnwindSafe}
 };
 
 pub(crate) use ::instruction_hooking::disassemble_env::DisassembleEnv;
@@ -56,8 +57,15 @@ struct DebugServerInstructionHook<'a> {
 
 impl InstructionHook for DebugServerInstructionHook<'static> {
 	fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
-		if let Some(debug_server) = self.debug_server.get_mut() {
-			debug_server.handle_instruction(ctx);
+		let Some(debug_server) = self.debug_server.get_mut() else {
+			return;
+		};
+
+		// BYOND calls this through extern "C" code, and a panic that gets back
+		// out there aborts the whole game. Losing the debugger is the better
+		// deal.
+		if catch_unwind(AssertUnwindSafe(|| debug_server.handle_instruction(ctx))).is_err() {
+			debug_server.recover_from_panic();
 		}
 	}
 }
@@ -68,6 +76,12 @@ fn enable_debugging(mode: Value, port: Value) {
 	let port = port.as_number().map(|x| x as u16).unwrap_or_else(|_| get_default_port());
 
 	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+
+	// A second server would mean a second instruction hook, and both hooks
+	// would run the one server on every instruction
+	if mode != "NONE" && unsafe { (*DEBUG_SERVER.get()).is_some() } {
+		return Err(runtime!("debugging is already enabled"));
+	}
 
 	let server = match mode.as_str() {
 		"NONE" => {

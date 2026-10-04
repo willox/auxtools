@@ -1,5 +1,5 @@
 [workspace]
-members = ["auxcov", "auxtools", "auxtools-impl", "debug_server", "instruction_hooking", "tests/auxtest", "tests/byond_get", "tests/test_runner"]
+members = ["auxcov", "auxtools", "auxtools-impl", "debug_server", "instruction_hooking", "tests/auxtest", "tests/byond_get", "tests/debug_test", "tests/test_runner"]
 resolver = "2"
 
 [workspace.package]
