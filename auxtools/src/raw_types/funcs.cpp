@@ -52,9 +52,26 @@ struct RestoreJmpBuf
 
 #endif
 
+// The REGPARM markers are real on Linux and expand to nothing on Windows, so a
+// wrong one here is a Linux-only bug that no Windows test can catch. These were
+// read off libbyond.so's function prologues on 516.1669 and 516.1687.
+//
+// How to check one: does the function read `eax` or `edx` before writing it in
+// its first handful of instructions? If so it takes arguments in registers and
+// needs a marker. If it opens by reading `[esp+arg_N]` it is plain cdecl and must
+// not have one. The export table can't tell you, none of these are in it.
+//
+// Two things make this easy to get wrong:
+//
+//   * A Value-returning regparm function spends `eax` on the hidden return
+//     buffer, so its first real argument starts at `edx`. Count the buffer.
+//   * The convention is per-function and per-build. `remove_from_list` changed
+//     from registers to the stack somewhere in (1669, 1685] with no change to
+//     its signature, while its identically-shaped sibling `append_to_list` did
+//     not move. Don't infer one row from another.
 extern "C"
 {
-	DEFINE_byond_REGPARM3(call_proc_by_id, Value, (Value, uint32_t, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
+	DEFINE_byond(call_proc_by_id, Value, (Value, uint32_t, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
 	DEFINE_byond(call_datum_proc_by_name, Value, (Value, uint32_t, uint32_t, Value, const Value *, uint32_t, uint32_t, uint32_t));
 	DEFINE_byond(get_proc_array_entry, void *, (uint32_t));
 	DEFINE_byond_REGPARM3(get_string_id, uint32_t, (const char *, uint8_t, uint8_t, uint8_t));
@@ -64,15 +81,52 @@ extern "C"
 	DEFINE_byond(inc_ref_count, void, (Value));
 	DEFINE_byond(dec_ref_count, void, (Value));
 	DEFINE_byond_REGPARM3(get_list_by_id, void *, (uint32_t));
-	DEFINE_byond_REGPARM3(get_assoc_element, Value, (Value, Value));
-	DEFINE_byond_REGPARM3(set_assoc_element, void, (Value, Value, Value));
+	DEFINE_byond(get_assoc_element, Value, (Value, Value));
+	DEFINE_byond(set_assoc_element, void, (Value, Value, Value));
 	DEFINE_byond(create_list, uint32_t, (uint32_t));
 	DEFINE_byond_REGPARM2(append_to_list, void, (Value, Value));
-	DEFINE_byond_REGPARM2(remove_from_list, void, (Value, Value));
+	// Correct from 516.1685 on, and wrong below it. This is the one function known
+	// to have changed convention mid-range, so one declaration can't cover both
+	// eras. Running this on an older Linux build means putting REGPARM2 back, and
+	// re-reading the prologue first, because the exact build it flipped at was
+	// never bisected.
+	DEFINE_byond(remove_from_list, bool, (Value, Value));
+	// The one function here whose *return* differs by platform, not just its
+	// argument placement. Windows hands the count straight back in `eax`. Linux
+	// returns a DM Value through a caller-supplied buffer, so the count has to be
+	// unpacked out of it. See the `get_length` wrapper below.
+#ifdef _WIN32
 	DEFINE_byond(get_length, uint32_t, (Value));
+#else
+	DEFINE_byond(get_length, Value, (Value));
+#endif
 	DEFINE_byond(get_misc_by_id, void *, (uint32_t));
 	DEFINE_byond(to_string, uint32_t, (Value));
 }
+
+#ifndef _WIN32
+// Unpack the DM Value Linux's `get_length` returns into the plain count every
+// caller here wants. Tag 0x2A is Number and its data half is an `f32`. Anything
+// else means the argument had no length, which BYOND itself reports as 0.
+//
+// The tag is masked to a byte on purpose: BYOND leaves the three padding bytes
+// above a tag indeterminate, so comparing the whole dword answers wrong at
+// random.
+static uint32_t length_value_to_count(Value length)
+{
+	if ((length.type & 0xFF) != 0x2A)
+	{
+		return 0;
+	}
+	float count;
+	__builtin_memcpy(&count, &length.value, sizeof(count));
+	if (!(count > 0.0f))
+	{
+		return 0;
+	}
+	return static_cast<uint32_t>(count);
+}
+#endif
 
 extern "C" uint8_t call_proc_by_id(
 	Value *out,
@@ -110,7 +164,13 @@ extern "C" uint8_t call_datum_proc_by_name(
 	uint32_t unk_0,
 	uint32_t unk_1)
 {
-	RuntimeContext ctx(false);
+	// Intercepts, unlike `call_proc_by_id` above. The errors this function raises
+	// itself (an unknown proc name, a null receiver) happen before any DM code
+	// runs, and with `false` BYOND's own exception flew straight past the catch and
+	// killed the process at the first Rust frame. The proc it ends up calling still
+	// reports its own errors normally: `call_proc_by_id_hook_trampoline` pushes
+	// `false` around every DM call.
+	RuntimeContext ctx(true);
 
 	BYOND_TRY
 	{
@@ -345,7 +405,11 @@ extern "C" uint8_t get_length(uint32_t *out, Value value)
 	BYOND_TRY
 	{
 		clean(value);
+#ifdef _WIN32
 		*out = get_length_byond(value);
+#else
+		*out = length_value_to_count(get_length_byond(value));
+#endif
 		return 1;
 	}
 	BYOND_CATCH

@@ -1,6 +1,8 @@
 use std::{
 	cell::RefCell,
+	collections::HashMap,
 	ffi::{c_void, CStr},
+	hash::BuildHasherDefault,
 	os::raw::c_char
 };
 
@@ -114,24 +116,32 @@ pub fn shutdown() {
 
 pub type ProcHook = fn(&Value, &Value, Vec<Value>) -> DMResult;
 
-thread_local! {
-	static PROC_HOOKS: RefCell<FxHashMap<raw_types::procs::ProcId, (ProcHook, String)>> = RefCell::new(FxHashMap::default());
-}
+/// Lets a `RefCell` live in a plain `static`.
+///
+/// Everything here is only touched from BYOND's game thread: its proc calls and
+/// init/shutdown, which it also drives. The table used to be a `thread_local!`,
+/// but in a dlopen'd .so every access goes through `__tls_get_addr`, and it is
+/// read on every single DM proc call.
+struct GameThreadOnly<T>(T);
+
+// SAFETY: only the game thread ever reaches these statics, see above
+unsafe impl<T> Sync for GameThreadOnly<T> {}
+
+static PROC_HOOKS: GameThreadOnly<RefCell<FxHashMap<raw_types::procs::ProcId, (ProcHook, String)>>> =
+	GameThreadOnly(RefCell::new(HashMap::with_hasher(BuildHasherDefault::new())));
 
 fn hook_by_id(id: raw_types::procs::ProcId, hook: ProcHook, hook_path: String) -> Result<(), HookFailure> {
-	PROC_HOOKS.with(|h| {
-		let mut map = h.borrow_mut();
-		if let std::collections::hash_map::Entry::Vacant(e) = map.entry(id) {
-			e.insert((hook, hook_path));
-			Ok(())
-		} else {
-			Err(HookFailure::AlreadyHooked)
-		}
-	})
+	let mut map = PROC_HOOKS.0.borrow_mut();
+	if let std::collections::hash_map::Entry::Vacant(e) = map.entry(id) {
+		e.insert((hook, hook_path));
+		Ok(())
+	} else {
+		Err(HookFailure::AlreadyHooked)
+	}
 }
 
 pub fn clear_hooks() {
-	PROC_HOOKS.with(|h| h.borrow_mut().clear());
+	PROC_HOOKS.0.borrow_mut().clear();
 }
 
 pub fn hook<S: Into<String>>(name: S, hook: ProcHook) -> Result<(), HookFailure> {
@@ -169,46 +179,42 @@ extern "C" fn call_proc_by_id_hook(
 	_unknown2: u32,
 	_unknown3: u32
 ) -> u8 {
-	match PROC_HOOKS.with(|h| match h.borrow().get(&proc_id) {
-		Some((hook, path)) => {
-			let (src, usr, args) = unsafe {
-				(
-					Value::from_raw(src_raw),
-					Value::from_raw(usr_raw),
-					// Taking ownership of args here
-					std::slice::from_raw_parts(args_ptr, num_args)
-						.iter()
-						.map(|v| Value::from_raw_owned(*v))
-						.collect()
-				)
-			};
+	// copy the fn out so no borrow is held while the hook runs DM code, which
+	// can call back into here or register hooks
+	let Some(hook) = PROC_HOOKS.0.borrow().get(&proc_id).map(|(hook, _)| *hook) else {
+		return 0;
+	};
 
-			let result = hook(&src, &usr, args);
+	let (src, usr, args) = unsafe {
+		(
+			Value::from_raw(src_raw),
+			Value::from_raw(usr_raw),
+			// Taking ownership of args here
+			std::slice::from_raw_parts(args_ptr, num_args)
+				.iter()
+				.map(|v| Value::from_raw_owned(*v))
+				.collect()
+		)
+	};
 
-			match result {
-				Ok(r) => {
-					let result_raw = r.raw;
-					// Stealing our reference out of the Value
-					std::mem::forget(r);
-					Some(result_raw)
-				}
-				Err(e) => {
-					Proc::find("/proc/auxtools_stack_trace")
-						.unwrap()
-						.call(&[&Value::from_string(format!("{} HookPath: {}", e.message.as_str(), path.as_str())).unwrap()])
-						.unwrap();
-					Some(Value::NULL.raw)
-				}
-			}
+	let result = match hook(&src, &usr, args) {
+		Ok(r) => {
+			let result_raw = r.raw;
+			// Stealing our reference out of the Value
+			std::mem::forget(r);
+			result_raw
 		}
-		None => None
-	}) {
-		Some(result) => {
-			unsafe {
-				*ret = result;
-			}
-			1
+		Err(e) => {
+			let path = PROC_HOOKS.0.borrow()[&proc_id].1.clone();
+			Proc::find("/proc/auxtools_stack_trace")
+				.unwrap()
+				.call(&[&Value::from_string(format!("{} HookPath: {}", e.message.as_str(), path)).unwrap()])
+				.unwrap();
+			Value::NULL.raw
 		}
-		None => 0
+	};
+	unsafe {
+		*ret = result;
 	}
+	1
 }

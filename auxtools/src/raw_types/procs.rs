@@ -76,8 +76,11 @@ struct ProcInstanceInner {
 	pub time_to_resume: u32
 }
 
+// Linux is 148 bytes against Windows' 152: from `cache` onward the fields sit 4
+// bytes earlier, which is the same shape Windows had before 1668. So Linux
+// always takes the Pre1668 variant.
 #[versioned(
-	Pre1668 if crate::version::BYOND_VERSION_MAJOR <= 515 || (crate::version::BYOND_VERSION_MAJOR == 516 && crate::version::BYOND_VERSION_MINOR <= 1667),
+	Pre1668 if cfg!(unix) || crate::version::BYOND_VERSION_MAJOR <= 515 || (crate::version::BYOND_VERSION_MAJOR == 516 && crate::version::BYOND_VERSION_MINOR <= 1667),
 	Post1668,
 )]
 #[repr(C)]
@@ -122,11 +125,21 @@ pub struct SuspendedProcsBuffer {
 	pub buffer: *mut *mut ProcInstance
 }
 
+#[cfg(windows)]
 #[repr(C)]
 pub struct SuspendedProcs {
 	pub front: usize,
 	pub back: usize,
 	pub capacity: usize
+}
+
+// On Linux the compiler lays the two index globals out the other way round,
+// `back` first. Whatever follows them isn't read.
+#[cfg(unix)]
+#[repr(C)]
+pub struct SuspendedProcs {
+	pub back: usize,
+	pub front: usize
 }
 
 #[cfg(test)]
@@ -136,7 +149,8 @@ mod layout_tests {
 	use super::{misc, strings, values};
 
 	// Reference structs: verbatim copies of the original hand-written variants,
-	// kept here so that any accidental layout change in the macro output is caught.
+	// kept here so that any accidental layout change in the macro output is
+	// caught.
 
 	#[repr(C)]
 	#[derive(Copy, Clone)]

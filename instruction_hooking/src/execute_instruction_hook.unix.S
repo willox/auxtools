@@ -4,15 +4,16 @@
 .extern execute_instruction_original
 .extern handle_instruction
 
-// EDI = [CURRENT_EXECUTION_CONTEXT]
+// ESI = [CURRENT_EXECUTION_CONTEXT]
 execute_instruction_hook:
   // Give rust a chance to handle the instruction. Leaves [CURRENT_EXECUTION_CONTEXT] in EAX.
+  // The 16 bytes pushed here keep ESP 16-byte aligned at the call.
   SUB ESP, 0x04
   PUSH ECX
   PUSH EDX
-  PUSH EDI
+  PUSH ESI
   call handle_instruction
-  MOV EDI, EAX
+  MOV ESI, EAX
   ADD ESP, 0x04
   POP EDX
   POP ECX
