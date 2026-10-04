@@ -33,11 +33,27 @@ use crate::*;
 #[derive(Clone)]
 pub struct Proc {
 	pub id: raw_types::procs::ProcId,
-	pub entry: *mut raw_types::procs::ProcEntry,
 	pub path: String
 }
 
+fn entry_by_id(id: raw_types::procs::ProcId) -> *mut raw_types::procs::ProcEntry {
+	let mut entry: *mut raw_types::procs::ProcEntry = std::ptr::null_mut();
+	unsafe {
+		assert_eq!(raw_types::funcs::get_proc_array_entry(&mut entry, id), 1);
+	}
+	entry
+}
+
 impl Proc {
+	/// BYOND's own record for this proc.
+	///
+	/// Don't hold on to the pointer. BYOND moves its whole proc table whenever
+	/// the table grows (`new` on a verb path does it), so it is only good until
+	/// the next time DM code runs.
+	pub fn entry(&self) -> *mut raw_types::procs::ProcEntry {
+		entry_by_id(self.id)
+	}
+
 	/// Finds the first proc with the given path
 	pub fn find<S: Into<String>>(path: S) -> Option<Self> {
 		get_proc(path)
@@ -49,19 +65,12 @@ impl Proc {
 	}
 
 	pub fn from_id(id: raw_types::procs::ProcId) -> Option<Self> {
-		let mut proc_entry: *mut raw_types::procs::ProcEntry = std::ptr::null_mut();
-		unsafe {
-			assert_eq!(raw_types::funcs::get_proc_array_entry(&mut proc_entry, id), 1);
-		}
+		let proc_entry = entry_by_id(id);
 		if proc_entry.is_null() {
 			return None;
 		}
-		let proc_name = strip_path(unsafe { StringRef::from_id((*proc_entry).path).into() });
-		Some(Proc {
-			id,
-			entry: proc_entry,
-			path: proc_name.clone()
-		})
+		let path = strip_path(unsafe { StringRef::from_id((*proc_entry).path).into() });
+		Some(Proc { id, path })
 	}
 
 	pub unsafe fn file_name(&self) -> Option<StringRef> {
@@ -80,14 +89,14 @@ impl Proc {
 
 	pub fn parameter_names(&self) -> Vec<StringRef> {
 		unsafe {
-			let (data, count) = raw_types::misc::get_parameters(*(*self.entry).metadata.parameters());
+			let (data, count) = raw_types::misc::get_parameters(*(*self.entry()).metadata.parameters());
 			(0..count).map(|i| StringRef::from_variable_id((*data.add(i)).name)).collect()
 		}
 	}
 
 	pub fn local_names(&self) -> Vec<StringRef> {
 		unsafe {
-			let (names, count) = raw_types::misc::get_locals(*(*self.entry).metadata.locals());
+			let (names, count) = raw_types::misc::get_locals(*(*self.entry()).metadata.locals());
 			(0..count).map(|i| StringRef::from_variable_id(*names.add(i))).collect()
 		}
 	}
@@ -97,7 +106,7 @@ impl Proc {
 	}
 
 	pub unsafe fn bytecode_mut_ptr(&self) -> (*mut u32, u16) {
-		raw_types::misc::get_bytecode(*(*self.entry).metadata.bytecode())
+		raw_types::misc::get_bytecode(*(*self.entry()).metadata.bytecode())
 	}
 
 	pub unsafe fn bytecode(&self) -> &[u32] {
@@ -151,7 +160,7 @@ impl Proc {
 
 impl fmt::Debug for Proc {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		let path = unsafe { (*self.entry).path };
+		let path = unsafe { (*self.entry()).path };
 		write!(f, "Proc({:?})", unsafe { StringRef::from_id(path) })
 	}
 }

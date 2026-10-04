@@ -411,10 +411,7 @@ impl Server {
 
 	fn get_stack(&self, stack_id: u32) -> Option<&Vec<debug::StackFrame>> {
 		let stack_id = stack_id as usize;
-		let stacks = match &self.state {
-			Some(state) => &state.stacks,
-			None => return None
-		};
+		let stacks = &self.state.as_ref()?.stacks;
 
 		if stack_id == 0 {
 			return Some(&stacks.active);
@@ -445,10 +442,7 @@ impl Server {
 
 	fn get_stack_frame(&self, frame_index: u32) -> Option<&debug::StackFrame> {
 		let mut frame_index = frame_index as usize;
-		let stacks = match &self.state {
-			Some(state) => &state.stacks,
-			None => return None
-		};
+		let stacks = &self.state.as_ref()?.stacks;
 
 		if frame_index < stacks.active.len() {
 			return Some(&stacks.active[frame_index]);

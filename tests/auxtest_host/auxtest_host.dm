@@ -73,11 +73,21 @@ var/datum/weak_test_datum
 /proc/auxtest_new_discard()
 	new /datum/auxtest_discard
 
+// `new` on a verb path with a name BYOND has not seen yet adds one entry to its
+// proc table, and the whole table moves when it grows
+/proc/auxtest_grow_proc_table()
+	var/mob/M = new
+	for (var/i in 1 to 4096)
+		new /mob/verb/auxtest_verb(M, "auxtest clone [i]")
+
 // Tests
 /proc/auxtest_hooks()
 	CRASH()
 
 /proc/auxtest_lists()
+	CRASH()
+
+/proc/auxtest_procs()
 	CRASH()
 
 /proc/auxtest_strings()
@@ -98,6 +108,7 @@ var/datum/weak_test_datum
 	// Tests
 	ASSERT(auxtest_hooks() == TRUE)
 	ASSERT(auxtest_lists() == TRUE)
+	ASSERT(auxtest_procs() == TRUE)
 	ASSERT(auxtest_strings() == TRUE)
 	ASSERT(auxtest_value_from() == TRUE)
 

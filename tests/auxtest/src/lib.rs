@@ -2,6 +2,7 @@ use auxtools::*;
 
 mod hooks;
 mod lists;
+mod procs;
 mod strings;
 mod value_from;
 mod weak;

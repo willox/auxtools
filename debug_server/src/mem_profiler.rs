@@ -211,7 +211,7 @@ impl State {
 			totals[proc_idx].1 += size as u64;
 		}
 
-		totals.sort_by(|x, y| x.1.cmp(&y.1));
+		totals.sort_by_key(|x| x.1);
 
 		for (proc, total) in totals {
 			if let Some(proc) = Proc::from_id(proc) {
