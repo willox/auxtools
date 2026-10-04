@@ -29,7 +29,8 @@ fn test_hooks() {
 		assert_eq!(funcs::get_string_table_entry(&mut entry, held.get_id()), 1);
 
 		// BYOND runs New() with the "don't want the result" bit set and never
-		// releases what comes back, so the hook's result has to be dropped for it
+		// releases what comes back, so the hook's result has to be dropped for
+		// it
 		let before = (*entry).ref_count;
 		Proc::find("/proc/auxtest_new_discard").unwrap().call(&[])?;
 		if (*entry).ref_count != before {
@@ -37,7 +38,8 @@ fn test_hooks() {
 		}
 	}
 
-	// calling a proc we hooked ourselves has to land in the hook, by id and by name
+	// calling a proc we hooked ourselves has to land in the hook, by id and by
+	// name
 	let by_id = Proc::find("/proc/auxtest_hooked_global").unwrap().call(&[&Value::from(41.0)])?;
 	if by_id.as_number()? != 42.0 {
 		return Err(runtime!("test_hooks: calling a hooked global proc from Rust did not reach the hook"));

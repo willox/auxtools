@@ -9,9 +9,9 @@ use byond_scan::{Anchor, Extract, OperandSelect, Recipe, SignatureTreatment, Ver
 // resolver, newer ones are tried and can still fail.
 //
 // The floor is 1664 and not Windows' 1659 because of proc hooks. On 1659 GCC
-// inlined `call_proc_by_id` into the interpreter, so a DM proc call never enters
-// the function the hook patches and no `#[hook]` ever fires. 1660 to 1663 were
-// never checked.
+// inlined `call_proc_by_id` into the interpreter, so a DM proc call never
+// enters the function the hook patches and no `#[hook]` ever fires. 1660 to
+// 1663 were never checked.
 const SUPPORTED: VersionRange = VersionRange { min: 1664, max: 1688 };
 
 // The first build where `remove_from_list` takes its arguments on the stack.
@@ -39,7 +39,8 @@ const STRING_ACCESSOR_SIG: &str = "56 53 83 EC 14 8B 44 24 20 39 05 ?? ?? ?? ?? 
 
 // The 0x0F/0x55 tag dispatch identifies the accessor that reads the alist
 // table. Operands are count=0 and pointer=1.
-const ALIST_SIG: &str = "8B 54 24 04 8B 4C 24 08 80 FA 0F 74 ?? 31 C0 80 FA 55 75 ?? 3B 0D ?? ?? ?? ?? 73 ?? A1 ?? ?? ?? ?? 8B 04 88 85 C0 74 ?? 8B 00 C3";
+const ALIST_SIG: &str =
+	"8B 54 24 04 8B 4C 24 08 80 FA 0F 74 ?? 31 C0 80 FA 55 75 ?? 3B 0D ?? ?? ?? ?? 73 ?? A1 ?? ?? ?? ?? 8B 04 88 85 C0 74 ?? 8B 00 C3";
 
 pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {

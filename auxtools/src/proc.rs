@@ -140,8 +140,9 @@ impl Proc {
 
 			let args: Vec<_> = args.iter().map(|e| e.raw).collect();
 
-			// 2 is the proc_type BYOND's own direct calls pass. It never passes 0, and
-			// a `..()` with no parent hands back garbage in a frame that has it.
+			// 2 is the proc_type BYOND's own direct calls pass. It never passes
+			// 0, and a `..()` with no parent hands back garbage in
+			// a frame that has it.
 			if raw_types::funcs::call_proc_by_id(&mut ret, Value::NULL.raw, 2, self.id, 0, Value::NULL.raw, args.as_ptr(), args.len(), 0, 0) == 1 {
 				return Ok(Value::from_raw_owned(ret));
 			}

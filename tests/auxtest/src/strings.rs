@@ -30,8 +30,8 @@ fn test_strings() {
 			return Err(runtime!("test_string: string_a's reference count != 0"));
 		}
 
-		// Creating a value from our strings should result in both having a reference
-		// count of 1.
+		// Creating a value from our strings should result in both having a
+		// reference count of 1.
 		let value_a = Value::new(values::ValueTag::String, values::ValueData { string: string_a });
 
 		let value_b = Value::new(values::ValueTag::String, values::ValueData { string: string_b });
@@ -46,8 +46,8 @@ fn test_strings() {
 
 		let concatenated = Proc::find("/proc/concat_strings").unwrap().call(&[&value_a, &value_b])?;
 
-		// Returned value should be equal to string_a_contents .. string_b_contents
-		// and have a ref count of 1
+		// Returned value should be equal to string_a_contents ..
+		// string_b_contents and have a ref count of 1
 		if concatenated.raw.tag != values::ValueTag::String {
 			return Err(runtime!("test_string: concat_strings did not return a string"));
 		}
@@ -66,8 +66,8 @@ fn test_strings() {
 			return Err(runtime!("test_string: expected_concat != actual_concat"));
 		}
 
-		// The strings should still have a reference count of 1 after concat_strings has
-		// used them
+		// The strings should still have a reference count of 1 after
+		// concat_strings has used them
 		if (*string_a_entry).ref_count != 1 {
 			return Err(runtime!("test_string: string_a's reference count != 1 after concat_strings"));
 		}

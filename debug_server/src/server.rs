@@ -378,8 +378,8 @@ impl Server {
 	}
 
 	fn object_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
-		// Grab `value.vars`. We have a little hack for globals which use a special
-		// type.
+		// Grab `value.vars`. We have a little hack for globals which use a
+		// special type.
 		let vars = List::from_value(&unsafe {
 			if value.raw.tag == ValueTag::World && value.raw.data.id == 1 {
 				Value::new(ValueTag::GlobalVars, ValueData { id: 0 })
@@ -389,7 +389,8 @@ impl Server {
 		})?;
 
 		let mut variables = vec![];
-		let mut top_variables = vec![]; // These fields get displayed on top of all others
+		let mut top_variables = vec![]; // These fields get displayed on top of
+										// all others
 
 		for i in 1..=vars.len() {
 			let name = vars.get(i)?.as_string()?;
@@ -858,8 +859,9 @@ impl Server {
 		let result = match proc.call(&arg_values) {
 			Ok(res) => {
 				if let Ok(list) = res.as_list() {
-					// The rest are the potentially mutated parameters. We need to commit them to
-					// the function that called us. TODO: This sucks, obviously.
+					// The rest are the potentially mutated parameters. We need
+					// to commit them to the function that
+					// called us. TODO: This sucks, obviously.
 					let len = list.len();
 					for i in 2..=len {
 						let value = list.get(i).unwrap();
@@ -1087,7 +1089,8 @@ impl Server {
 
 		self.state = Some(State::new());
 
-		// Exit now if this is a conditional breakpoint and the condition doesn't pass!
+		// Exit now if this is a conditional breakpoint and the condition
+		// doesn't pass!
 		if reason == BreakpointReason::Breakpoint {
 			let proc = unsafe { (*(*(*_ctx).proc_instance())).proc };
 			let offset = unsafe { *(*_ctx).bytecode_offset() };
@@ -1101,8 +1104,8 @@ impl Server {
 					}
 				}
 
-				// We might have just executed some code so invalidate the stacks we already
-				// fetched
+				// We might have just executed some code so invalidate the
+				// stacks we already fetched
 				self.state.as_mut().unwrap().invalidate_stacks();
 			}
 		}

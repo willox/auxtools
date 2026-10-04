@@ -7,7 +7,8 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 		let string = StringRef::from_raw(string).ok()?;
 		let id = string.get_id();
 
-		// We leak here because the assembled code now holds a reference to this string
+		// We leak here because the assembled code now holds a reference to this
+		// string
 		std::mem::forget(string);
 
 		Some(id.0)

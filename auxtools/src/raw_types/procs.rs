@@ -179,9 +179,9 @@ pub struct SuspendedProcs {
 mod layout_tests {
 	use std::mem::{offset_of, size_of};
 
-	// The numbers below are read off the binaries, 516.1688: what BYOND allocates
-	// for each struct and where its own code reaches into them. The ones for
-	// older builds are from byond-re's notes.
+	// The numbers below are read off the binaries, 516.1688: what BYOND
+	// allocates for each struct and where its own code reaches into them.
+	// The ones for older builds are from byond-re's notes.
 
 	#[test]
 	fn execution_context_linux_and_old_windows() {

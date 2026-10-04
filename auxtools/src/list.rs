@@ -105,7 +105,8 @@ impl List {
 	/// Every key and value of an `/alist`, in the order `for (var/k in A)`
 	/// gives them.
 	///
-	/// This is a copy, so nothing here points into BYOND's tree once it returns.
+	/// This is a copy, so nothing here points into BYOND's tree once it
+	/// returns.
 	pub fn alist_pairs(&self) -> DMResult<Vec<(Value, Value)>> {
 		if !self.is_alist() {
 			return Err(runtime!("attempted to read alist pairs of a non-alist"));
@@ -113,11 +114,13 @@ impl List {
 
 		let id = unsafe { self.value.raw.data.id } as usize;
 		let record = unsafe {
-			// raw reads of BYOND's table, so a stale id has to be turned away here
+			// raw reads of BYOND's table, so a stale id has to be turned away
+			// here
 			if id >= *raw_types::funcs::ALIST_TABLE_COUNT as usize {
 				return Err(runtime!("alist id {} is outside the alist table", id));
 			}
-			// BYOND reallocates the table as it grows, so read the pointer every time
+			// BYOND reallocates the table as it grows, so read the pointer
+			// every time
 			*(*raw_types::funcs::ALIST_TABLE).add(id)
 		};
 		if record.is_null() {

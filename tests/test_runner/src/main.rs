@@ -8,8 +8,8 @@ fn main() {
 	let res = Command::new(paths::find_dm()).with_byond_paths().arg(paths::find_dme()).status().unwrap();
 	assert!(res.success(), "dreamdaemon build failed");
 
-	// Here we depend on BYOND not fucking with stderr too much so we can hijack it
-	// for our own communication
+	// Here we depend on BYOND not fucking with stderr too much so we can hijack
+	// it for our own communication
 	let output = Command::new(paths::find_dreamdaemon())
 		.with_byond_paths()
 		.env("AUXTEST_DLL", paths::find_dll())

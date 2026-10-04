@@ -212,8 +212,8 @@ fn handle_runtime(error: &str) {
 
 impl InstructionHook for Server {
 	fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
-		// Always handle the deferred instruction replacement first - everything else
-		// will depend on it
+		// Always handle the deferred instruction replacement first - everything
+		// else will depend on it
 		unsafe {
 			let deferred = DEFERRED_INSTRUCTION_REPLACE.get();
 			if let Some((src, dst)) = &*deferred {
@@ -239,8 +239,8 @@ impl InstructionHook for Server {
 		let opcode = unsafe { *opcode_ptr };
 		let is_dbgline = opcode == OPCODE_DBGLINE;
 
-		// This lets us ignore any actual breakpoints we hit if we've already paused for
-		// another reason
+		// This lets us ignore any actual breakpoints we hit if we've already
+		// paused for another reason
 		let mut did_breakpoint = false;
 
 		unsafe {
@@ -268,8 +268,9 @@ impl InstructionHook for Server {
 					if is_dbgline && target.is(*(*ctx).proc_instance()) {
 						CURRENT_ACTION = DebuggerAction::BreakOnNext;
 					} else {
-						// If the context isn't in any stacks, it has just returned. Break!
-						// TODO: Don't break if the context's stack is gone (returned to C)
+						// If the context isn't in any stacks, it has just
+						// returned. Break! TODO: Don't
+						// break if the context's stack is gone (returned to C)
 						if !proc_instance_is_in_stack(ctx, target) && !proc_instance_is_suspended(target) {
 							CURRENT_ACTION = DebuggerAction::None;
 							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
@@ -292,8 +293,10 @@ impl InstructionHook for Server {
 							let in_stack = proc_instance_is_in_stack(ctx, parent);
 							let is_suspended = proc_instance_is_suspended(parent);
 
-							// If the context isn't in any stacks, it has just returned. Break!
-							// TODO: Don't break if the context's stack is gone (returned to C)
+							// If the context isn't in any stacks, it has just
+							// returned. Break!
+							// TODO: Don't break if the context's stack is gone
+							// (returned to C)
 							if !in_stack && !is_suspended {
 								CURRENT_ACTION = DebuggerAction::None;
 								CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
@@ -335,8 +338,8 @@ impl InstructionHook for Server {
 				}
 			}
 
-			// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been
-			// removed
+			// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has
+			// already been removed
 			let map = ORIGINAL_BYTECODE.lock().unwrap();
 			if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
 				unsafe {
@@ -432,8 +435,8 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 		bytecode.as_mut_ptr().add(offset as usize)
 	};
 
-	// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been
-	// removed
+	// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already
+	// been removed
 	let mut map = ORIGINAL_BYTECODE.lock().unwrap();
 	if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
 		unsafe {
