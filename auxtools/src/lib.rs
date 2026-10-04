@@ -54,6 +54,9 @@ extern crate winapi;
 
 pub static PIN_DLL: AtomicBool = AtomicBool::new(true);
 
+/// wrapper for [`byond_scan::MODULE_NAME`](byond_scan::MODULE_NAME)
+pub const BYONDCORE: &str = byond_scan::MODULE_NAME;
+
 // This strange section of code retrieves our DLL using the init function's
 // address. This increments the DLL reference count, which prevents unloading.
 #[cfg(windows)]
