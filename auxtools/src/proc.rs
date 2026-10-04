@@ -1,7 +1,8 @@
 use std::{
 	cell::RefCell,
 	collections::{hash_map::Entry, HashMap},
-	fmt
+	fmt,
+	marker::PhantomData
 };
 
 use ahash::RandomState;
@@ -30,10 +31,20 @@ use crate::*;
 // [get_proc] retrieves the base proc.
 
 /// Used to hook and call procs.
+///
+/// A `Proc` stays on the thread BYOND runs on. Calling one from anywhere else
+/// would run DM code while the game is in the middle of something else.
+///
+/// ```compile_fail
+/// fn assert_send<T: Send>() {}
+/// assert_send::<auxtools::Proc>();
+/// ```
 #[derive(Clone)]
 pub struct Proc {
 	pub id: raw_types::procs::ProcId,
-	pub path: String
+	pub path: String,
+	// Keeps a Proc from being sent to another thread
+	phantom: PhantomData<*mut ()>
 }
 
 fn entry_by_id(id: raw_types::procs::ProcId) -> *mut raw_types::procs::ProcEntry {
@@ -70,7 +81,11 @@ impl Proc {
 			return None;
 		}
 		let path = strip_path(unsafe { StringRef::from_id((*proc_entry).path).into() });
-		Some(Proc { id, path })
+		Some(Proc {
+			id,
+			path,
+			phantom: PhantomData
+		})
 	}
 
 	pub unsafe fn file_name(&self) -> Option<StringRef> {

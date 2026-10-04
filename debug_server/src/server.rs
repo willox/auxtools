@@ -189,13 +189,17 @@ impl Server {
 		let (events_sender, events_receiver) = mpsc::channel();
 		let stop = Arc::new(AtomicBool::new(false));
 
-		let thread = ServerThread { events: events_sender }.spawn_listener(TcpListener::bind(addr)?, stop.clone());
+		let listener = TcpListener::bind(addr)?;
+		// Asking for port 0 gets whichever port the OS picks, and Server::drop
+		// has to connect to that one
+		let listen_addr = listener.local_addr()?;
+		let thread = ServerThread { events: events_sender }.spawn_listener(listener, stop.clone());
 
 		Ok(Server {
 			events: events_receiver,
 			stream: None,
 			thread: Some(thread),
-			listen_addr: Some(*addr),
+			listen_addr: Some(listen_addr),
 			stop,
 			should_catch_runtimes: true,
 			state: None,
@@ -1359,6 +1363,16 @@ mod tests {
 	};
 
 	use super::Server;
+
+	#[test]
+	fn drop_stops_a_listener_on_a_port_the_os_picked() {
+		let server = Server::listen(&SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).unwrap();
+		// The listener thread holds the only other copy, until it exits
+		let stop = server.stop.clone();
+
+		drop(server);
+		assert_eq!(std::sync::Arc::strong_count(&stop), 1, "the listener thread outlived the server");
+	}
 
 	#[test]
 	fn drop_hangs_up_on_a_client_it_never_processed() {
