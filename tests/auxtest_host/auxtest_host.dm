@@ -11,11 +11,29 @@
 /proc/auxtools_stack_trace(msg)
 	CRASH(msg)
 
-/proc/auxtest_out()
-	// Graceful failure
+// Goes straight to the library instead of through a hook, so a failure still
+// gets reported when hooks are what broke
+/proc/auxtest_out(msg)
+	call_ext(auxtools_test_dll(), "auxtest_out")(msg)
 
 /proc/auxtest_inc_counter()
 	CRASH()
+
+/proc/auxtest_fail_next_init()
+	CRASH()
+
+// A failed init has to stay failed, and leave none of its hooks behind
+/proc/auxtest_failed_init(auxtest_dll)
+	var/first = call_ext(auxtest_dll, "auxtools_init")()
+	ASSERT(findtext(first, "FAILED") == 1)
+	ASSERT(call_ext(auxtest_dll, "auxtools_init")() == first)
+
+	var/reached_hook = TRUE
+	try
+		auxtest_hooks()
+	catch
+		reached_hook = FALSE
+	ASSERT(!reached_hook)
 
 /proc/concat_strings(a, b)
 	return addtext(a, b)
@@ -128,6 +146,11 @@ var/datum/weak_test_datum
 
 	// Stop testing after the 8th reboot
 	if (auxtest_inc_counter() == 8)
+		// last, because nothing can init again in this process afterwards
+		auxtest_fail_next_init()
+		call_ext(auxtest_dll, "auxtools_shutdown")()
+		auxtest_failed_init(auxtest_dll)
+
 		auxtest_out("SUCCESS: Finished")
 		call_ext(auxtest_dll, "auxtools_shutdown")()
 		shutdown()

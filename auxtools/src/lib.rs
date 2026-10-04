@@ -3,7 +3,9 @@
 //#[cfg(not(target_pointer_width = "32"))]
 // compile_error!("Auxtools must be compiled for a 32-bit target");
 
-mod byond_ffi;
+// public so `byond_ffi_fn!` can reach it from another crate
+#[doc(hidden)]
+pub mod byond_ffi;
 mod bytecode_manager;
 pub mod debug;
 mod hooks;
@@ -20,7 +22,10 @@ mod value_from;
 pub mod version;
 mod weak_value;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{
+	atomic::{AtomicBool, Ordering},
+	OnceLock
+};
 
 pub use auxtools_impl::{full_shutdown, hook, init, pin_dll, runtime_handler, shutdown};
 /// For crates that need to find something else in BYOND's binary.
@@ -75,9 +80,29 @@ fn pin_dll() -> Result<(), ()> {
 	Ok(())
 }
 
+// The first failed init. Trying again would run setup on top of what the
+// failed attempt left behind, so every later call hands this back instead.
+static INIT_FAILURE: OnceLock<String> = OnceLock::new();
+
 byond_ffi_fn! { auxtools_init(_input) {
+	if let Some(failure) = INIT_FAILURE.get() {
+		return Some(failure.clone());
+	}
+
+	match try_init() {
+		Ok(()) => Some("SUCCESS".to_owned()),
+		Err(e) => {
+			// a hook must not fire in a library that only got half set up
+			hooks::clear_hooks();
+			proc::clear_procs();
+			Some(INIT_FAILURE.get_or_init(|| format!("FAILED ({})", e)).clone())
+		}
+	}
+} }
+
+fn try_init() -> Result<(), String> {
 	if get_init_level() == InitLevel::None {
-		return Some("SUCCESS".to_owned())
+		return Ok(());
 	}
 
 	let mut did_full = false;
@@ -85,40 +110,24 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 	if get_init_level() == InitLevel::Full {
 		did_full = true;
-		if let Err(e) = version::init() {
-			return Some(format!("FAILED ({})", e));
-		}
-
-		if let Err(e) = symbols::resolve_full() {
-			return Some(format!("FAILED ({})", e));
-		}
-
-		if pin_dll().is_err() {
-			return Some("FAILED (Could not pin the library in memory.)".to_owned());
-		}
-
-		if hooks::init().is_err() {
-			return Some("Failed (Couldn't initialize proc hooking)".to_owned());
-		}
+		version::init()?;
+		symbols::resolve_full()?;
+		pin_dll().map_err(|()| "Could not pin the library in memory.".to_owned())?;
+		hooks::init().map_err(|_| "Couldn't initialize proc hooking".to_owned())?;
 
 		set_init_level(InitLevel::Partial);
 	}
-
 
 	if get_init_level() == InitLevel::Partial {
 		did_partial = true;
 
 		// This is a heap ptr so fetch it on partial loads
-		if let Err(e) = symbols::resolve_partial() {
-			return Some(format!("FAILED ({})", e));
-		}
+		symbols::resolve_partial()?;
 
 		proc::populate_procs();
 
 		for cthook in inventory::iter::<hooks::CompileTimeHook> {
-			if let Err(e) = hooks::hook(cthook.proc_path, cthook.hook) {
-				return Some(format!("FAILED (Could not hook proc {}: {:?})", cthook.proc_path, e));
-			}
+			hooks::hook(cthook.proc_path, cthook.hook).map_err(|e| format!("Could not hook proc {}: {:?}", cthook.proc_path, e))?;
 		}
 		set_init_level(InitLevel::None);
 	}
@@ -130,19 +139,15 @@ byond_ffi_fn! { auxtools_init(_input) {
 
 	// Run user-defined initializers
 	if did_full {
-		if let Err(err) = init::run_full_init() {
-			return Some(format!("FAILED ({})", err));
-		}
+		init::run_full_init()?;
 	}
 
 	if did_partial {
-		if let Err(err) = init::run_partial_init() {
-			return Some(format!("FAILED ({})", err));
-		}
+		init::run_partial_init()?;
 	}
 
-	Some("SUCCESS".to_owned())
-} }
+	Ok(())
+}
 
 byond_ffi_fn! { auxtools_shutdown(_input) {
 	if get_init_level() != InitLevel::None {
