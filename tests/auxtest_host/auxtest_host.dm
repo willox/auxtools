@@ -73,6 +73,16 @@ var/datum/weak_test_datum
 /proc/auxtest_new_discard()
 	new /datum/auxtest_discard
 
+// Both hooked, and then called from Rust by the same library that hooked them
+/proc/auxtest_hooked_global(x)
+	CRASH()
+
+/datum/auxtest_hooked/proc/hooked_method(x)
+	CRASH()
+
+/proc/auxtest_new_hooked()
+	return new /datum/auxtest_hooked
+
 // `new` on a verb path with a name BYOND has not seen yet adds one entry to its
 // proc table, and the whole table moves when it grows
 /proc/auxtest_grow_proc_table()
