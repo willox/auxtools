@@ -27,8 +27,8 @@ use crate::*;
 // 		world << "!!!"
 // 	```
 //
-// 	To get the nth override, use [get_proc_override]: `let hello = get_proc_override("/proc/hello", n).unwrap()`
-// [get_proc] retrieves the base proc.
+// 	To get the nth override, use [Proc::find_override]: `let hello = Proc::find_override("/proc/hello", n).unwrap()`
+// [Proc::find] retrieves the base proc.
 
 /// Used to hook and call procs.
 ///

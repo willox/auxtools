@@ -142,10 +142,7 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[hook]
 /// fn double_up(num: Value) {
-///     if let Some(num) = num.as_number() {
-///         Value::from(num * 2.0);
-///     }
-///     Value::NULL
+///     Ok(Value::from(num.as_number()? * 2.0))
 /// }
 /// ```
 ///
@@ -154,9 +151,9 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[hook("/mob/proc/on_honked")]
 /// fn on_honked(honker: Value) {
-///     src.call("gib", &[]);
-///     honker.call("laugh", &[]);
-///     Value::NULL
+///     src.call("gib", &[])?;
+///     honker.call("laugh", &[])?;
+///     Ok(Value::NULL)
 /// }
 /// ```
 #[proc_macro_attribute]
