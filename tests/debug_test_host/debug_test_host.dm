@@ -47,6 +47,8 @@ var/reboot_requested = FALSE
 	reboot_requested = TRUE
 
 /proc/main_loop(debug_dll)
+	// a callee only reads while its proc is running, so the test looks at this one
+	var/callee/this_proc = callee
 	while (!reboot_requested)
 		breakpoint_target()
 		tick_marker()

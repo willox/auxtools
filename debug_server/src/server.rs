@@ -286,11 +286,13 @@ impl Server {
 		offset
 	}
 
-	// 516 primitives have no `vars` list, so their fields are spelled out here
+	// 516 primitives have no `vars` list, so their fields are spelled out here.
+	// a callee only reads while its proc is still running
 	fn primitive_fields(value: &Value) -> Option<&'static [&'static str]> {
 		match value.raw.tag {
 			ValueTag::Vector => Some(&["x", "y", "z", "len", "size"]),
 			ValueTag::PixLoc => Some(&["x", "y", "z", "step_x", "step_y", "loc"]),
+			ValueTag::Callee => Some(&["proc", "file", "line", "src", "usr", "args", "caller"]),
 			_ => None
 		}
 	}
