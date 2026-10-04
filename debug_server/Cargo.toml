@@ -23,7 +23,7 @@ region = "3"
 retour = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["libloaderapi", "errhandlingapi", "processthreadsapi"] }
+winapi = { version = "0.3", features = ["libloaderapi", "errhandlingapi", "ioapiset", "processthreadsapi"] }
 
 [lints]
 workspace = true

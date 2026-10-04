@@ -1078,6 +1078,9 @@ impl Server {
 	pub fn recover_from_panic(&mut self) {
 		eprintln!("Debug server panicked, dropping the debug client");
 		self.in_eval = false;
+		// A panic mid-pause skips the cleanup at the end of handle_breakpoint.
+		// The frames in here point at procs that are about to carry on running.
+		self.state = None;
 		self.disconnect();
 	}
 
@@ -1186,6 +1189,16 @@ impl Server {
 			eprintln!("Debug server disconnecting");
 			let _ = Self::send(&mut stream, &Response::Disconnect);
 			let _ = stream.shutdown(std::net::Shutdown::Both);
+
+			// On Windows a shutdown stops later reads, but the one the
+			// networking thread is already sat in waits for the client to hang
+			// up too. Server::drop joins that thread, so don't leave it up to
+			// the client.
+			#[cfg(windows)]
+			unsafe {
+				use std::os::windows::io::AsRawSocket;
+				winapi::um::ioapiset::CancelIoEx(stream.as_raw_socket() as _, std::ptr::null_mut());
+			}
 		}
 
 		// Whoever connects next sets up their own breakpoints. Until then the
@@ -1218,6 +1231,16 @@ impl Drop for Server {
 		self.stop.store(true, Ordering::Relaxed);
 		if TcpStream::connect(listen_addr).is_err() {
 			return;
+		}
+
+		// A debug-client the thread accepted but we never got told about is
+		// still in the queue, and the thread is stuck reading from it. Hang up
+		// on whoever turns up. The channel closes once the thread is gone.
+		while let Ok(event) = self.events.recv() {
+			if let Event::Connected(stream) = event {
+				self.stream = Some(stream);
+				self.disconnect();
+			}
 		}
 
 		if let Some(thread) = self.thread.take() {
@@ -1323,5 +1346,40 @@ impl ServerThread {
 		let _ = self.events.send(Event::Disconnected);
 
 		eprintln!("Debug client connection closed");
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::{
+		net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
+		sync::mpsc,
+		thread,
+		time::Duration
+	};
+
+	use super::Server;
+
+	#[test]
+	fn drop_hangs_up_on_a_client_it_never_processed() {
+		let port = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port();
+		let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+		let (done, dropped) = mpsc::channel();
+
+		// A hung drop never returns, so it gets its own thread to be stuck on
+		thread::spawn(move || {
+			let server = Server::listen(&addr).unwrap();
+			let _client = TcpStream::connect(addr).unwrap();
+			// Long enough for the networking thread to start reading from the
+			// client. Nothing here tells the server it connected.
+			thread::sleep(Duration::from_millis(200));
+
+			drop(server);
+			let _ = done.send(());
+		});
+
+		dropped
+			.recv_timeout(Duration::from_secs(5))
+			.expect("dropping the server hung on a client that was still connected");
 	}
 }
