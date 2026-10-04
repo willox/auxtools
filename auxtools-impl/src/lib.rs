@@ -138,7 +138,7 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 ///
 /// Here we define a hook that multiplies a number passed to it by two.
 /// It can now be used to hook procs, for example
-/// `hooks::hook("/proc/double_up", double_up);`
+/// `Proc::find("/proc/double_up").unwrap().hook(double_up);`
 /// ```ignore
 /// #[hook]
 /// fn double_up(num: Value) {

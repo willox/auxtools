@@ -32,7 +32,7 @@ pub use auxtools_impl::{full_shutdown, hook, init, pin_dll, runtime_handler, shu
 pub use byond_scan;
 /// Used by the [pin_dll] macro to set dll pinning
 pub use ctor;
-pub use hooks::{CompileTimeHook, RuntimeErrorHook};
+pub use hooks::{CompileTimeHook, HookFailure, ProcHook, RuntimeErrorHook};
 use init::{get_init_level, set_init_level, InitLevel};
 pub use init::{FullInitFunc, FullShutdownFunc, PartialInitFunc, PartialShutdownFunc};
 /// Used by the [hook](attr.hook.html) macro to aggregate all compile-time hooks
