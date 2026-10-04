@@ -138,6 +138,7 @@ pub fn set_bytecode(id: BytecodeId, new_bytecode: *mut u32, new_bytecode_count: 
 			(*misc).bytecode.bytecode = new_bytecode;
 			(*misc).bytecode.count = new_bytecode_count;
 		}
+		return;
 	}
 
 	let misc = misc as *mut Misc_V1;

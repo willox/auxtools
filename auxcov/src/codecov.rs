@@ -170,7 +170,8 @@ impl Tracker {
 	fn finalize(&mut self) -> Result<(), Vec<Error>> {
 		let mut errors_option = None;
 		for context in &self.contexts {
-			let result = context.finalize(); // dropping the results because what can ya do?
+			let result = context.finalize(); // dropping the results because
+											 // what can ya do?
 			if let Err(error) = result {
 				match &mut errors_option {
 					None => {
@@ -195,8 +196,9 @@ impl Tracker {
 
 impl Drop for Tracker {
 	fn drop(&mut self) {
-		let _result = self.finalize(); // dropping the result here because what can ya
-		                         // do?
+		let _result = self.finalize(); // dropping the result here because what
+		                               // can ya
+		                               // do?
 	}
 }
 

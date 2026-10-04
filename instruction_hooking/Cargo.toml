@@ -15,14 +15,6 @@ cc = "1.0"
 auxtools = { path = "../auxtools" }
 dmasm = { workspace = true }
 retour = { workspace = true }
-symbolic-common = "12"
-symbolic-demangle = { version = "12", default-features = false }
-
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["winuser", "libloaderapi", "errhandlingapi"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
 
 [lints]
 workspace = true

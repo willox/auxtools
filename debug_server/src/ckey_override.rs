@@ -1,23 +1,35 @@
 use std::{ffi::CString, os::raw::c_char};
 
+#[cfg(windows)]
+use auxtools::byond_scan::{Anchor, Extract, Recipe, SignatureTreatment, VersionRange};
 use auxtools::*;
 use region::Protection;
 
 static mut STRING_PTR: *mut *const c_char = std::ptr::null_mut();
 
+// The `push` of the "Guest-%u" format string. We want the address of its 4-byte
+// immediate, one byte past the opcode, so we can swap the string pointer out.
+// Copied from `byond_catalog` in the byond-re repo, which checks it against
+// every local build.
+#[cfg(windows)]
+const GUEST_NAME_FORMAT: Recipe = Recipe {
+	name: "guest_name_format",
+	versions: VersionRange { min: 1659, max: 1688 },
+	anchor: Anchor::Signature(
+		SignatureTreatment::NoOffset,
+		"68 ?? ?? ?? ?? 50 E8 ?? ?? ?? ?? 83 C4 0C 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 85 ?? ?? ?? ??"
+	),
+	hops: &[],
+	extract: Extract::Offset(1)
+};
+
 #[init(full)]
 fn ckey_override_init() -> Result<(), String> {
+	// This feature soft-fails
 	#[cfg(windows)]
-	{
-		let byondcore = sigscan::Scanner::for_module(BYONDCORE).unwrap();
-
-		// This feature soft-fails
-		if let Some(ptr) = byondcore.find(signature!(
-			"68 ?? ?? ?? ?? 50 E8 ?? ?? ?? ?? 83 C4 0C 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 85 ?? ?? ?? ??"
-		)) {
-			unsafe {
-				STRING_PTR = ptr.add(1) as *mut *const c_char;
-			}
+	if let Ok(address) = find_recipe(&GUEST_NAME_FORMAT) {
+		unsafe {
+			STRING_PTR = address as *mut *const c_char;
 		}
 	}
 

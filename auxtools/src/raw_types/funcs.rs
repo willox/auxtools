@@ -7,6 +7,11 @@ pub static mut CURRENT_EXECUTION_CONTEXT: *mut *mut procs::ExecutionContext = st
 pub static mut SUSPENDED_PROCS_BUFFER: *mut procs::SuspendedProcsBuffer = std::ptr::null_mut();
 pub static mut SUSPENDED_PROCS: *mut procs::SuspendedProcs = std::ptr::null_mut();
 
+// BYOND's globals for the alist table: a pointer to the table, and its length.
+// The table holds one record pointer per alist id, null for a free slot.
+pub static mut ALIST_TABLE: *const *const *const lists::Alist = std::ptr::null();
+pub static mut ALIST_TABLE_COUNT: *const u32 = std::ptr::null();
+
 pub static mut VARIABLE_NAMES: *const variables::VariableNameIdTable = std::ptr::null();
 
 // Function pointers exported by C++ but set by Rust
@@ -27,7 +32,9 @@ extern "C" {
 	pub static mut create_list_byond: *const c_void;
 	pub static mut append_to_list_byond: *const c_void;
 	pub static mut remove_from_list_byond: *const c_void;
+	pub static mut remove_from_list_in_registers: bool;
 	pub static mut get_length_byond: *const c_void;
+	pub static mut value_is_list_byond: *const c_void;
 	pub static mut get_misc_by_id_byond: *const c_void;
 	pub static mut to_string_byond: *const c_void;
 	pub static mut runtime_byond: *const c_void;
@@ -40,12 +47,12 @@ extern "C" {
 		usr: values::Value,
 		proc_type: u32,
 		proc_id: procs::ProcId,
-		unk_0: u32,
+		override_depth: u32,
 		src: values::Value,
 		args: *const values::Value,
 		args_count_l: usize,
-		unk_1: u32,
-		unk_2: u32
+		callback: u32,
+		callback_value: u32
 	) -> u8;
 	pub fn call_datum_proc_by_name(
 		out: *mut values::Value,
@@ -55,8 +62,8 @@ extern "C" {
 		src: values::Value,
 		args: *mut values::Value,
 		args_count_l: usize,
-		unk_0: u32,
-		unk_1: u32
+		callback: u32,
+		callback_value: u32
 	) -> u8;
 	pub fn get_proc_array_entry(out: *mut *mut procs::ProcEntry, id: procs::ProcId) -> u8;
 	pub fn get_string_id(out: *mut strings::StringId, string: *const c_char) -> u8;
@@ -71,6 +78,7 @@ extern "C" {
 	pub fn append_to_list(list: values::Value, value: values::Value) -> u8;
 	pub fn remove_from_list(list: values::Value, value: values::Value) -> u8;
 	pub fn get_length(out: *mut u32, value: values::Value) -> u8;
+	pub fn value_is_list(out: *mut u8, value: values::Value) -> u8;
 	pub fn get_misc_by_id(out: *mut *mut c_void, index: misc::MiscId) -> u8;
 	pub fn to_string(out: *mut strings::StringId, value: values::Value) -> u8;
 }

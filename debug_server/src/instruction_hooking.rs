@@ -34,7 +34,8 @@ impl ProcInstanceRef {
 	fn new(ptr: *mut raw_types::procs::ProcInstance) -> Self {
 		unsafe {
 			static mut PTR_REF_ID: u16 = 0x8000;
-			PTR_REF_ID += 1;
+			// Every step takes a new id, so a long session does run out of them
+			PTR_REF_ID = if PTR_REF_ID == u16::MAX { 0x8001 } else { PTR_REF_ID + 1 };
 			(*ptr).mega_hack = PTR_REF_ID;
 			Self(PTR_REF_ID)
 		}
@@ -185,7 +186,9 @@ fn proc_instance_is_suspended(proc_ref: ProcInstanceRef) -> bool {
 
 #[runtime_handler]
 fn handle_runtime(error: &str) {
-	unsafe {
+	// BYOND calls this through extern "C" code, and a panic that gets back out
+	// there aborts the whole game
+	let result = std::panic::catch_unwind(|| unsafe {
 		let ctx = *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
 
 		// If this is eval code, don't catch the breakpoint
@@ -198,13 +201,19 @@ fn handle_runtime(error: &str) {
 		}
 
 		CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Runtime(error.to_string()));
+	});
+
+	if result.is_err() {
+		if let Some(server) = unsafe { &mut *DEBUG_SERVER.get() } {
+			server.recover_from_panic();
+		}
 	}
 }
 
 impl InstructionHook for Server {
 	fn handle_instruction(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
-		// Always handle the deferred instruction replacement first - everything else
-		// will depend on it
+		// Always handle the deferred instruction replacement first - everything
+		// else will depend on it
 		unsafe {
 			let deferred = DEFERRED_INSTRUCTION_REPLACE.get();
 			if let Some((src, dst)) = &*deferred {
@@ -213,8 +222,14 @@ impl InstructionHook for Server {
 			}
 		}
 
+		// An expression the debugger is evaluating runs through here too.
+		// Pausing in the middle of it would start a second pause inside the
+		// one that's waiting on the answer, so all it gets is its breakpoints
+		// stepped over.
 		let server = self;
-		if server.process() {
+		let in_eval = server.is_in_eval();
+
+		if !in_eval && server.process() {
 			unsafe {
 				CURRENT_ACTION = DebuggerAction::Pause;
 			}
@@ -224,12 +239,14 @@ impl InstructionHook for Server {
 		let opcode = unsafe { *opcode_ptr };
 		let is_dbgline = opcode == OPCODE_DBGLINE;
 
-		// This lets us ignore any actual breakpoints we hit if we've already paused for
-		// another reason
+		// This lets us ignore any actual breakpoints we hit if we've already
+		// paused for another reason
 		let mut did_breakpoint = false;
 
 		unsafe {
-			match CURRENT_ACTION {
+			let action = if in_eval { DebuggerAction::None } else { CURRENT_ACTION };
+
+			match action {
 				DebuggerAction::None => {}
 
 				DebuggerAction::Pause => {
@@ -251,8 +268,9 @@ impl InstructionHook for Server {
 					if is_dbgline && target.is(*(*ctx).proc_instance()) {
 						CURRENT_ACTION = DebuggerAction::BreakOnNext;
 					} else {
-						// If the context isn't in any stacks, it has just returned. Break!
-						// TODO: Don't break if the context's stack is gone (returned to C)
+						// If the context isn't in any stacks, it has just
+						// returned. Break! TODO: Don't
+						// break if the context's stack is gone (returned to C)
 						if !proc_instance_is_in_stack(ctx, target) && !proc_instance_is_suspended(target) {
 							CURRENT_ACTION = DebuggerAction::None;
 							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
@@ -275,8 +293,10 @@ impl InstructionHook for Server {
 							let in_stack = proc_instance_is_in_stack(ctx, parent);
 							let is_suspended = proc_instance_is_suspended(parent);
 
-							// If the context isn't in any stacks, it has just returned. Break!
-							// TODO: Don't break if the context's stack is gone (returned to C)
+							// If the context isn't in any stacks, it has just
+							// returned. Break!
+							// TODO: Don't break if the context's stack is gone
+							// (returned to C)
 							if !in_stack && !is_suspended {
 								CURRENT_ACTION = DebuggerAction::None;
 								CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step);
@@ -311,20 +331,25 @@ impl InstructionHook for Server {
 
 		if opcode == OPCODE_DEBUG_BREAK {
 			// We don't want to break twice when stepping on to a breakpoint
-			if !did_breakpoint {
+			if !did_breakpoint && !in_eval {
 				unsafe {
 					CURRENT_ACTION = DebuggerAction::None;
 					CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Breakpoint);
 				}
 			}
 
-			// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been
-			// removed
+			// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has
+			// already been removed
 			let map = ORIGINAL_BYTECODE.lock().unwrap();
 			if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
 				unsafe {
+					// The breakpoint we stepped over last is normally back in
+					// place by now. It isn't if an eval ended on that very
+					// instruction, so put it back before we lose track of it.
 					let deferred_replace = DEFERRED_INSTRUCTION_REPLACE.get();
-					assert_eq!(*deferred_replace, None);
+					if let Some((src, dst)) = &*deferred_replace {
+						std::ptr::copy_nonoverlapping(src.as_ptr(), *dst, src.len());
+					}
 					*deferred_replace = Some((std::slice::from_raw_parts(opcode_ptr, original.len()).to_vec(), opcode_ptr));
 					std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr, original.len());
 				}
@@ -410,8 +435,8 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 		bytecode.as_mut_ptr().add(offset as usize)
 	};
 
-	// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already been
-	// removed
+	// ORIGINAL_BYTECODE won't contain an entry if this breakpoint has already
+	// been removed
 	let mut map = ORIGINAL_BYTECODE.lock().unwrap();
 	if let Some(original) = map.get(&PtrKey::new(opcode_ptr)) {
 		unsafe {
@@ -430,21 +455,36 @@ pub fn unhook_instruction(proc: &Proc, offset: u32) -> Result<(), InstructionUnh
 	Ok(())
 }
 
-pub fn get_hooked_offsets(proc: &Proc) -> Vec<u32> {
-	let bytecode = unsafe { proc.bytecode() };
+/// Takes every breakpoint back out of the bytecode and forgets any step in
+/// progress.
+pub fn unhook_all() {
+	unsafe {
+		CURRENT_ACTION = DebuggerAction::None;
+		*DEFERRED_INSTRUCTION_REPLACE.get() = None;
+	}
 
-	let mut env = disassemble_env::DisassembleEnv;
-	let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+	for (opcode_ptr, original) in ORIGINAL_BYTECODE.lock().unwrap().drain() {
+		unsafe {
+			std::ptr::copy_nonoverlapping(original.as_ptr(), opcode_ptr.0 as *mut u32, original.len());
+		}
+	}
+}
 
-	let mut offsets = vec![];
+/// The proc's bytecode without any of our breakpoints patched into it.
+pub fn original_bytecode(proc: &Proc) -> Vec<u32> {
+	let (start, count) = unsafe { proc.bytecode_mut_ptr() };
+	let mut bytecode = unsafe { std::slice::from_raw_parts(start, count as usize) }.to_vec();
 
-	for node in nodes {
-		if let dmasm::Node::Instruction(ins, debug) = node {
-			if ins == dmasm::Instruction::AuxtoolsDebugBreak {
-				offsets.push(debug.offset);
-			}
+	for (opcode_ptr, original) in ORIGINAL_BYTECODE.lock().unwrap().iter() {
+		// The map holds every proc's breakpoints, and most aren't in this one
+		let Some(offset) = opcode_ptr.0.checked_sub(start as usize).map(|bytes| bytes / std::mem::size_of::<u32>()) else {
+			continue;
+		};
+
+		if let Some(hooked) = bytecode.get_mut(offset..offset + original.len()) {
+			hooked.copy_from_slice(original);
 		}
 	}
 
-	offsets
+	bytecode
 }

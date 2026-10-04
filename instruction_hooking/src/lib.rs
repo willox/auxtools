@@ -1,25 +1,31 @@
 pub mod disassemble_env;
 
-use auxtools::*;
+use auxtools::{
+	byond_scan::{Anchor, Extract, Recipe, SignatureTreatment, VersionRange},
+	*
+};
 use retour::RawDetour;
 use std::{any::Any, cell::UnsafeCell, ffi::c_void};
 
+// Where the interpreter reads the next opcode, inside exec_proc. Copied from
+// `byond_catalog` in the byond-re repo, which checks it against every local
+// build.
+//
+// The running proc's frame sits in EDI here and in ESI on Linux, so each
+// platform has its own assembly in execute_instruction_hook.*.
 #[cfg(windows)]
-signatures! {
-	execute_instruction => version_dependent_signature!(
-		1616.. => "0F B7 47 ?? 8B 4F ?? 8B F0 8B 14 ?? 89 95 ?? ?? ?? ?? 81 FA ?? 01 00 00",
-		1590..1616 => "0F B7 48 ?? 8B ?? ?? 8B F1 8B ?? ?? 81 ?? ?? ?? 00 00 0F 87 ?? ?? ?? ??",
-		..1590 => "0F B7 48 ?? 8B 78 ?? 8B F1 8B 14 ?? 81 FA ?? ?? 00 00 0F 87 ?? ?? ?? ??"
-	)
-}
-
+const DISPATCH_MASK: &str = "0F B7 47 ?? 8B 4F ?? 8B F0 8B 14 ?? 89 95 ?? ?? ?? ?? 81 FA ?? 01 00 00";
 #[cfg(unix)]
-signatures! {
-	execute_instruction => version_dependent_signature!(
-		1616.. => "0F B7 C0 8D 14 ?? 8B 02 8B 52 ?? 8B 4E ?? 8B 5E ?? 89 46 ?? 89 56 ?? 89 0C 24",
-		..1616 => "0F B7 47 ?? 8B 57 ?? 0F B7 D8 8B 0C ?? 81 F9 ?? ?? 00 00 77 ?? FF 24 8D ?? ?? ?? ??"
-	)
-}
+const DISPATCH_MASK: &str = "0F B7 46 ?? 8B 56 ?? 66 89 85 ?? ?? ?? ?? 89 85 ?? ?? ?? ?? C1 E0 02 89 85 ?? ?? ?? ?? 01 D0 8B 18 81 FB ?? 01 00 00 \
+                             0F 87 ?? ?? ?? ?? FF 24 9D ?? ?? ?? ??";
+
+const EXECUTE_INSTRUCTION: Recipe = Recipe {
+	name: "execute_instruction",
+	versions: VersionRange { min: 1659, max: 1688 },
+	anchor: Anchor::Signature(SignatureTreatment::NoOffset, DISPATCH_MASK),
+	hops: &[],
+	extract: Extract::Entry
+};
 
 // stackoverflow copypasta https://old.reddit.com/r/rust/comments/kkap4e/how_to_cast_a_boxdyn_mytrait_to_an_actual_struct/
 pub trait InstructionHookToAny: 'static {
@@ -42,8 +48,8 @@ extern "C" {
 	// Trampoline to the original un-hooked BYOND execute_instruction code
 	static mut execute_instruction_original: *const c_void;
 
-	// Our version of execute_instruction. It hasn't got a calling convention rust
-	// knows about, so don't call it.
+	// Our version of execute_instruction. It hasn't got a calling convention
+	// rust knows about, so don't call it.
 	fn execute_instruction_hook();
 
 	// The 514 version of the instruction hook.
@@ -53,11 +59,7 @@ extern "C" {
 
 #[init(full)]
 fn instruction_hooking_init() -> Result<(), String> {
-	let byondcore = sigscan::Scanner::for_module(BYONDCORE).unwrap();
-
-	find_signatures_result! { byondcore,
-		execute_instruction
-	}
+	let execute_instruction = find_recipe(&EXECUTE_INSTRUCTION)?;
 
 	#[cfg(windows)]
 	let versioned_hook = if auxtools::version::get().0 == 514 {

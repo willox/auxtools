@@ -1,0 +1,16 @@
+[package]
+name = "debug_test"
+version = "0.1.0"
+publish = false
+authors.workspace = true
+edition.workspace = true
+
+# Same trick as test_runner: depending on the cdylib gets debug_server
+# compiled before `cargo run` runs us.
+[dependencies]
+debug_server = { path = "../../debug_server" }
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
+
+[lints]
+workspace = true

@@ -72,7 +72,8 @@ impl<A: Into<Value> + Clone, B: Into<Value> + Clone> TryFrom<&HashMap<A, B>> for
 
 		for (k, v) in hashmap {
 			// This can fail for basically any reason that BYOND decides,
-			// because in the end this just ends up calling into BYOND with the Value's.
+			// because in the end this just ends up calling into BYOND with the
+			// Value's.
 			res.set(k.clone(), v.clone())?;
 		}
 

@@ -1,7 +1,8 @@
 use std::{
 	cell::RefCell,
 	collections::{hash_map::Entry, HashMap},
-	fmt
+	fmt,
+	marker::PhantomData
 };
 
 use ahash::RandomState;
@@ -26,18 +27,44 @@ use crate::*;
 // 		world << "!!!"
 // 	```
 //
-// 	To get the nth override, use [get_proc_override]: `let hello = get_proc_override("/proc/hello", n).unwrap()`
-// [get_proc] retrieves the base proc.
+// 	To get the nth override, use [Proc::find_override]: `let hello = Proc::find_override("/proc/hello", n).unwrap()`
+// [Proc::find] retrieves the base proc.
 
 /// Used to hook and call procs.
+///
+/// A `Proc` stays on the thread BYOND runs on. Calling one from anywhere else
+/// would run DM code while the game is in the middle of something else.
+///
+/// ```compile_fail
+/// fn assert_send<T: Send>() {}
+/// assert_send::<auxtools::Proc>();
+/// ```
 #[derive(Clone)]
 pub struct Proc {
 	pub id: raw_types::procs::ProcId,
-	pub entry: *mut raw_types::procs::ProcEntry,
-	pub path: String
+	pub path: String,
+	// Keeps a Proc from being sent to another thread
+	phantom: PhantomData<*mut ()>
+}
+
+fn entry_by_id(id: raw_types::procs::ProcId) -> *mut raw_types::procs::ProcEntry {
+	let mut entry: *mut raw_types::procs::ProcEntry = std::ptr::null_mut();
+	unsafe {
+		assert_eq!(raw_types::funcs::get_proc_array_entry(&mut entry, id), 1);
+	}
+	entry
 }
 
 impl Proc {
+	/// BYOND's own record for this proc.
+	///
+	/// Don't hold on to the pointer. BYOND moves its whole proc table whenever
+	/// the table grows (`new` on a verb path does it), so it is only good until
+	/// the next time DM code runs.
+	pub fn entry(&self) -> *mut raw_types::procs::ProcEntry {
+		entry_by_id(self.id)
+	}
+
 	/// Finds the first proc with the given path
 	pub fn find<S: Into<String>>(path: S) -> Option<Self> {
 		get_proc(path)
@@ -49,18 +76,15 @@ impl Proc {
 	}
 
 	pub fn from_id(id: raw_types::procs::ProcId) -> Option<Self> {
-		let mut proc_entry: *mut raw_types::procs::ProcEntry = std::ptr::null_mut();
-		unsafe {
-			assert_eq!(raw_types::funcs::get_proc_array_entry(&mut proc_entry, id), 1);
-		}
+		let proc_entry = entry_by_id(id);
 		if proc_entry.is_null() {
 			return None;
 		}
-		let proc_name = strip_path(unsafe { StringRef::from_id((*proc_entry).path).into() });
+		let path = strip_path(unsafe { StringRef::from_id((*proc_entry).path).into() });
 		Some(Proc {
 			id,
-			entry: proc_entry,
-			path: proc_name.clone()
+			path,
+			phantom: PhantomData
 		})
 	}
 
@@ -80,14 +104,14 @@ impl Proc {
 
 	pub fn parameter_names(&self) -> Vec<StringRef> {
 		unsafe {
-			let (data, count) = raw_types::misc::get_parameters(*(*self.entry).metadata.parameters());
+			let (data, count) = raw_types::misc::get_parameters(*(*self.entry()).metadata.parameters());
 			(0..count).map(|i| StringRef::from_variable_id((*data.add(i)).name)).collect()
 		}
 	}
 
 	pub fn local_names(&self) -> Vec<StringRef> {
 		unsafe {
-			let (names, count) = raw_types::misc::get_locals(*(*self.entry).metadata.locals());
+			let (names, count) = raw_types::misc::get_locals(*(*self.entry()).metadata.locals());
 			(0..count).map(|i| StringRef::from_variable_id(*names.add(i))).collect()
 		}
 	}
@@ -97,7 +121,7 @@ impl Proc {
 	}
 
 	pub unsafe fn bytecode_mut_ptr(&self) -> (*mut u32, u16) {
-		raw_types::misc::get_bytecode(*(*self.entry).metadata.bytecode())
+		raw_types::misc::get_bytecode(*(*self.entry()).metadata.bytecode())
 	}
 
 	pub unsafe fn bytecode(&self) -> &[u32] {
@@ -131,7 +155,10 @@ impl Proc {
 
 			let args: Vec<_> = args.iter().map(|e| e.raw).collect();
 
-			if raw_types::funcs::call_proc_by_id(&mut ret, Value::NULL.raw, 0, self.id, 0, Value::NULL.raw, args.as_ptr(), args.len(), 0, 0) == 1 {
+			// 2 is the proc_type BYOND's own direct calls pass. It never passes
+			// 0, and a `..()` with no parent hands back garbage in
+			// a frame that has it.
+			if raw_types::funcs::call_proc_by_id(&mut ret, Value::NULL.raw, 2, self.id, 0, Value::NULL.raw, args.as_ptr(), args.len(), 0, 0) == 1 {
 				return Ok(Value::from_raw_owned(ret));
 			}
 		}
@@ -149,7 +176,7 @@ impl Proc {
 
 impl fmt::Debug for Proc {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		let path = unsafe { (*self.entry).path };
+		let path = unsafe { (*self.entry()).path };
 		write!(f, "Proc({:?})", unsafe { StringRef::from_id(path) })
 	}
 }

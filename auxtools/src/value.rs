@@ -316,7 +316,7 @@ impl Value {
 	}
 
 	/// Creates a Value that references a byond string.
-	/// Will panic if the given string contains null bytes
+	/// Returns an error if the given string contains null bytes
 	///
 	/// # Examples:
 	/// ```ignore

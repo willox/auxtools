@@ -2,58 +2,11 @@ mod versioned_struct;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, spanned::Spanned, Lit};
-
-fn from_signature(s: String) -> Vec<Option<u8>> {
-	s.trim()
-		.split(' ')
-		.map(|byte| {
-			let byte = byte.trim();
-			match byte.len() {
-				2 => {
-					if byte == "??" {
-						None
-					} else {
-						hex::decode(byte).map(|decoded_byte| decoded_byte[0]).ok()
-					}
-				}
-				_ => None
-			}
-		})
-		.collect()
-}
+use syn::{spanned::Spanned, Lit};
 
 #[proc_macro_attribute]
 pub fn versioned(attr: TokenStream, item: TokenStream) -> TokenStream {
 	versioned_struct::versioned(attr.into(), item.into()).into()
-}
-
-#[proc_macro]
-pub fn convert_signature(input: TokenStream) -> TokenStream {
-	let string = parse_macro_input!(input as Lit);
-	let string = match string {
-		Lit::Str(lit) => lit.value(),
-		_ => panic!("not string input")
-	};
-
-	let streams: Vec<proc_macro2::TokenStream> = from_signature(string)
-		.into_iter()
-		.map(|x| match x {
-			Some(byte) => {
-				quote! {
-					Some(#byte as u8)
-				}
-			}
-			None => {
-				quote! { None }
-			}
-		})
-		.collect();
-
-	let result = quote! {
-		&[ #( #streams, )* ]
-	};
-	result.into()
 }
 
 fn extract_args(a: &syn::FnArg) -> &syn::PatType {
@@ -185,14 +138,11 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 ///
 /// Here we define a hook that multiplies a number passed to it by two.
 /// It can now be used to hook procs, for example
-/// `hooks::hook("/proc/double_up", double_up);`
+/// `Proc::find("/proc/double_up").unwrap().hook(double_up);`
 /// ```ignore
 /// #[hook]
 /// fn double_up(num: Value) {
-///     if let Some(num) = num.as_number() {
-///         Value::from(num * 2.0);
-///     }
-///     Value::NULL
+///     Ok(Value::from(num.as_number()? * 2.0))
 /// }
 /// ```
 ///
@@ -201,9 +151,9 @@ pub fn pin_dll(attr: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[hook("/mob/proc/on_honked")]
 /// fn on_honked(honker: Value) {
-///     src.call("gib", &[]);
-///     honker.call("laugh", &[]);
-///     Value::NULL
+///     src.call("gib", &[])?;
+///     honker.call("laugh", &[])?;
+///     Ok(Value::NULL)
 /// }
 /// ```
 #[proc_macro_attribute]

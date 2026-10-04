@@ -1,5 +1,5 @@
 [workspace]
-members = ["auxcov", "auxtools", "auxtools-impl", "debug_server", "instruction_hooking", "tests/auxtest", "tests/byond_get", "tests/test_runner"]
+members = ["auxcov", "auxtools", "auxtools-impl", "debug_server", "instruction_hooking", "tests/auxtest", "tests/byond_get", "tests/debug_test", "tests/test_runner"]
 resolver = "2"
 
 [workspace.package]
@@ -7,13 +7,14 @@ authors = ["Sophie Wallace <sophie@wiox.me>", "Lucy <lucy@absolucy.moe>"]
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/wilox/auxtools"
-rust-version = "1.76"
+rust-version = "1.88"
 version = "0.1.0"
 
 [workspace.dependencies]
 lazy_static = "1"
 retour = { version = "=0.4.0-alpha.4", default-features = false }
 dmasm = { git = "https://github.com/willox/dmasm" }
+byond-scan = { git = "https://github.com/Absolucy/byond-scan" }
 
 [workspace.lints.rust]
 static_mut_refs = "allow"

@@ -36,8 +36,8 @@ impl StackFrame {
 		let src = Value::from_raw((*instance).src);
 		let dot = Value::from_raw(*(*context).dot());
 
-		// Make sure to handle arguments/locals with no names (when there are more
-		// values than names)
+		// Make sure to handle arguments/locals with no names (when there are
+		// more values than names)
 		let args = (0..(*instance).args_count())
 			.map(|i| {
 				let name = param_names.get(i as usize).cloned();

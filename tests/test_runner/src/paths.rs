@@ -1,4 +1,40 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, process::Command};
+
+pub trait ByondCommand {
+	fn with_byond_paths(&mut self) -> &mut Self;
+}
+
+#[cfg(unix)]
+impl ByondCommand for Command {
+	// TODO: This doesn't read very nice
+	fn with_byond_paths(&mut self) -> &mut Command {
+		let byond_system = find_byond();
+		let byond_bin = find_byond_bin();
+
+		let path = format!(
+			"{}:{}",
+			byond_bin.as_os_str().to_str().unwrap(),
+			std::env::var_os("PATH").unwrap().to_str().unwrap()
+		);
+
+		let ld_library_path = format!(
+			"{}:{}",
+			byond_bin.as_os_str().to_str().unwrap(),
+			std::env::var_os("LD_LIBRARY_PATH").unwrap().to_str().unwrap()
+		);
+
+		self.env("BYOND_SYSTEM", byond_system)
+			.env("PATH", path)
+			.env("LD_LIBRARY_PATH", ld_library_path)
+	}
+}
+
+#[cfg(windows)]
+impl ByondCommand for Command {
+	fn with_byond_paths(&mut self) -> &mut Command {
+		self
+	}
+}
 
 pub fn find_byond() -> PathBuf {
 	let path = PathBuf::from(std::env::var_os("BYOND_PATH").unwrap());
@@ -34,7 +70,7 @@ pub fn find_dreamdaemon() -> PathBuf {
 	path.push("bin/DreamDaemon");
 
 	#[cfg(windows)]
-	path.push("bin/dreamdaemon.exe");
+	path.push("bin/dd.exe");
 
 	assert!(path.is_file(), "couldn't find dreamdaemon");
 	path

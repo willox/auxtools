@@ -4,7 +4,10 @@ use std::{
 	error::Error,
 	io::{Read, Write},
 	net::{SocketAddr, TcpListener, TcpStream},
-	sync::mpsc,
+	sync::{
+		atomic::{AtomicBool, Ordering},
+		mpsc, Arc
+	},
 	thread,
 	thread::JoinHandle
 };
@@ -17,7 +20,7 @@ use clap::{Arg, Command};
 use instruction_hooking::disassemble_env;
 
 use super::{
-	instruction_hooking::{get_hooked_offsets, hook_instruction, unhook_instruction},
+	instruction_hooking::{hook_instruction, original_bytecode, unhook_all, unhook_instruction},
 	server_types::*
 };
 use crate::mem_profiler;
@@ -70,28 +73,34 @@ impl State {
 // Server = main-thread code
 // ServerThread = networking-thread code
 //
-// We've got a couple of channels going on between Server/ServerThread
-// connection: a TcpStream sent from the ServerThread for the Server to send
-// responses on requests: requests from the debug-client for the Server to
-// handle
+// The ServerThread tells the Server everything through one channel of Events,
+// so they arrive in the order they happened.
 //
-// Limitations: only ever accepts one connection
+// Limitations: one debug-client at a time. Another can connect once it leaves.
 //
 
-enum ServerStream {
-	// The server is waiting for a Stream to be sent on the connection channel
-	Waiting(mpsc::Receiver<TcpStream>),
-
+enum Event {
+	// A debug-client arrived. The TcpStream is for the Server to send responses on
 	Connected(TcpStream),
 
-	// The server has finished being used
+	// A request from the debug-client for the Server to handle
+	Request(Request),
+
+	// The debug-client left, or its connection broke
 	Disconnected
 }
 
+// Nothing a debug-client sends is anywhere near this big. Without a limit, any
+// stray bytes on the port get read as a length and we try to allocate it.
+const MAX_REQUEST_LEN: u32 = 1024 * 1024;
+
 pub struct Server {
-	requests: mpsc::Receiver<Request>,
-	stream: ServerStream,
-	_thread: JoinHandle<()>,
+	events: mpsc::Receiver<Event>,
+	stream: Option<TcpStream>,
+	thread: Option<JoinHandle<()>>,
+	// Where our listener is bound, when we have one
+	listen_addr: Option<SocketAddr>,
+	stop: Arc<AtomicBool>,
 	should_catch_runtimes: bool,
 	state: Option<State>,
 	in_eval: bool,
@@ -101,13 +110,13 @@ pub struct Server {
 }
 
 struct ServerThread {
-	requests: mpsc::Sender<Request>
+	events: mpsc::Sender<Event>
 }
 
 impl Server {
 	pub fn setup_app() -> Command<'static> {
 		Command::new("Auxtools Debug Server")
-			.version("2.2.2")
+			.version(env!("CARGO_PKG_VERSION"))
 			.subcommand_required(true)
 			.no_binary_name(true)
 			.color(clap::ColorChoice::Never)
@@ -149,19 +158,21 @@ impl Server {
 
 	pub fn connect(addr: &SocketAddr) -> std::io::Result<Server> {
 		let stream = TcpStream::connect_timeout(addr, std::time::Duration::from_secs(5))?;
-		let (requests_sender, requests_receiver) = mpsc::channel();
+		let (events_sender, events_receiver) = mpsc::channel();
 
-		let server_thread = ServerThread { requests: requests_sender };
+		let server_thread = ServerThread { events: events_sender };
 
-		let cloned_stream = stream.try_clone().unwrap();
+		let cloned_stream = stream.try_clone()?;
 		let thread = thread::spawn(move || {
 			server_thread.run(cloned_stream);
 		});
 
 		let mut server = Server {
-			requests: requests_receiver,
-			stream: ServerStream::Connected(stream),
-			_thread: thread,
+			events: events_receiver,
+			stream: Some(stream),
+			thread: Some(thread),
+			listen_addr: None,
+			stop: Arc::new(AtomicBool::new(false)),
 			should_catch_runtimes: true,
 			state: None,
 			in_eval: false,
@@ -175,15 +186,21 @@ impl Server {
 	}
 
 	pub fn listen(addr: &SocketAddr) -> std::io::Result<Server> {
-		let (connection_sender, connection_receiver) = mpsc::channel();
-		let (requests_sender, requests_receiver) = mpsc::channel();
+		let (events_sender, events_receiver) = mpsc::channel();
+		let stop = Arc::new(AtomicBool::new(false));
 
-		let thread = ServerThread { requests: requests_sender }.spawn_listener(TcpListener::bind(addr)?, connection_sender);
+		let listener = TcpListener::bind(addr)?;
+		// Asking for port 0 gets whichever port the OS picks, and Server::drop
+		// has to connect to that one
+		let listen_addr = listener.local_addr()?;
+		let thread = ServerThread { events: events_sender }.spawn_listener(listener, stop.clone());
 
 		Ok(Server {
-			requests: requests_receiver,
-			stream: ServerStream::Waiting(connection_receiver),
-			_thread: thread,
+			events: events_receiver,
+			stream: None,
+			thread: Some(thread),
+			listen_addr: Some(listen_addr),
+			stop,
 			should_catch_runtimes: true,
 			state: None,
 			in_eval: false,
@@ -269,19 +286,30 @@ impl Server {
 		offset
 	}
 
+	// 516 primitives have no `vars` list, so their fields are spelled out here.
+	// a callee only reads while its proc is still running
+	const fn primitive_fields(value: &Value) -> Option<&'static [&'static str]> {
+		match value.raw.tag {
+			ValueTag::Vector => Some(&["x", "y", "z", "len", "size"]),
+			ValueTag::PixLoc => Some(&["x", "y", "z", "step_x", "step_y", "loc"]),
+			ValueTag::Callee => Some(&["proc", "file", "line", "src", "usr", "args", "caller"]),
+			_ => None
+		}
+	}
+
 	fn is_object(value: &Value) -> bool {
 		// Hack for globals
 		if value.raw.tag == ValueTag::World && unsafe { value.raw.data.id == 1 } {
 			return true;
 		}
 
-		value.get(byond_string!("vars")).is_ok()
+		Self::primitive_fields(value).is_some() || value.get(byond_string!("vars")).is_ok()
 	}
 
 	fn stringify(value: &Value) -> String {
 		if List::is_list(value) {
 			match List::from_value(value) {
-				Ok(list) => format!("/list {{len = {}}}", list.len()),
+				Ok(list) => format!("/{} {{len = {}}}", if list.is_alist() { "alist" } else { "list" }, list.len()),
 				Err(Runtime { message }) => format!("/list (failed to get len: {:?})", message)
 			}
 		} else {
@@ -319,6 +347,22 @@ impl Server {
 	fn list_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
 		let state = self.state.as_ref().unwrap();
 		let list = List::from_value(value)?;
+
+		// numbers are keys in an alist, so the position walk below would read
+		// the wrong entries
+		if list.is_alist() {
+			return Ok(list
+				.alist_pairs()?
+				.into_iter()
+				.enumerate()
+				.map(|(i, (key, value))| Variable {
+					name: format!("[{}]", i + 1),
+					value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
+					variables: Some(state.get_ref(Variables::ListPair { key, value }))
+				})
+				.collect());
+		}
+
 		let len = list.len();
 
 		let mut variables = vec![];
@@ -349,8 +393,15 @@ impl Server {
 	}
 
 	fn object_to_variables(&mut self, value: &Value) -> Result<Vec<Variable>, Runtime> {
-		// Grab `value.vars`. We have a little hack for globals which use a special
-		// type.
+		if let Some(fields) = Self::primitive_fields(value) {
+			return fields
+				.iter()
+				.map(|&name| Ok(self.value_to_variable(name.to_owned(), &value.get(StringRef::new(name)?)?)))
+				.collect();
+		}
+
+		// Grab `value.vars`. We have a little hack for globals which use a
+		// special type.
 		let vars = List::from_value(&unsafe {
 			if value.raw.tag == ValueTag::World && value.raw.data.id == 1 {
 				Value::new(ValueTag::GlobalVars, ValueData { id: 0 })
@@ -360,7 +411,8 @@ impl Server {
 		})?;
 
 		let mut variables = vec![];
-		let mut top_variables = vec![]; // These fields get displayed on top of all others
+		let mut top_variables = vec![]; // These fields get displayed on top of
+										// all others
 
 		for i in 1..=vars.len() {
 			let name = vars.get(i)?.as_string()?;
@@ -382,10 +434,7 @@ impl Server {
 
 	fn get_stack(&self, stack_id: u32) -> Option<&Vec<debug::StackFrame>> {
 		let stack_id = stack_id as usize;
-		let stacks = match &self.state {
-			Some(state) => &state.stacks,
-			None => return None
-		};
+		let stacks = &self.state.as_ref()?.stacks;
 
 		if stack_id == 0 {
 			return Some(&stacks.active);
@@ -416,10 +465,7 @@ impl Server {
 
 	fn get_stack_frame(&self, frame_index: u32) -> Option<&debug::StackFrame> {
 		let mut frame_index = frame_index as usize;
-		let stacks = match &self.state {
-			Some(state) => &state.stacks,
-			None => return None
-		};
+		let stacks = &self.state.as_ref()?.stacks;
 
 		if frame_index < stacks.active.len() {
 			return Some(&stacks.active[frame_index]);
@@ -502,9 +548,13 @@ impl Server {
 
 		match hook_instruction(&proc, instruction.offset) {
 			Ok(()) => {
-				if let Some(condition) = condition {
-					self.conditional_breakpoints.insert((proc.id, instruction.offset as u16), condition);
-				}
+				// The client re-sends breakpoints it already set, and no
+				// condition this time means the old one is gone
+				let key = (proc.id, instruction.offset as u16);
+				match condition {
+					Some(condition) => self.conditional_breakpoints.insert(key, condition),
+					None => self.conditional_breakpoints.remove(&key)
+				};
 
 				self.send_or_disconnect(Response::BreakpointSet {
 					result: BreakpointSetResult::Success { line }
@@ -523,9 +573,7 @@ impl Server {
 		let proc = match auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id) {
 			Some(proc) => proc,
 			None => {
-				self.send_or_disconnect(Response::BreakpointSet {
-					result: BreakpointSetResult::Failed
-				});
+				self.send_or_disconnect(Response::BreakpointUnset { success: false });
 				return;
 			}
 		};
@@ -833,8 +881,9 @@ impl Server {
 		let result = match proc.call(&arg_values) {
 			Ok(res) => {
 				if let Ok(list) = res.as_list() {
-					// The rest are the potentially mutated parameters. We need to commit them to
-					// the function that called us. TODO: This sucks, obviously.
+					// The rest are the potentially mutated parameters. We need
+					// to commit them to the function that
+					// called us. TODO: This sucks, obviously.
 					let len = list.len();
 					for i in 2..=len {
 						let value = list.get(i).unwrap();
@@ -929,22 +978,13 @@ impl Server {
 	fn handle_disassemble(&mut self, path: &str, id: u32) -> String {
 		match auxtools::Proc::find_override(path, id) {
 			Some(proc) => {
-				// Make sure to temporarily remove all breakpoints in this proc
-				let breaks = get_hooked_offsets(&proc);
-
-				for offset in &breaks {
-					unhook_instruction(&proc, *offset).unwrap();
-				}
-
-				let bytecode = unsafe { proc.bytecode() };
+				// The live bytecode has our breakpoints patched into it, which
+				// nobody wants to read
+				let bytecode = original_bytecode(&proc);
 
 				let mut env = crate::DisassembleEnv;
-				let (nodes, error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+				let (nodes, error) = dmasm::disassembler::disassemble(&bytecode, &mut env);
 				let dism = dmasm::format_disassembly(&nodes, None);
-
-				for offset in &breaks {
-					hook_instruction(&proc, *offset).unwrap();
-				}
 
 				match error {
 					Some(error) => {
@@ -1022,25 +1062,28 @@ impl Server {
 		false
 	}
 
-	fn check_connected(&mut self) -> bool {
-		match &self.stream {
-			ServerStream::Disconnected => false,
-			ServerStream::Connected(_) => true,
-			ServerStream::Waiting(receiver) => {
-				if let Ok(stream) = receiver.try_recv() {
-					self.stream = ServerStream::Connected(stream);
-					true
-				} else {
-					false
-				}
-			}
-		}
-	}
+	/// Applies whatever the networking thread has reported and hands back the
+	/// next request. `None` means nothing is waiting, or when blocking, that
+	/// the debug-client is gone.
+	fn recv_request(&mut self, block: bool) -> Option<Request> {
+		loop {
+			let event = if block { self.events.recv().ok()? } else { self.events.try_recv().ok()? };
 
-	fn wait_for_connection(&mut self) {
-		if let ServerStream::Waiting(receiver) = &self.stream {
-			if let Ok(stream) = receiver.recv() {
-				self.stream = ServerStream::Connected(stream);
+			match event {
+				Event::Connected(stream) => self.stream = Some(stream),
+
+				Event::Disconnected => {
+					self.disconnect();
+
+					if block {
+						return None;
+					}
+				}
+
+				// Sent by a client we've since given up on
+				Event::Request(_) if self.stream.is_none() => {}
+
+				Event::Request(request) => return Some(request)
 			}
 		}
 	}
@@ -1049,22 +1092,30 @@ impl Server {
 		let message = message.into();
 		eprintln!("Debug Server: {:?}", message);
 
-		if !self.check_connected() {
-			return;
-		}
-
 		self.send_or_disconnect(Response::Notification { message });
+	}
+
+	/// Something in here panicked. We don't know what state that left the
+	/// session in, so the debug-client gets dropped and can connect again.
+	pub fn recover_from_panic(&mut self) {
+		eprintln!("Debug server panicked, dropping the debug client");
+		self.in_eval = false;
+		// A panic mid-pause skips the cleanup at the end of handle_breakpoint.
+		// The frames in here point at procs that are about to carry on running.
+		self.state = None;
+		self.disconnect();
 	}
 
 	pub fn handle_breakpoint(&mut self, _ctx: *mut raw_types::procs::ExecutionContext, reason: BreakpointReason) -> ContinueKind {
 		// Ignore all breakpoints unless we're connected
-		if !self.check_connected() || (matches!(reason, BreakpointReason::Runtime(_)) && !self.should_catch_runtimes) {
+		if self.stream.is_none() || (matches!(reason, BreakpointReason::Runtime(_)) && !self.should_catch_runtimes) {
 			return ContinueKind::Continue;
 		}
 
 		self.state = Some(State::new());
 
-		// Exit now if this is a conditional breakpoint and the condition doesn't pass!
+		// Exit now if this is a conditional breakpoint and the condition
+		// doesn't pass!
 		if reason == BreakpointReason::Breakpoint {
 			let proc = unsafe { (*(*(*_ctx).proc_instance())).proc };
 			let offset = unsafe { *(*_ctx).bytecode_offset() };
@@ -1078,8 +1129,8 @@ impl Server {
 					}
 				}
 
-				// We might have just executed some code so invalidate the stacks we already
-				// fetched
+				// We might have just executed some code so invalidate the
+				// stacks we already fetched
 				self.state.as_mut().unwrap().invalidate_stacks();
 			}
 		}
@@ -1087,7 +1138,13 @@ impl Server {
 		self.notify(format!("Pausing execution (reason: {:?})", reason));
 		self.send_or_disconnect(Response::BreakpointHit { reason });
 
-		while let Ok(request) = self.requests.recv() {
+		// A failed send drops the client without an event to tell us so, hence
+		// checking the stream as well
+		while self.stream.is_some() {
+			let Some(request) = self.recv_request(true) else {
+				break;
+			};
+
 			// Hijack and handle any Continue requests
 			if let Request::Continue { kind } = request {
 				self.send_or_disconnect(Response::Ack);
@@ -1113,15 +1170,11 @@ impl Server {
 
 	// returns true if we need to pause
 	pub fn process(&mut self) -> bool {
-		// Don't do anything until we're connected
-		if !self.check_connected() {
-			return false;
-		}
-
 		let mut should_pause = false;
 
-		while let Ok(request) = self.requests.try_recv() {
-			should_pause = should_pause || self.handle_request(request);
+		while let Some(request) = self.recv_request(false) {
+			// Not `||`, that would skip every request after a Pause
+			should_pause |= self.handle_request(request);
 		}
 
 		should_pause
@@ -1130,9 +1183,7 @@ impl Server {
 	/// Block while processing all received requests normally until the debug
 	/// client is configured
 	pub fn process_until_configured(&mut self) {
-		self.wait_for_connection();
-
-		while let Ok(request) = self.requests.recv() {
+		while let Some(request) = self.recv_request(true) {
 			if let Request::Configured = request {
 				self.send_or_disconnect(Response::Ack);
 				break;
@@ -1143,87 +1194,131 @@ impl Server {
 	}
 
 	fn send_or_disconnect(&mut self, response: Response) {
-		match self.stream {
-			ServerStream::Connected(_) => match self.send(response) {
-				Ok(_) => {}
-				Err(e) => {
-					eprintln!("Debug server failed to send message: {}", e);
-					self.disconnect();
-				}
-			},
+		// Nobody to tell. An earlier send on this connection failed, or the
+		// client left while we were busy.
+		let Some(stream) = &mut self.stream else {
+			return;
+		};
 
-			ServerStream::Waiting(_) | ServerStream::Disconnected => {
-				unreachable!("Debug Server is not connected")
-			}
+		if let Err(e) = Self::send(stream, &response) {
+			eprintln!("Debug server failed to send message: {}", e);
+			self.disconnect();
 		}
 	}
 
 	fn disconnect(&mut self) {
-		if let ServerStream::Connected(stream) = &mut self.stream {
+		if let Some(mut stream) = self.stream.take() {
 			eprintln!("Debug server disconnecting");
-			let data = bincode::serialize(&Response::Disconnect).unwrap();
-			let _ = stream.write_all(&(data.len() as u32).to_le_bytes());
-			let _ = stream.write_all(&data[..]);
-			let _ = stream.flush();
+			let _ = Self::send(&mut stream, &Response::Disconnect);
 			let _ = stream.shutdown(std::net::Shutdown::Both);
+
+			// On Windows a shutdown stops later reads, but the one the
+			// networking thread is already sat in waits for the client to hang
+			// up too. Server::drop joins that thread, so don't leave it up to
+			// the client.
+			#[cfg(windows)]
+			unsafe {
+				use std::os::windows::io::AsRawSocket;
+				winapi::um::ioapiset::CancelIoEx(stream.as_raw_socket() as _, std::ptr::null_mut());
+			}
 		}
 
-		self.stream = ServerStream::Disconnected;
+		// Whoever connects next sets up their own breakpoints. Until then the
+		// old ones would only slow down the procs they sit in.
+		self.conditional_breakpoints.clear();
+		self.should_catch_runtimes = true;
+		unhook_all();
 	}
 
-	fn send(&mut self, response: Response) -> Result<(), Box<dyn std::error::Error>> {
-		if let ServerStream::Connected(stream) = &mut self.stream {
-			let data = bincode::serialize(&response)?;
-			stream.write_all(&(data.len() as u32).to_le_bytes())?;
-			stream.write_all(&data[..])?;
-			stream.flush()?;
-			return Ok(());
-		}
-
-		unreachable!();
+	fn send(stream: &mut TcpStream, response: &Response) -> Result<(), Box<dyn Error>> {
+		let data = bincode::serialize(response)?;
+		stream.write_all(&(data.len() as u32).to_le_bytes())?;
+		stream.write_all(&data[..])?;
+		stream.flush()?;
+		Ok(())
 	}
 }
 
 impl Drop for Server {
 	fn drop(&mut self) {
 		self.disconnect();
+
+		let Some(listen_addr) = self.listen_addr else {
+			return;
+		};
+
+		// The listener thread sits in accept() holding the port, and after a
+		// world reboot the next Server wants that port. Connecting is the only
+		// way to get it out of accept() so it can see the stop flag.
+		self.stop.store(true, Ordering::Relaxed);
+		if TcpStream::connect(listen_addr).is_err() {
+			return;
+		}
+
+		// A debug-client the thread accepted but we never got told about is
+		// still in the queue, and the thread is stuck reading from it. Hang up
+		// on whoever turns up. The channel closes once the thread is gone.
+		while let Ok(event) = self.events.recv() {
+			if let Event::Connected(stream) = event {
+				self.stream = Some(stream);
+				self.disconnect();
+			}
+		}
+
+		if let Some(thread) = self.thread.take() {
+			let _ = thread.join();
+		}
 	}
 }
 
 impl ServerThread {
-	fn spawn_listener(self, listener: TcpListener, connection_sender: mpsc::Sender<TcpStream>) -> JoinHandle<()> {
-		thread::spawn(move || match listener.accept() {
-			Ok((stream, _)) => {
-				match connection_sender.send(stream.try_clone().unwrap()) {
-					Ok(_) => {}
-					Err(e) => {
-						eprintln!("Debug server thread failed to pass cloned TcpStream: {}", e);
-						return;
-					}
+	fn spawn_listener(self, listener: TcpListener, stop: Arc<AtomicBool>) -> JoinHandle<()> {
+		thread::spawn(move || loop {
+			let stream = match listener.accept() {
+				Ok((stream, _)) => stream,
+
+				Err(e) => {
+					eprintln!("Debug server failed to accept connection: {}", e);
+					return;
 				}
+			};
 
-				self.run(stream);
+			// That was Server::drop knocking, not a debug-client
+			if stop.load(Ordering::Relaxed) {
+				return;
 			}
 
-			Err(e) => {
-				eprintln!("Debug server failed to accept connection: {}", e);
+			let cloned_stream = match stream.try_clone() {
+				Ok(cloned_stream) => cloned_stream,
+
+				Err(e) => {
+					eprintln!("Debug server thread failed to clone TcpStream: {}", e);
+					continue;
+				}
+			};
+
+			if let Err(e) = self.events.send(Event::Connected(cloned_stream)) {
+				eprintln!("Debug server thread failed to pass cloned TcpStream: {}", e);
+				return;
 			}
+
+			self.run(stream);
 		})
 	}
 
 	// returns true if we should disconnect
-	fn handle_request(&mut self, data: &[u8]) -> Result<bool, Box<dyn Error>> {
+	fn handle_request(&self, data: &[u8]) -> Result<bool, Box<dyn Error>> {
 		let request = bincode::deserialize::<Request>(data)?;
 
 		if let Request::Disconnect = request {
 			return Ok(true);
 		}
 
-		self.requests.send(request)?;
+		self.events.send(Event::Request(request))?;
 		Ok(false)
 	}
 
-	fn run(mut self, mut stream: TcpStream) {
+	fn run(&self, mut stream: TcpStream) {
 		let mut buf = vec![];
 
 		// The incoming stream is a u32 followed by a bincode-encoded Request.
@@ -1237,6 +1332,11 @@ impl ServerThread {
 					break;
 				}
 			};
+
+			if len > MAX_REQUEST_LEN {
+				eprintln!("Debug server thread got a {} byte request, which is too big to be real", len);
+				break;
+			}
 
 			buf.resize(len as usize, 0);
 			match stream.read_exact(&mut buf) {
@@ -1263,6 +1363,55 @@ impl ServerThread {
 			}
 		}
 
-		eprintln!("Debug server thread finished");
+		// We can stop reading for reasons the other end doesn't know about
+		let _ = stream.shutdown(std::net::Shutdown::Both);
+		let _ = self.events.send(Event::Disconnected);
+
+		eprintln!("Debug client connection closed");
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::{
+		net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
+		sync::mpsc,
+		thread,
+		time::Duration
+	};
+
+	use super::Server;
+
+	#[test]
+	fn drop_stops_a_listener_on_a_port_the_os_picked() {
+		let server = Server::listen(&SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).unwrap();
+		// The listener thread holds the only other copy, until it exits
+		let stop = server.stop.clone();
+
+		drop(server);
+		assert_eq!(std::sync::Arc::strong_count(&stop), 1, "the listener thread outlived the server");
+	}
+
+	#[test]
+	fn drop_hangs_up_on_a_client_it_never_processed() {
+		let port = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port();
+		let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+		let (done, dropped) = mpsc::channel();
+
+		// A hung drop never returns, so it gets its own thread to be stuck on
+		thread::spawn(move || {
+			let server = Server::listen(&addr).unwrap();
+			let _client = TcpStream::connect(addr).unwrap();
+			// Long enough for the networking thread to start reading from the
+			// client. Nothing here tells the server it connected.
+			thread::sleep(Duration::from_millis(200));
+
+			drop(server);
+			let _ = done.send(());
+		});
+
+		dropped
+			.recv_timeout(Duration::from_secs(5))
+			.expect("dropping the server hung on a client that was still connected");
 	}
 }

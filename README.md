@@ -13,6 +13,14 @@ Debug Server - Working with SpaceManiac's [SpacemanDMM](https://github.com/Space
 
 *Dissassembly*  - When currently stopped at a breakpoint, enter the `#dis` command into the Debug Console in VSC to see the DM bytecode for the current proc. You can also provide it any arbitrary proc path like `#dis /mob/proc/Life`.
 
+## Supported BYOND versions
+
+516.1659 through 516.1688 on Windows, and 516.1664 through 516.1688 on Linux. Those are the builds the patterns that find BYOND's functions were checked against. A newer build is still tried, and fails at init with the name of whatever stopped matching. An older build, or another major version, is refused at init with an error that names the build.
+
+The patterns are run by [byond-scan](https://github.com/Absolucy/byond-scan) and live in `auxtools/src/symbols/`. They are copies of the ones in the byond-re repo's `byond_catalog`, which checks each against every local build, so a change to one has to land in both.
+
+What was run on Linux (516.1687): the `auxtest` suite, and `debug_test`, which sets breakpoints, evaluates expressions and re-attaches through a stand-in for the debugger. The code coverage tool's report was checked on Windows and Linux 1687 against a world with a known set of lines. Stepping and breakpoints with a real debugger attached were not tested on either platform.
+
 ## Dependencies
 
 *These instructions were taken directly from tgstation's [rust-g](https://github.com/tgstation/rust-g) documentation.*
@@ -67,7 +75,7 @@ Linux:
 ```sh
 export PKG_CONFIG_ALLOW_CROSS=1
 cargo build --release --target i686-unknown-linux-gnu
-# output: target/i686-unknown-linux-gnu/release/libauxtools.so
+# output: target/i686-unknown-linux-gnu/release/libauxtools.so,libdebug_server.so,libauxcov.so
 ```
 
 Windows:

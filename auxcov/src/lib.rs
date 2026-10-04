@@ -2,8 +2,6 @@
 
 mod codecov;
 
-use std::any::{Any, TypeId};
-
 use auxtools::*;
 use codecov::Tracker;
 use instruction_hooking::INSTRUCTION_HOOKS;
@@ -15,14 +13,13 @@ where
 	unsafe {
 		let hooks = INSTRUCTION_HOOKS.get_mut();
 
-		let tracker_tid = TypeId::of::<Tracker>();
-		let tracker_option = hooks.iter_mut().find(|hook| (*hook).as_ref().type_id() == tracker_tid);
+		// `type_id()` on the boxed hook itself would give the id of the trait
+		// object, never `Tracker`'s, so ask the hook for its concrete
+		// value as `Any` first.
+		let tracker_option = hooks.iter_mut().find_map(|hook| hook.as_mut().as_any().downcast_mut::<Tracker>());
 
 		match tracker_option {
-			Some(existing_hook) => {
-				let mut_hook = existing_hook.as_mut();
-				let any_hook = mut_hook.as_any();
-				let existing_tracker = any_hook.downcast_mut::<Tracker>().unwrap();
+			Some(existing_tracker) => {
 				f(existing_tracker);
 			}
 			None => {
