@@ -27,8 +27,8 @@ pub struct AssociativeListEntry {
 #[repr(C)]
 pub struct Alist {
 	pub root: *mut AssociativeListEntry,
-	// starts at 1 and nobody has worked out what it is
-	unknown: u32
+	/// A new alist starts at 1, not 0.
+	pub refcount: u32
 }
 
 #[repr(C)]
