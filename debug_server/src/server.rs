@@ -805,6 +805,25 @@ impl Server {
 	}
 
 	fn eval_expr(&mut self, frame_id: Option<u32>, command: &str) -> Option<Value> {
+		// Assembling the expression runs DM code of its own to look up
+		// typepaths and resources, so it counts as eval code too. Otherwise the
+		// instruction hook would handle the client's next request in the middle
+		// of this one, and a runtime would pause inside the pause we're in.
+		self.in_eval = true;
+		self.eval_error = None;
+
+		let result = self.compile_and_run_expr(frame_id, command);
+
+		self.in_eval = false;
+
+		if let Some(err) = self.eval_error.take() {
+			self.notify(format!("runtime occured when executing expression: {}", err));
+		}
+
+		result
+	}
+
+	fn compile_and_run_expr(&mut self, frame_id: Option<u32>, command: &str) -> Option<Value> {
 		enum ArgType {
 			Dot,
 			Usr,
@@ -875,10 +894,7 @@ impl Server {
 
 		proc.set_bytecode(assembly);
 
-		self.in_eval = true;
-		self.eval_error = None;
-
-		let result = match proc.call(&arg_values) {
+		match proc.call(&arg_values) {
 			Ok(res) => {
 				if let Ok(list) = res.as_list() {
 					// The rest are the potentially mutated parameters. We need
@@ -932,15 +948,7 @@ impl Server {
 				self.notify(format!("Value::call failed when evaluating expression {}", command));
 				None
 			}
-		};
-
-		self.in_eval = false;
-
-		if let Some(err) = self.eval_error.take() {
-			self.notify(format!("runtime occured when executing expression: {}", err));
 		}
-
-		result
 	}
 
 	fn handle_eval(&mut self, frame_id: Option<u32>, command: &str, context: Option<String>) {
