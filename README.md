@@ -69,7 +69,16 @@ System libraries:
 ## Compiling
 
 The [Cargo] tool handles compilation, as well as automatically downloading and
-compiling all Rust dependencies. To compile in release mode (recommended for speed):
+compiling all Rust dependencies.
+
+First, once: dmasm needs SpacemanDMM's parser with some fixes that aren't released yet.
+This clones it next to this repository, at `../SpacemanDMM`, and applies them:
+
+```sh
+scripts/setup-spacemandmm.sh
+```
+
+To compile in release mode (recommended for speed):
 
 Linux:
 ```sh

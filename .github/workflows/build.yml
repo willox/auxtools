@@ -37,6 +37,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install libgcc-s1:i386 g++-multilib zlib1g-dev:i386 libssl-dev:i386
 
+      # dmasm's parser fixes for dreammaker, at ../SpacemanDMM
+      - name: Set up SpacemanDMM
+        shell: bash
+        run: scripts/setup-spacemandmm.sh
+
       - name: Build
         run: cargo build --target=${{ matrix.os.target }} --release --verbose
         env:

@@ -13,8 +13,13 @@ version = "0.1.0"
 [workspace.dependencies]
 lazy_static = "1"
 retour = { version = "=0.4.0-alpha.4", default-features = false }
-dmasm = { git = "https://github.com/willox/dmasm" }
+dmasm = { git = "https://github.com/sohpea-cloub/dmasm", branch = "proc-compilation" }
 byond-scan = { git = "https://github.com/Absolucy/byond-scan" }
+
+# dmasm's proc compiler needs parser fixes that aren't in a SpacemanDMM
+# release yet; scripts/setup-spacemandmm.sh makes this checkout
+[patch."https://github.com/SpaceManiac/SpacemanDMM"]
+dreammaker = { path = "../SpacemanDMM/crates/dreammaker" }
 
 [workspace.lints.rust]
 static_mut_refs = "allow"
