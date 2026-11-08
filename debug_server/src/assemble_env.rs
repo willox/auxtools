@@ -2,6 +2,27 @@ use auxtools::*;
 
 pub struct AssembleEnv;
 
+impl AssembleEnv {
+	// Runs `code` in the expression stub with `name` set to `arg` and returns
+	// what it evaluates to
+	fn eval_with_name(code: &str, arg: &str) -> Option<Value> {
+		let arg = Value::from_string(arg).ok()?;
+		let expr = dmasm::compiler::compile_expr(code, &["name"]).unwrap();
+		let assembly = dmasm::assembler::assemble(&expr, &mut Self).unwrap();
+
+		let proc = Proc::find("/proc/auxtools_expr_stub")?;
+		proc.set_bytecode(assembly);
+
+		let res = proc.call(&[&arg]).ok()?.as_list().ok()?.get(1).ok()?;
+
+		if res == Value::NULL {
+			return None;
+		}
+
+		Some(res)
+	}
+}
+
 impl dmasm::assembler::AssembleEnv for AssembleEnv {
 	fn get_string_index(&mut self, string: &[u8]) -> Option<u32> {
 		let string = StringRef::from_raw(string).ok()?;
@@ -38,19 +59,26 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 
 	// This is... pretty crazy
 	fn get_type(&mut self, path: &str) -> Option<(u8, u32)> {
-		let path = Value::from_string(path).ok()?;
-		let expr = dmasm::compiler::compile_expr("text2path(name)", &["name"]).unwrap();
-		let assembly = dmasm::assembler::assemble(&expr, &mut Self).unwrap();
+		// text2path() returns null for these two
+		match path {
+			"/list" => return Some((raw_types::values::ValueTag::ListTypepath as u8, 0)),
+			"/savefile" => return Some((raw_types::values::ValueTag::SaveFileTypepath as u8, 0)),
+			_ => {}
+		}
 
-		let proc = Proc::find("/proc/auxtools_expr_stub")?;
-		proc.set_bytecode(assembly);
+		let res = Self::eval_with_name("text2path(name)", path)?;
+		Some((res.raw.tag as u8, unsafe { res.raw.data.id }))
+	}
 
-		let res = proc.call(&[&path]).unwrap().as_list().unwrap().get(1).unwrap();
+	// fcopy_rsc() hands back the cache entry a file already has, and adds the
+	// file to the cache if it isn't there yet
+	fn get_resource_index(&mut self, path: &str) -> Option<u32> {
+		let res = Self::eval_with_name("fcopy_rsc(name)", path)?;
 
-		if res == Value::NULL {
+		if res.raw.tag != raw_types::values::ValueTag::Resource {
 			return None;
 		}
 
-		Some((res.raw.tag as u8, unsafe { res.raw.data.id }))
+		Some(unsafe { res.raw.data.id })
 	}
 }
