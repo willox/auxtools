@@ -637,6 +637,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "debug_client"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "dmasm",
+ "serde",
+]
+
+[[package]]
 name = "debug_server"
 version = "2.4.0"
 dependencies = [

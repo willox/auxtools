@@ -1,0 +1,14 @@
+[package]
+name = "debug_client"
+version = "0.1.0"
+publish = false
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
+dmasm = { workspace = true }
+
+[lints]
+workspace = true
