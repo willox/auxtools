@@ -637,6 +637,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "debug_client"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "dmasm",
+ "serde",
+]
+
+[[package]]
 name = "debug_server"
 version = "2.4.0"
 dependencies = [
@@ -746,7 +755,7 @@ dependencies = [
 [[package]]
 name = "dmasm"
 version = "0.1.0"
-source = "git+https://github.com/willox/dmasm#6cec0e9a60cb3b3a056daca8c791d36795185154"
+source = "git+https://github.com/willox/dmasm#4f712bd5bef94dd4424bd9ffccf9866322f4a51d"
 dependencies = [
  "bitflags 2.13.2",
  "dreammaker",
