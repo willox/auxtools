@@ -6,6 +6,7 @@
 use std::{
 	cell::{Cell, RefCell},
 	collections::{HashMap, HashSet},
+	ffi::{OsStr, OsString},
 	path::{Path, PathBuf},
 	sync::{mpsc, Arc},
 	time::{Duration, Instant, SystemTime}
@@ -20,6 +21,8 @@ use crate::{adapter::Input, dap::Output};
 
 /// How often to look for changed files
 const INTERVAL: Duration = Duration::from_millis(500);
+/// Limit polling to 1 / LOOKING_SHARE of the worker's time.
+const LOOKING_SHARE: u32 = 5;
 
 pub struct Options {
 	pub dme: PathBuf,
@@ -116,7 +119,7 @@ struct Watching {
 	dmb_modified: Option<SystemTime>,
 	/// Current running source when it differs from `built`.
 	applied: Option<Snapshot>,
-	modified: HashMap<PathBuf, Option<SystemTime>>
+	files: Watched
 }
 
 impl Code {
@@ -158,7 +161,7 @@ impl Code {
 
 		let files = files(&built, &self.options.dme);
 		let mut watching = Watching {
-			modified: modified_times(&self.root, &files),
+			files: Watched::new(&self.root, &files),
 			dmb_modified: self.dmb_modified(),
 			edited_since_built: HashSet::new(),
 			applied: None,
@@ -187,7 +190,8 @@ impl Code {
 
 	fn watch(&self, watching: &mut Watching) {
 		loop {
-			match self.commands.recv_timeout(INTERVAL) {
+			let wait = INTERVAL.max(watching.files.took * (LOOKING_SHARE - 1));
+			match self.commands.recv_timeout(wait) {
 				Ok(Command::Connected { .. }) => self.reconnected.set(true),
 				Ok(Command::Reloaded(_)) => {}
 				Err(mpsc::RecvTimeoutError::Disconnected) => return,
@@ -207,7 +211,7 @@ impl Code {
 
 	/// Reload disk changes. Returns false if the adapter disconnected.
 	fn look(&self, watching: &mut Watching) -> bool {
-		let mut changed = changed_files(&self.root, &mut watching.modified);
+		let mut changed = watching.files.changed(&self.root);
 		if changed.is_empty() {
 			return true;
 		}
@@ -215,7 +219,7 @@ impl Code {
 		// Editors save in steps, and a checkout touches many files
 		loop {
 			std::thread::sleep(Duration::from_millis(200));
-			let more = changed_files(&self.root, &mut watching.modified);
+			let more = watching.files.changed(&self.root);
 			if more.is_empty() {
 				break;
 			}
@@ -271,7 +275,7 @@ impl Code {
 
 		// A file the new parse includes for the first time
 		for file in files(&new, &self.options.dme) {
-			watching.modified.entry(file.clone()).or_insert_with(|| modified_time(&self.root, &file));
+			watching.files.add(&self.root, &file);
 		}
 
 		match self.reload(&changes, &new) {
@@ -557,21 +561,106 @@ fn modified_time(root: &Path, file: &Path) -> Option<SystemTime> {
 	std::fs::metadata(root.join(file)).and_then(|m| m.modified()).ok()
 }
 
-fn modified_times(root: &Path, files: &[PathBuf]) -> HashMap<PathBuf, Option<SystemTime>> {
-	files.iter().map(|file| (file.clone(), modified_time(root, file))).collect()
+/// Watched files and their modification times, grouped by directory.
+/// Windows directory listings include timestamps, avoiding a file open
+/// for every timestamp check.
+#[derive(Default)]
+struct Watched {
+	/// Root-relative directories, with filenames normalized by `listed`.
+	dirs: HashMap<PathBuf, HashMap<OsString, Vec<PathBuf>>>,
+	times: HashMap<PathBuf, Option<SystemTime>>,
+	/// Duration of the last poll.
+	took: Duration
 }
 
-/// Files changed since we last looked
-fn changed_files(root: &Path, modified: &mut HashMap<PathBuf, Option<SystemTime>>) -> HashSet<PathBuf> {
-	let files: Vec<PathBuf> = modified.keys().cloned().collect();
-	let now = modified_times(root, &files);
-	let changed = now
-		.iter()
-		.filter(|(file, time)| modified.get(*file) != Some(time))
-		.map(|(file, _)| file.clone())
-		.collect();
-	*modified = now;
-	changed
+impl Watched {
+	fn new(root: &Path, files: &[PathBuf]) -> Self {
+		let mut watched = Self::default();
+		for file in files {
+			watched.insert(file);
+		}
+		// Record initial timestamps using the same lookup as later polls.
+		watched.changed(root);
+		watched
+	}
+
+	/// Start watching `file` if it is not already tracked.
+	fn add(&mut self, root: &Path, file: &Path) {
+		let Some((dir, name)) = self.insert(file) else {
+			return;
+		};
+		let names = &self.dirs[&dir];
+		let time = listed_times(&root.join(&dir), names)
+			.get(&name)
+			.copied()
+			.unwrap_or_else(|| modified_time(root, file));
+		self.times.insert(file.to_owned(), time);
+	}
+
+	/// Register `file` without a timestamp. Return its directory and normalized
+	/// name, or `None` if already tracked.
+	fn insert(&mut self, file: &Path) -> Option<(PathBuf, OsString)> {
+		if self.times.contains_key(file) {
+			return None;
+		}
+		let dir = file.parent().map(Path::to_owned).unwrap_or_default();
+		let name = file.file_name().map(listed).unwrap_or_default();
+		self.dirs
+			.entry(dir.clone())
+			.or_default()
+			.entry(name.clone())
+			.or_default()
+			.push(file.to_owned());
+		self.times.insert(file.to_owned(), None);
+		Some((dir, name))
+	}
+
+	/// Files changed since the last poll.
+	fn changed(&mut self, root: &Path) -> HashSet<PathBuf> {
+		let started = Instant::now();
+		let mut changed = HashSet::new();
+		for (dir, names) in &self.dirs {
+			let listed = listed_times(&root.join(dir), names);
+			for (name, files) in names {
+				for file in files {
+					// Fall back to metadata for missing or unmatched entries.
+					let time = listed.get(name).copied().unwrap_or_else(|| modified_time(root, file));
+					if let Some(was) = self.times.get_mut(file).filter(|was| **was != time) {
+						*was = time;
+						changed.insert(file.clone());
+					}
+				}
+			}
+		}
+		self.took = started.elapsed();
+		changed
+	}
+}
+
+/// Read watched timestamps from a Windows directory listing. Return an empty
+/// map elsewhere, where listings would require a metadata lookup per file.
+fn listed_times<'a>(dir: &Path, names: &'a HashMap<OsString, Vec<PathBuf>>) -> HashMap<&'a OsString, Option<SystemTime>> {
+	let Some(entries) = cfg!(windows).then(|| std::fs::read_dir(dir).ok()).flatten() else {
+		return HashMap::new();
+	};
+	entries
+		.flatten()
+		// Use target metadata for symlinks, not the link timestamp.
+		.filter(|entry| entry.file_type().is_ok_and(|kind| !kind.is_symlink()))
+		.filter_map(|entry| {
+			let (name, _) = names.get_key_value(&listed(&entry.file_name()))?;
+			Some((name, entry.metadata().and_then(|m| m.modified()).ok()))
+		})
+		.collect()
+}
+
+/// Normalize filenames for case-insensitive matching on Windows.
+fn listed(name: &OsStr) -> OsString {
+	if cfg!(windows) {
+		name.to_string_lossy().to_lowercase().into()
+	} else {
+		name.to_owned()
+	}
 }
 
 /// Preprocessor and BYOND defines excluded from source macro exports.
@@ -634,5 +723,63 @@ pub fn parse_define(define: &str) -> (String, Option<String>) {
 	match define.split_once('=') {
 		Some((name, value)) => (name.to_owned(), Some(value.to_owned())),
 		None => (define.to_owned(), None)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::time::{Duration, SystemTime};
+
+	use super::*;
+
+	#[test]
+	fn changed_files_are_found_by_their_directories() {
+		let root = std::env::temp_dir().join(format!("auxtools-watched-{}", std::process::id()));
+		let _ = std::fs::remove_dir_all(&root);
+		let at = |seconds: u64| SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000 + seconds);
+		let write = |path: &str, time: SystemTime| {
+			let path = root.join(path);
+			std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+			std::fs::write(&path, "").unwrap();
+			std::fs::File::options().write(true).open(&path).unwrap().set_modified(time).unwrap();
+		};
+		for file in ["world.dme", "code/a.dm", "code/b.dm", "code/sub/c.dm"] {
+			write(file, at(0));
+		}
+		let files: Vec<PathBuf> = ["world.dme", "code/a.dm", "code/b.dm", "code/sub/c.dm", "code/new.dm"]
+			.iter()
+			.map(PathBuf::from)
+			.collect();
+		let mut watched = Watched::new(&root, &files);
+		let changed = |watched: &mut Watched| {
+			let mut changed: Vec<String> = watched.changed(&root).iter().map(|f| f.to_string_lossy().into_owned()).collect();
+			changed.sort();
+			changed
+		};
+		assert_eq!(changed(&mut watched), Vec::<String>::new());
+
+		// Modified, created and deleted files.
+		write("code/b.dm", at(5));
+		write("code/sub/c.dm", at(5));
+		write("code/new.dm", at(5));
+		assert_eq!(changed(&mut watched), ["code/b.dm", "code/new.dm", "code/sub/c.dm"]);
+		assert_eq!(changed(&mut watched), Vec::<String>::new());
+		std::fs::remove_file(root.join("code/a.dm")).unwrap();
+		assert_eq!(changed(&mut watched), ["code/a.dm"]);
+
+		// A file discovered by a later parse.
+		write("code/later.dm", at(0));
+		watched.add(&root, Path::new("code/later.dm"));
+		assert_eq!(changed(&mut watched), Vec::<String>::new());
+		write("code/later.dm", at(9));
+		assert_eq!(changed(&mut watched), ["code/later.dm"]);
+
+		// Track differently cased paths to the same Windows file.
+		if cfg!(windows) {
+			watched.add(&root, Path::new("code/SUB/C.dm"));
+			write("code/sub/c.dm", at(12));
+			assert_eq!(changed(&mut watched), ["code/SUB/C.dm", "code/sub/c.dm"]);
+		}
+		let _ = std::fs::remove_dir_all(&root);
 	}
 }
