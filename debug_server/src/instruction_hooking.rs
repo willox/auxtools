@@ -94,9 +94,7 @@ fn get_proc_ctx(stack_id: u32) -> *mut raw_types::procs::ExecutionContext {
 
 	unsafe {
 		let buffer = (*raw_types::funcs::SUSPENDED_PROCS_BUFFER).buffer;
-		let procs = raw_types::funcs::SUSPENDED_PROCS;
-		let front = (*procs).front;
-		let back = (*procs).back;
+		let std::ops::Range { start: front, end: back } = raw_types::funcs::suspended_range();
 
 		// bad default
 		if back - front < stack_id as usize {
@@ -166,12 +164,9 @@ fn proc_instance_is_in_stack(mut ctx: *mut raw_types::procs::ExecutionContext, p
 fn proc_instance_is_suspended(proc_ref: ProcInstanceRef) -> bool {
 	unsafe {
 		let buffer = (*raw_types::funcs::SUSPENDED_PROCS_BUFFER).buffer;
-		let procs = raw_types::funcs::SUSPENDED_PROCS;
-		let front = (*procs).front;
-		let back = (*procs).back;
 		let mut found = false;
 
-		for x in front..back {
+		for x in raw_types::funcs::suspended_range() {
 			let instance = *buffer.add(x);
 
 			if proc_instance_is_in_stack((*instance).context, proc_ref) {

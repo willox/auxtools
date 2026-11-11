@@ -144,7 +144,9 @@ pub struct ExecutionContext {
 	caller_chain_preserve_depth: u8,
 	background: u8,
 	exception_state: u8,
-	throw_handler: u32,
+	// the `try` blocks the proc is inside, innermost first: null when it's in
+	// none
+	pub throw_handler: u32,
 	// timevals. The last is the deadline a background proc's loops run against
 	time_now: [u32; 2],
 	cpu_clock_init: [u32; 2],

@@ -36,3 +36,8 @@ lto = 'thin'
 codegen-units = 1
 incremental = true
 debug = true
+
+# Finding BYOND's functions scans its code once per pattern, which takes tens
+# of seconds unoptimised, at the start of every world a dev build debugs
+[profile.dev.package.byond-scan]
+opt-level = 3

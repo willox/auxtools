@@ -39,9 +39,9 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 		let id = self.get_string_index(name)?;
 
 		unsafe {
-			let mut names = (*raw_types::funcs::VARIABLE_NAMES).entries;
+			let mut names = *raw_types::funcs::VARIABLE_NAME_ENTRIES;
 
-			for i in 0..(*raw_types::funcs::VARIABLE_NAMES).count {
+			for i in 0..*raw_types::funcs::VARIABLE_NAME_COUNT {
 				if (*names).0 == id {
 					return Some(i);
 				}

@@ -17,7 +17,10 @@ static mut BYTECODE_ALLOCATIONS: UnsafeCell<Option<State>> = UnsafeCell::new(Non
 
 struct State {
 	allocations: HashSet<Vec<u32>>,
-	original: HashMap<raw_types::procs::ProcId, (*mut u32, u16)>
+	original: HashMap<raw_types::procs::ProcId, (*mut u32, u16)>,
+	// Retired bytecode buffers indexed by address. Active frames continue
+	// executing the buffer they started with.
+	remembered: HashMap<usize, Vec<u32>>
 }
 
 pub fn init() {
@@ -25,7 +28,8 @@ pub fn init() {
 		let ptr = BYTECODE_ALLOCATIONS.get();
 		*ptr = Some(State {
 			allocations: HashSet::new(),
-			original: HashMap::new()
+			original: HashMap::new(),
+			remembered: HashMap::new()
 		});
 	}
 }
@@ -71,17 +75,39 @@ pub fn shutdown() {
 	}
 }
 
+fn state() -> &'static mut State {
+	unsafe { (*BYTECODE_ALLOCATIONS.get()).as_mut().unwrap() }
+}
+
+fn remember_original(state: &mut State, proc: &Proc) {
+	state.original.entry(proc.id).or_insert_with(|| unsafe { proc.bytecode_mut_ptr() });
+}
+
+/// Keeps a copy of bytecode that a proc is about to stop using, for
+/// [`bytecode_at`].
+pub fn remember_bytecode(ptr: *const u32, bytecode: &[u32]) {
+	state().remembered.entry(ptr as usize).or_insert_with(|| bytecode.to_vec());
+}
+
+/// Copy current or retained bytecode at `ptr`. Includes original code and
+/// buffers replaced by reloads, which active frames may still execute.
+pub fn bytecode_at(ptr: *const u32) -> Option<Vec<u32>> {
+	let state = state();
+
+	if let Some(bytecode) = state.remembered.get(&(ptr as usize)) {
+		return Some(bytecode.clone());
+	}
+
+	if let Some(&(original, len)) = state.original.values().find(|(original, _)| std::ptr::eq(*original, ptr)) {
+		return Some(unsafe { std::slice::from_raw_parts(original, len as usize) }.to_vec());
+	}
+
+	state.allocations.iter().find(|bytecode| bytecode.as_ptr() == ptr).cloned()
+}
+
 pub fn set_bytecode(proc: &Proc, mut bytecode: Vec<u32>) {
-	let state = unsafe {
-		let ptr = BYTECODE_ALLOCATIONS.get();
-		(*ptr).as_mut().unwrap()
-	};
-
-	state.original.entry(proc.id).or_insert_with(|| {
-		let (ptr, len) = unsafe { proc.bytecode_mut_ptr() };
-
-		(ptr, len)
-	});
+	let state = state();
+	remember_original(state, proc);
 
 	let (ptr, len) = {
 		let len = bytecode.len();
