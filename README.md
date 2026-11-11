@@ -88,7 +88,7 @@ The [Rust] compiler:
 
     ```sh
     # Clone the `auxtools` repository to a directory of your choice
-    git clone https://github.com/willox/auxtools
+    git clone https://github.com/auxtools/auxtools
     # in the `auxtools` directory...
     cd auxtools
     # Linux
@@ -159,6 +159,16 @@ BYOND test archives come from the [BYOND build mirror](https://byond-builds.dm-l
 | `auxtools-windows.zip` | Launcher and debug library |
 | `auxtools-windows-symbols.zip` | `auxtools-cli.pdb`, `debug_server.pdb` |
 | `auxtools-VERSION.vsix` | VS Code extension with Linux and Windows binaries |
+
+## Releasing
+
+Run **Actions > Release > Run workflow** on `master` and enter a version such
+as `3.0.0`. The workflow builds and tests that version before publishing the
+GitHub release and `sohpea.auxtools` extension.
+
+It creates a `vVERSION` tag and advances `master` to the next patch's `-dev`
+version. Publishing uses the `release` environment and Marketplace Trusted
+Publishing. See [release.yml](.github/workflows/release.yml) for setup.
 
 [Rust]: https://rust-lang.org
 [Cargo]: https://doc.rust-lang.org/cargo

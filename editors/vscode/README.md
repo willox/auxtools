@@ -1,6 +1,6 @@
-# auxtools Debugger (Beta)
+# auxtools Debugger
 
-Debug BYOND worlds in VS Code with [auxtools](https://github.com/willox/auxtools).
+Debug BYOND worlds in VS Code with [auxtools](https://github.com/auxtools/auxtools).
 Supports breakpoints, stepping, runtime errors, sleeping proc stacks, variable
 inspection, expression evaluation, disassembly and experimental hot reload.
 

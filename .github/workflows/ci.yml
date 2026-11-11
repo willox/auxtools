@@ -5,12 +5,21 @@ name: CI
 #
 # Run automatically for repositories owned by willox or auxtools. Other forks
 # can start a run through Actions > CI > Run workflow.
+#
+# release.yml supplies release.bundle to build and test a release without
+# restoring the crate or Windows SDK caches.
 
 on:
   push:
     branches: [master]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: Release version; its tag must be in release.bundle
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -54,6 +63,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Download the release commits
+        if: inputs.version
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release.bundle
+          path: ${{ runner.temp }}
+
+      - name: Check out the release commit
+        if: inputs.version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git fetch --no-tags "$RUNNER_TEMP/release.bundle" "refs/tags/v$VERSION:refs/tags/v$VERSION"
+          git checkout --detach "v$VERSION"
+
       - name: Install the 32-bit compiler
         run: |
           sudo apt-get update
@@ -65,6 +89,7 @@ jobs:
           rustup default "$RUST_VERSION"
 
       - name: Restore downloaded crates
+        if: ${{ !inputs.version }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -129,6 +154,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Download the release commits
+        if: inputs.version
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release.bundle
+          path: ${{ runner.temp }}
+
+      - name: Check out the release commit
+        if: inputs.version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git fetch --no-tags "$RUNNER_TEMP/release.bundle" "refs/tags/v$VERSION:refs/tags/v$VERSION"
+          git checkout --detach "v$VERSION"
+
       - name: Install LLVM's tools
         run: |
           sudo apt-get update
@@ -140,6 +180,7 @@ jobs:
           rustup default "$RUST_VERSION"
 
       - name: Restore downloaded crates
+        if: ${{ !inputs.version }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -150,6 +191,7 @@ jobs:
           restore-keys: crates-windows-
 
       - name: Restore the Windows SDK
+        if: ${{ !inputs.version }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .msvc-sdk
@@ -326,6 +368,21 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the release commits
+        if: inputs.version
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release.bundle
+          path: ${{ runner.temp }}
+
+      - name: Check out the release commit
+        if: inputs.version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git fetch --no-tags "$RUNNER_TEMP/release.bundle" "refs/tags/v$VERSION:refs/tags/v$VERSION"
+          git checkout --detach "v$VERSION"
 
       - name: Download the Linux bundle
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

@@ -1,0 +1,7 @@
+{
+	"private": true,
+	"description": "Pinned vsce for Marketplace publishing",
+	"dependencies": {
+		"@vscode/vsce": "4.1.0"
+	}
+}

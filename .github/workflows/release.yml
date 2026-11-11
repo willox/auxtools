@@ -1,0 +1,189 @@
+name: Release
+
+# Run from master with a release version such as 3.0.0.
+#
+# Required setup:
+# - A release environment restricted to master.
+# - A Marketplace Trusted Publishing policy for publisher sohpea:
+#   repository auxtools/auxtools, workflow release.yml, environment release.
+# - Permission for the workflow token to push master and v* tags,
+#   including through any rulesets.
+#
+# The tag and master are pushed atomically. If master advances before the
+# push, start a new workflow run.
+#
+# Retry a failed Publish job to resume publishing. It skips this run's
+# already-pushed tag, preserves an existing GitHub release and skips an
+# extension version already in the Marketplace.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (e.g. 3.0.0)
+        required: true
+        type: string
+
+permissions: {}
+
+# Separate from the concurrency group in ci.yml.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check the branch
+        if: github.ref != 'refs/heads/master'
+        run: |
+          echo "::error::Release requires master; current ref: $GITHUB_REF"
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Marketplace releases require MAJOR.MINOR.PATCH without a prerelease suffix.
+      - name: Check the version
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          newer_or_equal() { [ "$(printf '%s\n' "$1" "$2" | sort -V | tail -n 1)" = "$1" ]; }
+
+          [[ $VERSION =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || fail "Invalid release version: $VERSION (expected MAJOR.MINOR.PATCH)"
+
+          current=$(ci/set-version.py)
+          newer_or_equal "$VERSION" "${current%-dev}" || fail "$VERSION is older than master's version, $current"
+
+          tags=$(git ls-remote --tags --refs origin | sed -n 's|.*refs/tags/v||p')
+          if grep -qxF "$VERSION" <<<"$tags"; then
+            fail "Tag v$VERSION already exists"
+          fi
+          latest=$(grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' <<<"$tags" | sort -V | tail -n 1) || true
+          if [ -n "$latest" ]; then
+            newer_or_equal "$VERSION" "$latest" || fail "$VERSION is older than the latest release, $latest"
+          fi
+
+      - name: Commit release and next development version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          ci/set-version.py "$VERSION"
+          git commit --quiet -am "Release $VERSION"
+          git tag -a "v$VERSION" -m "auxtools $VERSION"
+
+          IFS=. read -r major minor patch <<<"$VERSION"
+          next="$major.$minor.$((patch + 1))-dev"
+          ci/set-version.py "$next"
+          git commit --quiet -am "Start development on $next"
+          git branch dev
+
+          git log --stat -2
+          git bundle create "$RUNNER_TEMP/release.bundle" "^$GITHUB_SHA" "refs/tags/v$VERSION" refs/heads/dev
+
+      - name: Upload the release commits
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/release.bundle
+          archive: false
+          if-no-files-found: error
+
+  build:
+    name: Build and test
+    needs: prepare
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ inputs.version }}
+
+  release:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write # Push commits and create releases.
+      id-token: write # Marketplace Trusted Publishing.
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # Fail on tool installation before pushing release refs.
+      - name: Install vsce
+        run: npm ci --prefix ci/vsce --ignore-scripts --no-audit --no-fund
+
+      - name: Download the release commits
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release.bundle
+          path: ${{ runner.temp }}
+
+      - name: Download the Linux binaries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: auxtools-linux.tar.gz
+          path: dist
+
+      - name: Download Linux debug symbols
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: auxtools-linux-symbols.tar.gz
+          path: dist
+
+      - name: Download the Windows binaries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: auxtools-windows.zip
+          path: dist
+
+      - name: Download Windows debug symbols
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: auxtools-windows-symbols.zip
+          path: dist
+
+      - name: Download the extension
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: auxtools-${{ inputs.version }}.vsix
+          path: dist
+
+      - name: Push release tag and development commit
+        run: |
+          git fetch --no-tags "$RUNNER_TEMP/release.bundle" "refs/tags/v$VERSION:refs/tags/v$VERSION" refs/heads/dev:refs/heads/dev
+          git log --oneline -3 dev
+          # On retry, skip this run's completed push even if master has advanced.
+          if [ "$(git ls-remote --tags origin "refs/tags/v$VERSION" | cut -f 1)" = "$(git rev-parse "refs/tags/v$VERSION")" ]; then
+            echo "Tag v$VERSION already pushed"
+          else
+            git push --atomic origin "refs/tags/v$VERSION" refs/heads/dev:refs/heads/master
+          fi
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists"
+          else
+            gh release create "v$VERSION" dist/* --verify-tag --title "auxtools $VERSION" --generate-notes
+          fi
+
+      - name: Publish the extension to the Marketplace
+        run: ci/vsce/node_modules/.bin/vsce publish --oidc --skip-duplicate --packagePath "dist/auxtools-$VERSION.vsix"

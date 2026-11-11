@@ -1,13 +1,13 @@
 {
 	"name": "auxtools",
-	"displayName": "auxtools Debugger (Beta)",
+	"displayName": "auxtools Debugger",
 	"description": "Debug BYOND worlds with breakpoints, stepping, variable inspection and hot reload.",
 	"version": "3.0.0-dev",
-	"publisher": "auxtools",
+	"publisher": "sohpea",
 	"license": "GPL-3.0",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/willox/auxtools"
+		"url": "https://github.com/auxtools/auxtools"
 	},
 	"engines": {
 		"vscode": "^1.80.0"
