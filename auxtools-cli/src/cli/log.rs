@@ -94,7 +94,13 @@ pub fn wait_reboot(world: &mut World, since: Option<u64>, timeout: Option<Durati
 		if let JournalEvent::Loaded { .. } = entry.event {
 			// Wait for the launcher to release the newly loaded world before
 			// sending commands.
-			while !world.started()? {
+			loop {
+				match world.started(until)? {
+					Some(true) => break,
+					// An unlimited event wait still has response timeouts.
+					None if until.is_none() => return Err(world.unresponsive("respond")),
+					_ => {}
+				}
 				if until.is_some_and(|until| Instant::now() >= until) {
 					return Err(Failure(
 						TIMED_OUT,
@@ -204,7 +210,11 @@ impl World {
 	pub fn reconnect(&mut self, until: Option<Instant>) -> Result<()> {
 		loop {
 			if let Ok(world) = World::connect(self.pid) {
-				*self = world;
+				// Preserve output options and timeout settings across
+				// reconnects.
+				self.stream = world.stream;
+				self.received = world.received;
+				self.events.clear();
 				return Ok(());
 			}
 			if !local::alive(self.pid) {
@@ -223,11 +233,15 @@ impl World {
 
 impl World {
 	/// Whether the world has started executing rather than waiting for
-	/// launcher configuration.
-	pub fn started(&mut self) -> Result<bool> {
-		match self.request(Request::Uptime)? {
-			Response::Uptime { started, .. } => Ok(started),
-			other => Err(unexpected(&other))
+	/// launcher configuration. Return `None` if either the response timeout
+	/// or `until` expires.
+	pub fn started(&mut self, until: Option<Instant>) -> Result<Option<bool>> {
+		let patience = Instant::now() + self.patience;
+		let until = until.map_or(patience, |until| until.min(patience));
+		match self.request_by(Request::Uptime, until)? {
+			Some(Response::Uptime { started, .. }) => Ok(Some(started)),
+			Some(other) => Err(unexpected(&other)),
+			None => Ok(None)
 		}
 	}
 }

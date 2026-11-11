@@ -473,6 +473,11 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>) -> Result
 
 	let mut staged = StagedProcs::default();
 	for removed in removed_procs {
+		// An already removed proc must not block subsequent reloads.
+		if Proc::overrides(removed.proc.path.as_str()).is_empty() {
+			warnings.push(format!("{}: not found in the running world; skipping removal", removed.proc.path));
+			continue;
+		}
 		match prepare_removal(removed, &mut staged) {
 			Ok(p) => {
 				if removed.verb {
@@ -1776,8 +1781,9 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 	}
 
 	// Install all entries before relinking `..()` chains.
+	// Force fresh IDs when re-adding removed procs.
 	for new in &prepared.new_procs {
-		match runtime_tables::add_proc(&new.entry) {
+		match runtime_tables::append_proc(&new.entry) {
 			Ok(id) if id.0 != new.id => {
 				// Code in this reload calls it by the id it expected
 				warnings.push(format!("new proc ID mismatch: got {}, expected {}", id.0, new.id));

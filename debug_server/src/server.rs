@@ -180,6 +180,13 @@ impl State {
 
 type ClientId = u32;
 
+/// Source markers used by [`Server::place_in`].
+enum Mark {
+	File(String),
+	Line(u32),
+	Other
+}
+
 enum Event {
 	// A debug-client arrived. The Connection is for the Server to answer on.
 	Connected(ClientId, Connection),
@@ -192,7 +199,6 @@ enum Event {
 }
 
 struct Client {
-	connection: Connection,
 	// Runtime error filters for uncaught and caught errors.
 	uncaught: Option<RuntimeFilter>,
 	caught: Option<RuntimeFilter>,
@@ -200,13 +206,13 @@ struct Client {
 	debugs: bool,
 	/// Journal event kinds to stream to this client.
 	follow: Option<Vec<JournalKind>>,
-	/// Queue for the journal subscriber's writer thread (see `deliver`).
-	outbox: Option<mpsc::SyncSender<Vec<u8>>>,
+	/// Outbound messages for the client writer (see `deliver`).
+	outbox: mpsc::SyncSender<Vec<u8>>,
 	/// Maximum held-pause duration without a debugging client.
 	hold_max: Option<Duration>
 }
 
-/// Maximum queued subscriber messages before disconnecting a slow client.
+/// Disconnect slow clients when their outgoing queue reaches this limit.
 const OUTBOX: usize = 1024;
 
 /// How many procs of a runtime error's stack the record keeps
@@ -291,6 +297,8 @@ pub struct Server {
 	state: Option<State>,
 	in_eval: bool,
 	eval_error: Option<String>,
+	/// Last executing evaluation frame; identifies the frame if it sleeps.
+	eval_ran: *mut raw_types::procs::ExecutionContext,
 	breakpoints: Breakpoints,
 	/// Why and where the world is paused, while it is
 	paused: Option<Stop>,
@@ -380,6 +388,7 @@ impl Server {
 			state: None,
 			in_eval: false,
 			eval_error: None,
+			eval_ran: std::ptr::null_mut(),
 			breakpoints: HashMap::new(),
 			moved_breakpoints: HashMap::new(),
 			paused: None,
@@ -440,6 +449,7 @@ impl Server {
 					return;
 				};
 				let _ = acceptor.events.send(Event::Connected(next_id, connection.clone()));
+				waker::event_sent();
 				acceptor.events.clone()
 			};
 
@@ -471,6 +481,11 @@ impl Server {
 
 	pub const fn is_in_eval(&self) -> bool {
 		self.in_eval
+	}
+
+	/// Record the current evaluation frame.
+	pub fn eval_runs(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
+		self.eval_ran = ctx;
 	}
 
 	/// Evaluation runtime error and stack between the failing proc and
@@ -908,43 +923,41 @@ impl Server {
 	///
 	/// If `before` is set and the offset points to DbgLine, report the
 	/// preceding line. Non-executable line breakpoints can stop there.
+	/// A DbgFile at this offset has not run yet; keep the preceding line's
+	/// file. DreamMaker can insert the .dme's location between repeated source
+	/// locations at the start of an included file's last proc.
 	fn place_in(bytecode: &[u32], offset: u32, before: bool) -> Option<(Option<String>, u32)> {
 		let mut current_line_number = None;
 		let mut current_file = None;
 		let mut reached_offset = false;
 
-		let mut env = disassemble_env::DisassembleEnv;
-		let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+		for (at, mark) in Self::marks(bytecode).iter() {
+			if *at > offset && !reached_offset {
+				reached_offset = true;
+				if current_line_number.is_some() {
+					break;
+				}
+			}
 
-		for node in nodes {
-			if let dmasm::Node::Instruction(ins, debug) = node {
-				if debug.offset > offset && !reached_offset {
-					reached_offset = true;
-					if current_line_number.is_some() {
+			match mark {
+				Mark::File(name) if !((reached_offset || *at == offset) && current_line_number.is_some()) => {
+					current_file = Some(name.clone());
+				}
+				Mark::Line(_) if before && *at == offset => {}
+				Mark::Line(line) => {
+					current_line_number = Some(*line);
+					// Before its first line, a proc is at its first line
+					if reached_offset {
 						break;
 					}
 				}
+				_ => {}
+			}
 
-				match ins {
-					dmasm::Instruction::DbgFile(name) if !(reached_offset && current_line_number.is_some()) => {
-						current_file = Some(String::from_utf8_lossy(&name.0).into_owned());
-					}
-					dmasm::Instruction::DbgLine(_) if before && debug.offset == offset => {}
-					dmasm::Instruction::DbgLine(line) => {
-						current_line_number = Some(line);
-						// Before its first line, a proc is at its first line
-						if reached_offset {
-							break;
-						}
-					}
-					_ => {}
-				}
-
-				if debug.offset == offset {
-					reached_offset = true;
-					if current_line_number.is_some() {
-						break;
-					}
+			if *at == offset {
+				reached_offset = true;
+				if current_line_number.is_some() {
+					break;
 				}
 			}
 		}
@@ -954,6 +967,46 @@ impl Server {
 		} else {
 			None
 		}
+	}
+
+	/// Cache instruction offsets and source markers by bytecode content.
+	/// Runtime stack traces would otherwise disassemble each frame's proc.
+	fn marks(bytecode: &[u32]) -> std::sync::Arc<[(u32, Mark)]> {
+		use std::hash::{Hash, Hasher};
+		type Marks = std::sync::Arc<[(u32, Mark)]>;
+		static MARKS: std::sync::LazyLock<Mutex<HashMap<(u64, usize), Marks>>> = std::sync::LazyLock::new(Default::default);
+		// Bound cache memory during long sessions.
+		const KEEP: usize = 8192;
+
+		let key = {
+			let mut hasher = std::collections::hash_map::DefaultHasher::new();
+			bytecode.hash(&mut hasher);
+			(hasher.finish(), bytecode.len())
+		};
+		if let Some(marks) = MARKS.lock().unwrap().get(&key) {
+			return marks.clone();
+		}
+
+		let mut env = disassemble_env::DisassembleEnv;
+		let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+		let marks: Marks = nodes
+			.into_iter()
+			.filter_map(|node| match node {
+				dmasm::Node::Instruction(ins, debug) => Some((debug.offset, match ins {
+					dmasm::Instruction::DbgFile(name) => Mark::File(String::from_utf8_lossy(&name.0).into_owned()),
+					dmasm::Instruction::DbgLine(line) => Mark::Line(line),
+					_ => Mark::Other
+				})),
+				_ => None
+			})
+			.collect();
+
+		let mut cache = MARKS.lock().unwrap();
+		if cache.len() >= KEEP {
+			cache.clear();
+		}
+		cache.insert(key, marks.clone());
+		marks
 	}
 
 	/// The file and line of the code at `offset` of a proc. The file is the
@@ -991,6 +1044,7 @@ impl Server {
 		let proc = auxtools::Proc::find_override(proc.path, proc.override_id)?;
 		let mut offset = None;
 		let mut at_offset = false;
+		let mut other_file = false;
 		let mut inside = files.is_none();
 
 		// Without the breakpoints in it: a line's breakpoint can be where the
@@ -1002,9 +1056,20 @@ impl Server {
 
 		for node in nodes {
 			if let dmasm::Node::Instruction(ins, debug) = node {
+				// Skip intervening file markers before placing the breakpoint
+				// (see `place_in`).
 				if at_offset {
-					offset = Some(debug.offset);
-					break;
+					match ins {
+						dmasm::Instruction::DbgFile(_) => {
+							other_file = true;
+							continue;
+						}
+						dmasm::Instruction::DbgLine(_) if other_file => continue,
+						_ => {
+							offset = Some(debug.offset);
+							break;
+						}
+					}
 				}
 
 				match ins {
@@ -1301,12 +1366,37 @@ impl Server {
 		Ok(variables)
 	}
 
+	/// Hide outer debugger helper frames, preserving frame positions and IDs.
+	/// Keep stacks containing only helpers visible, so a pause in the keepalive
+	/// loop still has a location.
+	fn shown(stack: &[debug::StackFrame]) -> &[debug::StackFrame] {
+		match stack.iter().rposition(|frame| !crate::launched::runs_spawns(&frame.proc)) {
+			Some(last) => &stack[..=last],
+			None => stack
+		}
+	}
+
+	/// Whether a sleeping stack contains only debugger helpers.
+	fn only_runs_spawns(instance: *mut raw_types::procs::ProcInstance) -> bool {
+		// From the outermost frame to the innermost
+		let mut ctx = unsafe { (*instance).context };
+		while !ctx.is_null() {
+			let proc = Proc::from_id(unsafe { (**(*ctx).proc_instance()).proc });
+			if !proc.is_some_and(|proc| crate::launched::runs_spawns(&proc)) {
+				return false;
+			}
+			ctx = unsafe { *(*ctx).parent_context() };
+		}
+		true
+	}
+
 	/// Use the outermost proc instance's BYOND ID as a stable stack ID.
 	/// The instance address changes on first sleep; spawned copies receive
-	/// distinct IDs. IDs may be reused after a proc ends.
+	/// distinct IDs. IDs may be reused after a proc ends. For spawned code,
+	/// use the outermost visible frame so its ID survives sleeping.
 	fn thread_of(&self, stack: &[debug::StackFrame]) -> u32 {
 		// 0 is "the running proc's" in a request
-		stack
+		Self::shown(stack)
 			.last()
 			.map_or(0, |frame| unsafe { (*frame.instance).argslist_idx.id }.wrapping_add(1))
 	}
@@ -1585,13 +1675,21 @@ impl Server {
 	fn handle_stacks(&mut self, sleeping: Option<u32>) {
 		let sleeping = sleeping.unwrap_or(DEFAULT_SLEEPING_STACKS) as usize;
 		if let Some(state) = &mut self.state {
-			state.read_sleeping(sleeping);
+			// Allow for the hidden keepalive stack.
+			state.read_sleeping(sleeping.saturating_add(1));
 		}
 		let mut asleep = 0;
 		let stacks = match &self.state {
 			Some(state) => {
-				asleep = debug::CallStacks::suspended_instances().len();
-				let listed = std::iter::once(state.active()).chain(state.suspended().iter().take(sleeping));
+				// Exclude sleeping helper stacks from the count and results.
+				let instances = debug::CallStacks::suspended_instances();
+				asleep = instances.len() - instances.into_iter().filter(|&instance| Self::only_runs_spawns(instance)).count();
+				let suspended = state
+					.suspended()
+					.iter()
+					.filter(|stack| !stack.iter().all(|frame| crate::launched::runs_spawns(&frame.proc)))
+					.take(sleeping);
+				let listed = std::iter::once(state.active()).chain(suspended);
 				listed
 					.enumerate()
 					.filter(|(_, stack)| !stack.is_empty())
@@ -1624,6 +1722,7 @@ impl Server {
 			Some(stack) => {
 				let stack_id = position.unwrap_or(0);
 				let thread = self.thread_of(stack);
+				let stack = Self::shown(stack);
 				let start_frame = start_frame.unwrap_or(0);
 				let end_frame = start_frame.saturating_add(count.unwrap_or(stack.len() as u32));
 
@@ -2073,6 +2172,7 @@ impl Server {
 		// of this one, and a runtime would pause inside the pause we're in.
 		self.in_eval = true;
 		self.eval_error = None;
+		self.eval_ran = std::ptr::null_mut();
 
 		let result = self.compile_and_run_expr(frame_id, command);
 		self.eval_given.clear();
@@ -2296,6 +2396,23 @@ impl Server {
 					}
 
 					Ok(list.get(1).unwrap())
+				} else if !self.eval_ran.is_null() && background_known() && unsafe { *(*self.eval_ran).background() } != 0 {
+					// Background procs sleep periodically, including those
+					// moved there by world.loop_checks after about a million
+					// iterations.
+					Err(
+						"evaluation aborted: BYOND moved the code to the background, so its result is unavailable. This can happen after about a \
+						 million loop iterations (world.loop_checks), or with `set background = 1`. The code is still running. Use `eval --spawn \
+						 --wait` to wait for a result"
+							.to_owned()
+					)
+				} else if !background_known() {
+					Err(
+						"evaluation aborted because the code slept or BYOND moved it to the background, so its result is unavailable. BYOND does \
+						 that after about a million loop iterations (world.loop_checks), or with `set background = 1`. Use `eval --spawn --wait` to \
+						 wait for a result"
+							.to_owned()
+					)
 				} else {
 					// The stub returns a list unless it's cut short, and a
 					// runtime error is told apart above
@@ -2806,13 +2923,13 @@ impl Server {
 
 			match event {
 				Event::Connected(id, connection) => {
+					let outbox = Self::writer(connection.clone());
 					self.clients.insert(id, Client {
-						connection,
 						uncaught: None,
 						caught: None,
 						debugs: true,
 						follow: None,
-						outbox: None,
+						outbox,
 						hold_max: None
 					});
 					if let Wait::Until(_) = wait {
@@ -2975,7 +3092,7 @@ impl Server {
 	/// Sends one client something, at any moment
 	fn tell(&mut self, client: ClientId, response: Response) {
 		if let Some(to) = self.clients.get_mut(&client) {
-			if Self::send(&mut to.connection, &response).is_err() {
+			if !Self::deliver(to, &response) {
 				self.remove_client(client);
 			}
 		}
@@ -3175,9 +3292,12 @@ impl Server {
 			self.notify("Woke world suspended by world.sleep_offline to process debugger requests");
 		}
 
-		while let Some(request) = self.recv_request(Wait::No) {
-			// Not `||`, that would skip every request after a Pause
-			should_pause |= self.handle_request(request);
+		// Avoid polling an empty channel on every DM instruction.
+		if waker::events_pending() {
+			while let Some(request) = self.recv_request(Wait::No) {
+				// Not `||`, that would skip every request after a Pause
+				should_pause |= self.handle_request(request);
+			}
 		}
 
 		should_pause
@@ -3228,14 +3348,11 @@ impl Server {
 
 	/// Disconnect a client and remove its breakpoint claims.
 	fn remove_client(&mut self, id: ClientId) {
-		let Some(mut client) = self.clients.remove(&id) else {
+		let Some(client) = self.clients.remove(&id) else {
 			return;
 		};
-		// One that follows the record is told by its writer, once what's
-		// waiting for it is written (see `writer`)
-		if client.outbox.is_none() {
-			let _ = Self::send(&mut client.connection, &Response::Disconnect);
-		}
+		// The writer drains queued messages before sending Disconnect.
+		drop(client);
 		if self.current == Some(id) {
 			self.current = None;
 		}
@@ -3294,13 +3411,10 @@ impl Server {
 	}
 
 	/// Deliver a message; return false if the client must be disconnected.
-	/// Journal subscribers use a writer queue so slow readers cannot block
-	/// the world. Disconnect them if the queue fills.
+	/// Queue writes off the world thread: Windows flushes block until the
+	/// client reads the data. Disconnect clients whose queues fill.
 	fn deliver(client: &mut Client, response: &Response) -> bool {
-		match &client.outbox {
-			Some(outbox) => Self::encode(response).is_ok_and(|bytes| outbox.try_send(bytes).is_ok()),
-			None => Self::send(&mut client.connection, response).is_ok()
-		}
+		Self::encode(response).is_ok_and(|bytes| client.outbox.try_send(bytes).is_ok())
 	}
 
 	/// Start a per-client writer. Drain queued messages before disconnecting.
@@ -3334,7 +3448,7 @@ impl Server {
 
 	/// The procs the running code is in, as the record keeps them
 	fn journal_stack(&self) -> Vec<JournalFrame> {
-		debug::CallStacks::active()
+		Self::shown(&debug::CallStacks::active())
 			.iter()
 			.take(JOURNAL_FRAMES)
 			.map(|frame| {
@@ -3355,13 +3469,17 @@ impl Server {
 	fn handle_journal(&mut self, after: u64, kinds: Vec<JournalKind>, limit: Option<u32>, follow: bool) {
 		let (entries, first, last) = journal::read(after, &kinds, limit);
 		if let Some(client) = self.current.and_then(|id| self.clients.get_mut(&id)) {
-			if follow && client.outbox.is_none() {
-				client.outbox = Some(Self::writer(client.connection.clone()));
-			}
 			client.follow = follow.then_some(kinds);
 		}
 		self.send_or_disconnect(Response::Journal { entries, first, last });
 	}
+}
+
+/// Whether a frame's background flag can be read. Its place in the
+/// execution context was found on BYOND 516; older builds lay it out
+/// differently.
+fn background_known() -> bool {
+	auxtools::version::get().0 >= 516
 }
 
 impl Drop for Server {
@@ -3379,7 +3497,7 @@ impl Drop for Server {
 		// are told to go
 		while let Ok(event) = self.events.try_recv() {
 			if let Event::Connected(_, mut connection) = event {
-				let _ = Self::send(&mut connection, &Response::Disconnect);
+				thread::spawn(move || Self::send(&mut connection, &Response::Disconnect).is_ok());
 			}
 		}
 	}
@@ -3425,10 +3543,12 @@ impl ServerThread {
 				eprintln!("Debug server thread failed to handle request: {}", e);
 				break;
 			}
+			waker::event_sent();
 		}
 
 		waker::client_left();
 		let _ = self.events.send(Event::Disconnected(id));
+		waker::event_sent();
 	}
 }
 

@@ -30,6 +30,12 @@ var/datum/held/held = new
 	..()
 	spawn(1)
 		run_until_stopped()
+	doze()
+
+// Keep a world proc asleep for stack listings without waking during the test.
+/proc/doze()
+	set waitfor = FALSE
+	sleep(36000)
 
 // A world whose shutdown code doesn't shut it down, when the test asks for one
 /world/Del()
@@ -80,6 +86,10 @@ var/datum/held/held = new
 	var/list/L = null
 	return L[1]
 
+// Embedded text macro for debugger output checks.
+/obj/macro_named
+	name = "\improper AI Chamber"
+
 // For the command line's eval: a runtime error two procs down from it, and
 // one a proc catches itself
 /proc/fail_in(n)
@@ -107,3 +117,8 @@ var/datum/held/held = new
 /datum/twice/act()
 	. = ..()
 	return "second"
+
+// DreamMaker inserts a .dme location between this proc's source locations.
+// Keep this proc last to reproduce it.
+/proc/last_in_file()
+	return "last [rounds]"

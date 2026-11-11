@@ -128,6 +128,24 @@ fn eval_failures(pid: &str, code: &Path) {
 	);
 	println!("ok: eval runtime error call stack");
 
+	// Long loops yield in the background, so synchronous eval loses the result.
+	let looped = "var/x = 0; for(var/i in 1 to 2000000) x++; return x";
+	let said = fails(pid, &["eval", looped]);
+	assert!(
+		said.starts_with("evaluation aborted") && said.contains("background") && said.contains("eval --spawn --wait"),
+		"unexpected eval output: {}",
+		said
+	);
+	// Spawned eval can wait for the result.
+	assert_eq!(run(pid, &["eval", "--spawn", "--wait", looped], 0).out, "2000000\n");
+	println!("ok: background loop evaluation");
+
+	// Match the text BYOND prints, without embedded macros.
+	assert_eq!(run(pid, &["eval", "\"\\improper AI \\bold Chamber\""], 0).out, "\"AI Chamber\"\n");
+	let named = json_of(pid, &["eval", "--json", "new /obj/macro_named"]);
+	assert!(named["name"] == "AI Chamber" && named["vars"]["name"] == "AI Chamber", "{}", named);
+	println!("ok: text macro removal");
+
 	// Paused, the same
 	run(pid, &["pause"], 0);
 	let said = fails(pid, &["eval", "fail_in(3)"]);
@@ -323,7 +341,7 @@ fn where_breakpoints_bound(pid: &str, code: &Path) {
 	);
 	println!("ok: resolved wait breakpoint locations");
 
-	let last = line_of(code, "\treturn \"second\"");
+	let last = line_of(code, "\treturn \"last [rounds]\"");
 	let nowhere = [
 		(
 			"nowhere.dm:3",
@@ -753,6 +771,17 @@ fn spawned(pid: &str, code: &Path) {
 		"log said {}",
 		printed
 	);
+	// Runtime journal stacks exclude the debugger's outer helper frames.
+	let printed = run(pid, &["log", "--runtimes", "--last", "1"], 0).out;
+	let frames: Vec<&str> = printed.lines().skip(1).collect();
+	assert!(
+		frames.len() == 3
+			&& frames[0].starts_with("  /fail_deeper  ")
+			&& frames[1].starts_with("  /slow_fail  ")
+			&& frames[2].starts_with("  /auxtools_spawn_stub  "),
+		"log said {}",
+		printed
+	);
 	println!("ok: spawned runtime error stacks");
 
 	// A breakpoint in what it calls stops the world
@@ -777,13 +806,63 @@ fn spawned(pid: &str, code: &Path) {
 	);
 	let stack = run(pid, &["stack"], 0).out;
 	assert!(
-		stack.lines().nth(1).is_some_and(|line| line.starts_with("#1 /auxtools_spawn_stub")),
+		stack.lines().count() == 2 && stack.lines().nth(1).is_some_and(|line| line.starts_with("#1 /auxtools_spawn_stub")),
 		"stack said {}",
 		stack
 	);
+	// Sleeping helper stacks are hidden too.
+	let stacks = run(pid, &["stack", "--all"], 0).out;
+	assert!(
+		!stacks.contains("auxtools_keepalive") && !stacks.contains("auxtools_spawned"),
+		"stack --all said {}",
+		stacks
+	);
 	assert_eq!(run(pid, &["eval", "n"], 0).out, "6\n");
-	run(pid, &["continue"], 0);
+	// Stepping out of the expression completes without stopping in a helper.
+	let stepped = run(pid, &["step-out", "--timeout", "10"], 0).out;
+	assert!(stepped.contains("#0 /auxtools_spawn_stub  "), "step-out said {}", stepped);
+	let stepped = run(pid, &["step-out", "--timeout", "10"], 0);
+	assert!(
+		stepped.err.contains("no frame remained to pause in") && stepped.out.ends_with(": running\n"),
+		"step-out said {}{}",
+		stepped.out,
+		stepped.err
+	);
 	println!("ok: breakpoints in spawned calls");
+
+	// Breakpoints and steps must skip the intervening .dme debug markers.
+	let line = line_of(code, "\treturn \"last [rounds]\"");
+	let printed = run(pid, &["disassemble", "/proc/last_in_file"], 0).out;
+	assert!(printed.contains("attach_host.dme\""), "missing .dme debug marker: {}", printed);
+	let place = format!("/last_in_file  attach_host.dm:{}", line);
+	let waiting = crate::journal::Background::start(pid.parse().unwrap(), &[
+		"wait",
+		"pause",
+		"--break",
+		&format!("attach_host.dm:{}", line),
+		"--timeout",
+		"60"
+	]);
+	std::thread::sleep(std::time::Duration::from_secs(2));
+	run(pid, &["eval", "--spawn", "last_in_file()"], 0);
+	let (exit, printed) = waiting.finish();
+	assert!(
+		exit == 0
+			&& printed.contains(&format!("breakpoint set at {}\n", place))
+			&& printed.contains(&format!("paused at a breakpoint\n#0 {}\n", place)),
+		"wait gave {}: {}",
+		exit,
+		printed
+	);
+	assert!(run(pid, &["stack"], 0).out.starts_with(&format!("#0 {}\n", place)));
+	let stepped = run(pid, &["step-over", "--timeout", "10"], 0).out;
+	assert!(
+		stepped.contains("paused after a step\n#0 /auxtools_spawn_stub  "),
+		"step-over said {}",
+		stepped
+	);
+	run(pid, &["continue"], 0);
+	println!("ok: breakpoints in the last proc of an included file");
 
 	let ran = run(pid, &["eval", "--spawn", "--wait", "--timeout", "0.5", "slow_double(1, 50)"], 2);
 	assert!(

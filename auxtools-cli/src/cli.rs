@@ -4,6 +4,21 @@
 //! Results go to stdout as text or JSON; diagnostics go to stderr.
 //! Exit codes: 0 success, 1 failure, 2 timeout, 3 world exited or rebooted.
 
+/// Print to stdout, exiting quietly on write failure (e.g. `| head`).
+/// This also handles Windows, where `print!` would panic on a closed pipe.
+macro_rules! say_part {
+	($($arg:tt)*) => {
+		crate::cli::say(format_args!($($arg)*))
+	};
+}
+
+/// `say_part!` with a trailing newline.
+macro_rules! say {
+	($($arg:tt)*) => {
+		crate::cli::say(format_args!("{}\n", format_args!($($arg)*)))
+	};
+}
+
 mod args;
 mod help;
 mod hold;
@@ -72,11 +87,20 @@ pub fn run(args: &[String]) -> ! {
 	std::process::exit(code)
 }
 
+/// Write to stdout and exit with code 0 on write or flush failure.
+pub fn say(text: std::fmt::Arguments) {
+	use std::io::Write;
+	let mut stdout = io::stdout().lock();
+	if stdout.write_fmt(text).and_then(|()| stdout.flush()).is_err() {
+		std::process::exit(0);
+	}
+}
+
 fn execute(raw: &[String]) -> Result<()> {
 	let cli = match args::parse(raw) {
 		Ok(cli) => cli,
 		Err(args::Unparsed::Help(page)) => {
-			print!("{}", page);
+			say_part!("{}", page);
 			return Ok(());
 		}
 		Err(args::Unparsed::Usage(why)) => return Err(why.into())
@@ -90,6 +114,16 @@ fn execute(raw: &[String]) -> Result<()> {
 	};
 	if cli.pid.is_some() && !command.selects_world() {
 		return Err(format!("--pid cannot be used with '{}': it does not select an existing world.", command.name()).into());
+	}
+	if cli.response_timeout.is_some() && !command.awaits_responses() {
+		return Err(match command {
+			Command::Stop(_) => "--response-timeout cannot be used with 'stop': it waits for the process to exit; use --timeout.".to_owned(),
+			_ => format!(
+				"--response-timeout cannot be used with '{}': it does not select an existing world.",
+				command.name()
+			)
+		}
+		.into());
 	}
 	// Validate arguments before connecting to a world.
 	args::rules(&command)?;
@@ -113,6 +147,7 @@ fn execute(raw: &[String]) -> Result<()> {
 				None => only_world()?
 			};
 			let mut world = World::connect(pid)?;
+			world.patience = cli.response_timeout.unwrap_or(args::DEFAULT_RESPONSE_TIMEOUT);
 			if let Some(limit) = hold_max {
 				world.hold_max(limit)?;
 			}
@@ -125,9 +160,9 @@ fn execute(raw: &[String]) -> Result<()> {
 
 fn version(as_json: bool) -> Result<()> {
 	if as_json {
-		println!("{}", json!({ "version": env!("CARGO_PKG_VERSION"), "protocol": PROTOCOL_VERSION }));
+		say!("{}", json!({ "version": env!("CARGO_PKG_VERSION"), "protocol": PROTOCOL_VERSION }));
 	} else {
-		println!("auxtools {} (protocol {})", env!("CARGO_PKG_VERSION"), PROTOCOL_VERSION);
+		say!("auxtools {} (protocol {})", env!("CARGO_PKG_VERSION"), PROTOCOL_VERSION);
 	}
 	Ok(())
 }
@@ -136,22 +171,29 @@ fn version(as_json: bool) -> Result<()> {
 fn list(as_json: bool) -> Result<()> {
 	let worlds = local::worlds();
 	if as_json {
-		println!("{}", serde_json::to_string(&worlds).map_err(|e| e.to_string())?);
+		say!("{}", serde_json::to_string(&worlds).map_err(|e| e.to_string())?);
 		return Ok(());
 	}
 	if worlds.is_empty() {
-		println!("No worlds found with the debug library loaded.");
+		say!("No worlds found with the debug library loaded.");
 		return Ok(());
 	}
-	let mut rows = vec![["PID", "PROGRAM", "PROTOCOL", "COMPATIBLE", "DMB", "CWD", "ARGS"].map(str::to_owned)];
+	let mut rows = vec![["PID", "PROGRAM", "PROTOCOL", "COMPATIBLE", "RESPONSIVE", "DMB", "CWD", "ARGS"].map(str::to_owned)];
 	for world in &worlds {
-		// (of a world of another version, only its process is known)
+		// World details are unavailable for incompatible or unresponsive
+		// worlds.
 		let unknown = |text: String| if text.is_empty() { "-".to_owned() } else { text };
 		rows.push([
 			world.pid.to_string(),
 			world.program.clone(),
 			world.protocol.to_string(),
 			if world.compatible { "yes" } else { "no" }.to_owned(),
+			match world.responsive {
+				Some(true) => "yes",
+				Some(false) => "no",
+				None => "-"
+			}
+			.to_owned(),
 			unknown(world.dmb.as_ref().map(|dmb| dmb.display().to_string()).unwrap_or_default()),
 			unknown(world.cwd.clone()),
 			unknown(world.args.join(" "))
@@ -163,7 +205,7 @@ fn list(as_json: bool) -> Result<()> {
 			let width = rows.iter().map(|row| row[column].chars().count()).max().unwrap_or(0);
 			line += &format!("{:width$}  ", cell);
 		}
-		println!("{}", line.trim_end());
+		say!("{}", line.trim_end());
 	}
 	Ok(())
 }
@@ -305,7 +347,9 @@ pub struct World {
 	/// to this depth
 	json: Option<u32>,
 	/// What `wait pause` adds to the JSON of a pause
-	waited: Map<String, Value>
+	waited: Map<String, Value>,
+	/// How long to wait for each response (`--response-timeout`).
+	patience: Duration
 }
 
 impl World {
@@ -329,7 +373,8 @@ impl World {
 			failed_conditions: vec![],
 			show_instruction: false,
 			json: None,
-			waited: Map::new()
+			waited: Map::new(),
+			patience: args::DEFAULT_RESPONSE_TIMEOUT
 		})
 	}
 
@@ -438,7 +483,7 @@ impl World {
 		if self.json.is_some() {
 			eprintln!("{}", text);
 		} else {
-			println!("{}", text);
+			say!("{}", text);
 		}
 	}
 
@@ -474,13 +519,34 @@ impl World {
 	}
 
 	fn request(&mut self, request: Request) -> Result<Response> {
+		let until = Instant::now() + self.patience;
+		self.request_by(request, until)?.ok_or_else(|| self.unresponsive("respond"))
+	}
+
+	/// Send a request and receive its answer, or `None` at the deadline.
+	fn request_by(&mut self, request: Request, until: Instant) -> Result<Option<Response>> {
 		local::send(&mut self.stream, &request).map_err(|_| hung_up())?;
 		loop {
-			match self.next(None)?.expect("no time limit") {
-				event @ (Response::BreakpointHit { .. } | Response::Resumed | Response::StepEnded | Response::Log { .. }) => self.events.push(event),
-				response => return Ok(response)
+			match self.next(Some(until))? {
+				None => return Ok(None),
+				Some(event @ (Response::BreakpointHit { .. } | Response::Resumed | Response::StepEnded | Response::Log { .. })) => {
+					self.events.push(event)
+				}
+				Some(response) => return Ok(Some(response))
 			}
 		}
+	}
+
+	/// Report a response or pause timeout.
+	fn unresponsive(&self, act: &str) -> Failure {
+		Failure(
+			TIMED_OUT,
+			format!(
+				"timed out after {} waiting for the world to {}; it is busy or hung. Set --response-timeout to wait longer.",
+				seconds_text(self.patience),
+				act
+			)
+		)
 	}
 
 	/// Why it's paused, if it is
@@ -529,10 +595,10 @@ impl World {
 	/// A command's result: the JSON document, or the lines that say the same
 	fn print(&self, document: Map<String, Value>, lines: &[String]) {
 		if self.json.is_some() {
-			println!("{}", Value::Object(document));
+			say!("{}", Value::Object(document));
 		} else {
 			for line in lines {
-				println!("{}", line);
+				say!("{}", line);
 			}
 		}
 	}
@@ -607,7 +673,7 @@ impl World {
 
 	fn print_stack(&mut self, stack_id: u32, count: Option<u32>) -> Result<()> {
 		for (i, frame) in self.frames(stack_id, count)?.iter().enumerate() {
-			println!("#{} {}", i, place(frame));
+			say!("#{} {}", i, place(frame));
 		}
 		Ok(())
 	}
@@ -641,12 +707,12 @@ impl World {
 				true => Value::Array(listed),
 				false => listed.pop().unwrap_or_else(|| json!([]))
 			};
-			println!("{}", document);
+			say!("{}", document);
 			return Ok(());
 		}
 		for stack in stacks.iter().filter(|s| all || !s.sleeping) {
 			if all {
-				println!("stack {}: {}{}", stack.id, stack.name, if stack.sleeping { " (sleeping)" } else { "" });
+				say!("stack {}: {}{}", stack.id, stack.name, if stack.sleeping { " (sleeping)" } else { "" });
 			}
 			self.print_stack(stack.id, None)?;
 		}
@@ -698,11 +764,11 @@ impl World {
 				};
 				document.insert(name.to_owned(), json::named(&values));
 			}
-			println!("{}", Value::Object(document));
+			say!("{}", Value::Object(document));
 			return Ok(());
 		}
 		for (name, vars) in scopes {
-			println!("{}:", name);
+			say!("{}:", name);
 			let Some(vars) = vars else { continue };
 			let listed = self.request(Request::Variables {
 				vars,
@@ -713,7 +779,7 @@ impl World {
 				return Err(format!("the world did not list the {}.", name).into());
 			};
 			for var in vars {
-				println!("  {} = {}", var.name, var.value);
+				say!("  {} = {}", var.name, var.value);
 			}
 		}
 		Ok(())
@@ -741,7 +807,7 @@ impl World {
 			for note in std::mem::take(&mut self.notes) {
 				eprintln!("{}", note);
 			}
-			println!("{}", json::value(&result?));
+			say!("{}", json::value(&result?));
 			return Ok(());
 		}
 		let result = match self.request(Request::Eval {
@@ -756,7 +822,7 @@ impl World {
 		for note in std::mem::take(&mut self.notes) {
 			eprintln!("{}", note);
 		}
-		println!("{}", result?.value);
+		say!("{}", result?.value);
 		Ok(())
 	}
 
@@ -772,8 +838,8 @@ impl World {
 			eprintln!("{}", note);
 		}
 		match response {
-			Response::Render(result) => println!("{}", json::value(&result?)),
-			Response::Eval(result) => println!("{}", result?.value),
+			Response::Render(result) => say!("{}", json::value(&result?)),
+			Response::Eval(result) => say!("{}", result?.value),
 			other => return Err(unexpected(&other))
 		}
 		Ok(())
@@ -806,8 +872,8 @@ impl World {
 		let number = number?;
 		let Some(timeout) = wait else {
 			match self.json {
-				Some(_) => println!("{}", json!({ "spawn": number })),
-				None => println!("spawn {}", number)
+				Some(_) => say!("{}", json!({ "spawn": number })),
+				None => say!("spawn {}", number)
 			}
 			return Ok(());
 		};
@@ -832,8 +898,8 @@ impl World {
 				JournalEvent::Spawned { spawn, result, .. } if spawn == number => {
 					let value = result?;
 					match self.json {
-						Some(_) => println!("{}", json::value(&value.rendered)),
-						None => println!("{}", value.text)
+						Some(_) => say!("{}", json::value(&value.rendered)),
+						None => say!("{}", value.text)
 					}
 					return Ok(());
 				}
@@ -914,20 +980,20 @@ impl World {
 				"file": disassembly.file,
 				"instructions": instructions
 			});
-			println!("{}", document);
+			say!("{}", document);
 			return Ok(());
 		}
 		match &disassembly.file {
-			Some(file) => println!("{}  {}", proc_name(&disassembly.proc), file),
-			None => println!("{}", proc_name(&disassembly.proc))
+			Some(file) => say!("{}  {}", proc_name(&disassembly.proc), file),
+			None => say!("{}", proc_name(&disassembly.proc))
 		}
 		let mut line = None;
 		for instruction in &disassembly.instructions {
 			if instruction.line != line && instruction.line.is_some() {
 				line = instruction.line;
-				println!("line {}:", line.unwrap());
+				say!("line {}:", line.unwrap());
 			}
-			println!("{:>6}  {}", instruction.offset, text(instruction));
+			say!("{:>6}  {}", instruction.offset, text(instruction));
 		}
 		Ok(())
 	}
@@ -946,7 +1012,7 @@ impl World {
 	fn say_waited(&mut self, key: &str, value: Value, text: Option<&str>) {
 		if self.json.is_none() {
 			if let Some(text) = text {
-				println!("{}", text);
+				say!("{}", text);
 			}
 			return;
 		}
@@ -985,8 +1051,12 @@ impl World {
 			return self.report(Some(&reason));
 		}
 		self.request(Request::Pause)?;
-		let reason = self.await_pause(None, true)?.expect("no time limit");
-		self.report(Some(&reason))
+		// A running world pauses at its next instruction.
+		let until = Instant::now() + self.patience;
+		match self.await_pause(Some(until), true)? {
+			Some(reason) => self.report(Some(&reason)),
+			None => Err(self.unresponsive("pause"))
+		}
 	}
 
 	/// `continue`: lets a paused world carry on, and doesn't wait for more

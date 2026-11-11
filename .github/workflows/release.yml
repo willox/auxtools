@@ -6,8 +6,9 @@ name: Release
 # - A release environment restricted to master.
 # - A Marketplace Trusted Publishing policy for publisher sohpea:
 #   repository auxtools/auxtools, workflow release.yml, environment release.
-# - Permission for the workflow token to push master and v* tags,
-#   including through any rulesets.
+# - A deploy key with write access and permission to bypass the rulesets
+#   protecting master and v* tags. Store its private key in the release
+#   environment's RELEASE_DEPLOY_KEY secret.
 #
 # The tag and master are pushed atomically. If master advances before the
 # push, start a new workflow run.
@@ -118,6 +119,8 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:

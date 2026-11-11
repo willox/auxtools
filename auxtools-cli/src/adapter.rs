@@ -28,7 +28,7 @@ use crate::{
 	code,
 	dap::{self, Output},
 	debuggee::{Debuggee, LastError, SetBreakpoint, SetBreakpoints, INSTRUCTION_BREAKPOINTS},
-	stddef::{strip_declaration, Stddef}
+	stddef::Stddef
 };
 
 mod data;
@@ -47,8 +47,6 @@ const STDDEF_REFERENCE: i64 = 1;
 const EXIT_GRACE: Duration = Duration::from_secs(5);
 /// Grace period before forcibly terminating the world.
 const TERMINATE_GRACE: Duration = Duration::from_secs(5);
-/// Debugger helper proc that sleeps in a loop.
-const KEEPALIVE: &str = "/auxtools_keepalive";
 /// Source file used for debugger helper procs.
 const HELPER_FILE: &str = "auxtools_launcher.dm";
 /// Storage key for function breakpoints.
@@ -732,13 +730,14 @@ impl Adapter {
 		});
 
 		let game_args = args.args.unwrap_or_else(|| default_args(server));
-		// While debugging, the world waits for the client's breakpoints
+		// Debugged worlds wait for breakpoints. Hot reload also requires a wait
+		// after reboot; release the initial launch as soon as we connect.
 		let launch = Launch {
 			program,
 			dmb: &dmb,
 			args: &game_args,
 			env: &args.env,
-			debug: Some((library, self.debugging))
+			debug: Some((library, self.debugging || args.hot_reload))
 		};
 		let (out, inputs, files) = (self.out.clone(), self.inputs.clone(), self.files.clone());
 		let batch = journal::batch_output(self.inputs.clone());
@@ -934,7 +933,10 @@ impl Adapter {
 		}
 		self.waiting_for_code = match &self.code {
 			// A world that restarted waits for its reloads again
-			Some(code) => code.send(code::Command::Connected { byond }).is_ok() && self.code_read,
+			Some(code) => {
+				let world = self.generation;
+				code.send(code::Command::Connected { byond, world }).is_ok() && self.code_read
+			}
 			None => false
 		};
 		if !self.waiting_for_code {
@@ -1009,9 +1011,23 @@ impl Adapter {
 				self.watching = true;
 				self.say_ready();
 			}
-			code::Event::Reload { request, summary, notes } => {
-				self.reload_seen = Some(std::time::SystemTime::now());
-				let applied = self.reload(*request, &summary, notes);
+			code::Event::Reload {
+				request,
+				summary,
+				notes,
+				world
+			} => {
+				// A reboot invalidates pending reloads: a rebuilt .dmb may
+				// already contain the changes. The source worker will use the
+				// new baseline.
+				let applied = if self.debuggee.as_ref().is_some_and(|d| d.generation != world) {
+					self.out
+						.console(format!("Hot reload skipped: prepared before the world restarted: {}", summary));
+					false
+				} else {
+					self.reload_seen = Some(std::time::SystemTime::now());
+					self.reload(*request, &summary, notes)
+				};
 				if let Some(code) = &self.code {
 					let _ = code.send(code::Command::Reloaded(applied));
 				}
@@ -1845,19 +1861,15 @@ impl Adapter {
 	fn threads(&mut self) -> Handled {
 		let mut threads = vec![];
 		if self.debuggee.is_some() {
-			// Request one extra thread because the sleeping debugger helper is
-			// filtered out.
+			// The server already excludes the keepalive stack.
 			let limit = self.sleeping_threads as usize;
-			let wanted = self.sleeping_threads.saturating_add(1);
-			match self.request(&AuxRequest::Stacks { sleeping: Some(wanted) })? {
+			match self.request(&AuxRequest::Stacks {
+				sleeping: Some(self.sleeping_threads)
+			})? {
 				AuxResponse::Stacks { stacks, sleeping } => {
-					let mut asleep = sleeping as usize;
+					let asleep = sleeping as usize;
 					let mut listed = 0;
 					for stack in stacks {
-						if stack.sleeping && strip_declaration(&stack.name) == KEEPALIVE {
-							asleep -= 1;
-							continue;
-						}
 						if stack.sleeping {
 							if listed == limit {
 								continue;

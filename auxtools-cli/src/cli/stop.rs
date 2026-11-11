@@ -38,9 +38,9 @@ fn gone_by(pid: u32, until: Instant) -> bool {
 /// What a command that's done says: a line, or with `--json` the same as JSON
 fn done(as_json: bool, document: serde_json::Value, line: String) {
 	if as_json {
-		println!("{}", document);
+		say!("{}", document);
 	} else {
-		println!("{}", line);
+		say!("{}", line);
 	}
 }
 
@@ -113,7 +113,9 @@ pub fn reboot(world: &mut World, args: &args::Reboot) -> Result<()> {
 		}
 	}
 
-	// One that connects while the world loads is answered once it has
+	// Reconnect after loading, then wait for the launcher to restore reloads
+	// and release the world.
+	let mut again: Option<World> = None;
 	loop {
 		if !local::alive(pid) {
 			return Err(Failure(HUNG_UP, format!("the world process (pid {}) exited instead of rebooting.", pid)));
@@ -122,18 +124,24 @@ pub fn reboot(world: &mut World, args: &args::Reboot) -> Result<()> {
 			return Err(Failure(
 				TIMED_OUT,
 				format!(
-					"timed out after {} waiting for the rebooted world's debugger to respond.",
+					"timed out after {} waiting for the rebooted world to start running.",
 					seconds_text(timeout)
 				)
 			));
 		}
-		if let Ok(mut again) = World::connect(pid) {
-			// Wait for launcher configuration as well as reconnection.
-			let answered = again.started().unwrap_or(false);
-			again.leave();
-			if answered {
-				done(args.json, json!({ "pid": pid, "rebooted": true }), format!("pid {}: rebooted", pid));
-				return Ok(());
+		match again.as_mut() {
+			None => again = World::connect(pid).ok(),
+			Some(world) => match world.started(Some(until)) {
+				Ok(Some(true)) => {
+					world.leave();
+					done(args.json, json!({ "pid": pid, "rebooted": true }), format!("pid {}: rebooted", pid));
+					return Ok(());
+				}
+				// Retry response timeouts until the reboot deadline.
+				Ok(_) => {}
+				// Reconnect if the connection closes, including during another
+				// reboot.
+				Err(_) => again = None
 			}
 		}
 		std::thread::sleep(INTERVAL);

@@ -352,9 +352,10 @@ fn command_line_shape() {
 	assert!(
 		of_pause
 			.starts_with("Wait for execution to pause and report the location and reason.\n\nUsage:\n  auxtools [--pid PID] wait pause [OPTIONS]\n")
-			&& of_pause.contains("\n  --timeout SECONDS   Set the wait deadline. [default: unlimited]\n")
-			&& of_pause.contains("\n  --pid PID           Select the world process.\n")
-			&& of_pause.contains("\n  -h, --help          Show help for this command.\n")
+			&& of_pause.contains("\n  --timeout SECONDS           Set the wait deadline. [default: unlimited]\n")
+			&& of_pause.contains("\n  --pid PID                   Select the world process.\n")
+			&& of_pause.contains("\n  --response-timeout SECONDS  Set the wait for each response from the world. [default: 30]\n")
+			&& of_pause.contains("\n  -h, --help                  Show help for this command.\n")
 			&& of_pause.contains("\nExit codes:\n  0  World paused, or was already paused.\n")
 			&& !of_pause.contains("--log"),
 		"help wait pause said {}",
@@ -445,6 +446,14 @@ fn command_line_shape() {
 		(
 			&["version", "--pid", "1"],
 			"error: --pid cannot be used with 'version': it does not select an existing world."
+		),
+		(
+			&["list", "--response-timeout", "1"],
+			"error: --response-timeout cannot be used with 'list': it does not select an existing world."
+		),
+		(
+			&["--response-timeout", "1", "stop"],
+			"error: --response-timeout cannot be used with 'stop': it waits for the process to exit; use --timeout."
 		),
 		(
 			&["trace"],
@@ -558,7 +567,7 @@ fn another_version() {
 	let header: Vec<&str> = table.lines().next().unwrap_or_default().split_whitespace().collect();
 	assert_eq!(
 		header,
-		["PID", "PROGRAM", "PROTOCOL", "COMPATIBLE", "DMB", "CWD", "ARGS"],
+		["PID", "PROGRAM", "PROTOCOL", "COMPATIBLE", "RESPONSIVE", "DMB", "CWD", "ARGS"],
 		"list said {}",
 		table
 	);
@@ -568,7 +577,8 @@ fn another_version() {
 		.unwrap_or_else(|| panic!("the other version's world isn't in the table: {}", table))
 		.split_whitespace()
 		.collect();
-	assert_eq!((row[2], row[3]), (theirs.to_string().as_str(), "no"), "list said {}", table);
+	assert_eq!((row[2], row[3], row[4]), (theirs.to_string().as_str(), "no", "-"), "list said {}", table);
+	assert_eq!(listed["responsive"], json!(null), "{}", listed);
 
 	let pid_text = pid.to_string();
 	let (code, printed) = launcher_command(&["--pid", &pid_text, "status"]);
@@ -628,10 +638,14 @@ fn command_line_more(pid: u64, dir: &Path) {
 	// keeps
 	let first = printed.split_once(": ").map(|(_, rest)| rest).unwrap_or_default();
 	assert!(
-		printed.starts_with("stack ") && first.starts_with("/run_until_stopped\n#0 /run_until_stopped") && printed.contains(" (sleeping)\n#0 "),
+		printed.starts_with("stack ")
+			&& first.starts_with("/run_until_stopped\n#0 /run_until_stopped")
+			&& printed.contains(": /doze (sleeping)\n#0 /doze  attach_host.dm:"),
 		"stack --all said {}",
 		printed
 	);
+	// Exclude the sleeping debugger helper.
+	assert!(!printed.contains("auxtools_keepalive"), "stack --all said {}", printed);
 	println!("ok: CLI running and sleeping stacks");
 
 	let printed = run(&["vars"], 0);
@@ -909,6 +923,28 @@ fn command_line_trace(pid: u64, code: &Path) {
 		traced.status
 	);
 	println!("ok: trace handles closed output pipe");
+
+	// Closing stdout must also work for output larger than the pipe buffer.
+	let mut evaluating = Command::new(client::launcher_path())
+		.args(["--pid", &pid, "eval", "jointext(new/list(100000), \"xxxxxxxx\")"])
+		.stdout(Stdio::piped())
+		.stderr(Stdio::piped())
+		.spawn()
+		.unwrap();
+	let mut out = evaluating.stdout.take().unwrap();
+	let mut start = [0; 9];
+	out.read_exact(&mut start).unwrap();
+	assert_eq!(&start, b"\"xxxxxxxx");
+	drop(out);
+	let evaluated = evaluating.wait_with_output().unwrap();
+	let err = String::from_utf8_lossy(&evaluated.stderr);
+	assert!(
+		err.is_empty() && evaluated.status.code().unwrap_or(0) == 0,
+		"eval failed after stdout closed: {} ({})",
+		err,
+		evaluated.status
+	);
+	println!("ok: eval handles closed output pipe");
 
 	#[cfg(unix)]
 	{
@@ -1367,6 +1403,64 @@ fn launch_from_the_command_line(server: &str) {
 	wait_for_text("the background launcher's log", "attach test: 1", read_log);
 	println!("ok: detached launch readiness and commands");
 
+	// Keep stalled worlds visible in both text and JSON listings.
+	#[cfg(unix)]
+	{
+		let mine = |listed: Vec<serde_json::Value>| listed.into_iter().find(|world| world["pid"] == pid);
+		let listed = mine(client::listed_worlds()).unwrap_or_else(|| panic!("list doesn't show the world"));
+		assert_eq!(listed["responsive"], json!(true), "{}", listed);
+		// Run checks concurrently to minimize time spent under SIGSTOP.
+		assert!(Command::new("kill").args(["-STOP", &pid_text]).status().unwrap().success());
+		let asked: Vec<_> = [
+			&["list"][..],
+			&["list", "--json"],
+			&["--pid", &pid_text, "status", "--response-timeout", "1"],
+			&["--pid", &pid_text, "--response-timeout", "1.5", "pause"]
+		]
+		.iter()
+		.map(|args| {
+			std::thread::spawn({
+				let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+				move || launcher_command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+			})
+		})
+		.collect();
+		let mut answers = asked.into_iter().map(|asking| asking.join().unwrap());
+		let (code, table) = answers.next().unwrap();
+		let stopped = answers.next().unwrap().1;
+		let (status, paused) = (answers.next().unwrap(), answers.next().unwrap());
+		assert!(Command::new("kill").args(["-CONT", &pid_text]).status().unwrap().success());
+		let worlds: serde_json::Value = serde_json::from_str(&stopped).unwrap_or_else(|_| panic!("list --json said {}", stopped));
+		let listed = worlds.as_array().unwrap().iter().find(|world| world["pid"] == pid);
+		assert!(
+			listed.is_some_and(|world| world["responsive"] == false && world["compatible"] == true && world["dmb"].is_null()),
+			"list --json said {}",
+			stopped
+		);
+		let row = table.lines().find(|line| line.split_whitespace().next() == Some(pid_text.as_str()));
+		assert!(
+			code == 0 && row.is_some_and(|row| row.split_whitespace().nth(4) == Some("no")),
+			"list said {}",
+			table
+		);
+		println!("ok: list shows unresponsive worlds");
+		for ((code, printed), seconds) in [(status, "1 second"), (paused, "1.5 seconds")] {
+			assert_eq!(
+				(code, printed.as_str()),
+				(
+					2,
+					format!(
+						"error: timed out after {} waiting for the world to respond; it is busy or hung. Set --response-timeout to wait longer.\n",
+						seconds
+					)
+					.as_str()
+				),
+				"a command to a stopped world"
+			);
+		}
+		println!("ok: response timeouts for stalled worlds");
+	}
+
 	let printed = run(&["reboot"], 0);
 	assert_eq!(printed.trim(), format!("pid {}: rebooted", pid));
 	assert_eq!(run(&["status"], 0).lines().next().unwrap_or_default(), format!("pid {}: running", pid));
@@ -1374,6 +1468,60 @@ fn launch_from_the_command_line(server: &str) {
 	assert_eq!(again, json!({ "pid": pid, "rebooted": true }));
 	wait_for_text("the background launcher's log", "The world restarted", read_log);
 	println!("ok: reboot waits for reconnection");
+
+	// Reboot must wait for hot reloads to be restored.
+	let source = std::fs::read_to_string(&code).unwrap();
+	std::fs::write(&code, format!("{}\n/proc/added_by_reload()\n\treturn 99\n", source)).unwrap();
+	wait_for_text("the background launcher's log", "Hot reload: added /added_by_reload", read_log);
+	run(&["reboot", "--timeout", "60"], 0);
+	assert_eq!(run(&["eval", "added_by_reload()"], 0).trim(), "99");
+	let loaded: serde_json::Value = serde_json::from_str(&run(&["log", "--world", "--last", "1", "--json"], 0)).unwrap();
+	let status: serde_json::Value = serde_json::from_str(&run(&["status", "--json"], 0)).unwrap();
+	assert!(
+		loaded["event"] == "loaded"
+			&& status["last_reload"]["applied"] == true
+			&& status["last_reload"]["number"].as_u64() > loaded["number"].as_u64(),
+		"after reboot, the world loaded at {} and the last reload is {}",
+		loaded,
+		status["last_reload"]
+	);
+	println!("ok: reboot waits for hot reloads to be reapplied");
+
+	// Pause the launcher so it receives a source edit and reboot together.
+	// The rebuilt world already contains the edit; do not apply it again.
+	#[cfg(unix)]
+	{
+		let rebaselined = || read_log().matches("using the rebuilt .dmb as the source baseline").count();
+		let before = rebaselined();
+		let launcher_text = launcher.to_string();
+		assert!(Command::new("kill").args(["-STOP", &launcher_text]).status().unwrap().success());
+		let edited = std::fs::read_to_string(&code).unwrap();
+		std::fs::write(&code, format!("{}\n/proc/zz_agent_probe()\n\treturn 7\n", edited)).unwrap();
+		let built = Command::new(paths::find_dm()).with_byond_paths().arg(&dme).output().unwrap();
+		std::fs::write(dir.join("reboot"), "yes").unwrap();
+		// The world reboots by itself within half a second
+		std::thread::sleep(Duration::from_secs(3));
+		assert!(Command::new("kill").args(["-CONT", &launcher_text]).status().unwrap().success());
+		assert!(built.status.success(), "dreammaker build failed");
+		let started = Instant::now();
+		while rebaselined() == before {
+			assert!(
+				started.elapsed() < Duration::from_secs(60),
+				"the launcher did not adopt the rebuilt .dmb:\n{}",
+				read_log()
+			);
+			std::thread::sleep(Duration::from_millis(100));
+		}
+		assert_eq!(run(&["eval", "zz_agent_probe()"], 0).trim(), "7");
+		let printed = run(&["proc", "/zz_agent_probe"], 0);
+		assert!(
+			printed.contains("definitions: 1\n") && printed.contains("reloaded: no\n"),
+			"proc already included in the rebuilt .dmb was reloaded: {}\nlauncher log:\n{}",
+			printed,
+			read_log()
+		);
+		println!("ok: rebuilt worlds skip reloads already included in the build");
+	}
 
 	// Whenever in the world's round it's asked: a proc that wakes between the
 	// world's Del() and the next world loading is the old world's, and the
@@ -1396,6 +1544,7 @@ fn launch_from_the_command_line(server: &str) {
 	assert_eq!(printed.trim(), format!("pid {}: stopped", pid));
 	assert!(!alive(pid), "world process is still running");
 	assert!(gone_within(launcher, 10), "the background launcher didn't go with the world");
+	std::fs::write(&code, source).unwrap();
 	let said = read_log();
 	assert!(
 		said.contains("attach test: world/Del") && said.contains("The world exited with code 0"),

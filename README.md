@@ -21,7 +21,7 @@ Use `auxtools list` to find running worlds. Worlds using an incompatible debugge
 
 For VS Code, install the extension and press F5 in a workspace containing a built world. See the [extension README](editors/vscode/README.md) for configuration and debugging features.
 
-For command-line use, run `auxtools help COMMAND` for options, behavior, output and exit codes. `--pid PID` selects a world when several are running. Results go to stdout and diagnostics to stderr. `--json` returns a JSON value, or JSON Lines for `log` and `trace`.
+For command-line use, run `auxtools help COMMAND` for options, behavior, output and exit codes. `--pid PID` selects a world when several are running. Requests time out after 30 seconds by default, with exit code 2. Use `--response-timeout SECONDS` to change the limit. Results go to stdout and diagnostics to stderr. `--json` returns a JSON value, or JSON Lines for `log` and `trace`.
 
 ```sh
 auxtools launch tgstation.dmb --detach
@@ -47,7 +47,7 @@ The launcher watches source files and reloads changes when they are saved. Hot r
 
 Supported changes include proc bodies, proc and verb additions, proc removals, new types and variables, variable defaults, parameters and `set` statements. The launcher reports changes that require a rebuild, including parent type changes and unsupported declaration changes.
 
-Existing calls finish on their original bytecode. Existing instances retain their verbs and built-in values; computed defaults apply to new instances. Reloads are restored after reboot.
+Existing calls finish on their original bytecode. Existing instances retain their verbs and built-in values; computed defaults apply to new instances. Worlds launched with hot reload wait for reloads to be restored after reboot before running any code.
 
 Proc-body edits can use a single-file parse. Other edits trigger a full project parse. See the [extension documentation](editors/vscode/README.md#hot-reload-experimental) for reload limits and the [hot reload tests](tests/hot_reload_test) for supported cases.
 

@@ -45,7 +45,7 @@ pub use list::List;
 pub use proc::Proc;
 pub use raw_types::variables::VariableNameIdTable;
 pub use runtime::{DMResult, Runtime};
-pub use string::StringRef;
+pub use string::{text_of, StringRef};
 pub use string_intern::InternedString;
 pub use symbols::{byond_build, find_recipe, find_recipe_of};
 pub use value::Value;

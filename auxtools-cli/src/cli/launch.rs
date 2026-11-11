@@ -314,11 +314,11 @@ fn detach(options: &Options, as_json: bool) -> Result<()> {
 	if let Some(pid) = line.as_deref().and_then(|line| line.strip_prefix("ready ")) {
 		let pid: u32 = pid.parse().unwrap_or_default();
 		if as_json {
-			println!("{}", json!({ "pid": pid, "launcher": launcher_pid, "log": log }));
+			say!("{}", json!({ "pid": pid, "launcher": launcher_pid, "log": log }));
 		} else {
-			println!("pid {}: started", pid);
-			println!("launcher: pid {}", launcher_pid);
-			println!("log: {}", log.display());
+			say!("pid {}: started", pid);
+			say!("launcher: pid {}", launcher_pid);
+			say!("log: {}", log.display());
 		}
 		return Ok(());
 	}

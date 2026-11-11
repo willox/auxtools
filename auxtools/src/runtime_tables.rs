@@ -959,6 +959,26 @@ pub fn add_proc(entry: &ProcEntryWords) -> Result<ProcId, String> {
 	Ok(ProcId(id))
 }
 
+/// Append a proc with a fresh ID, even if an identical entry exists.
+/// Unlike `add_proc`, this supports re-adding removed procs and adding
+/// identical definitions.
+pub fn append_proc(entry: &ProcEntryWords) -> Result<ProcId, String> {
+	// Temporarily hide matching paths to prevent BYOND from reusing an entry.
+	let path = entry.0[ProcEntryWords::PATH];
+	let hidden: Vec<ProcId> = (0..proc_count())
+		.map(ProcId)
+		.filter(|&id| proc_entry(id).is_some_and(|e| e.0[ProcEntryWords::PATH] == path))
+		.collect();
+	for &id in &hidden {
+		set_proc_entry_word(id, ProcEntryWords::PATH, !path);
+	}
+	let added = add_proc(entry);
+	for &id in &hidden {
+		set_proc_entry_word(id, ProcEntryWords::PATH, path);
+	}
+	added
+}
+
 /// How many procs there are. The next one added gets this id.
 pub fn proc_count() -> u32 {
 	let mut id = 0;

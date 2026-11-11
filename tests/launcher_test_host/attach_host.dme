@@ -2,3 +2,5 @@
 // and hot reload. The test runs a copy of it, which it edits.
 #define DEBUG
 #include "attach_host.dm"
+// This location appears in the included file's last proc's debug markers.
+#define AFTER_THE_CODE

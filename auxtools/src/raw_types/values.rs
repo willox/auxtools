@@ -141,7 +141,7 @@ impl fmt::Display for Value {
 					let id = self.data.string;
 					let mut entry: *mut strings::StringEntry = std::ptr::null_mut();
 					assert_eq!(funcs::get_string_table_entry(&mut entry, id), 1);
-					write!(f, "{:?}", CStr::from_ptr((*entry).data).to_string_lossy())
+					write!(f, "{:?}", crate::text_of(CStr::from_ptr((*entry).data).to_bytes()))
 				}
 				_ => write!(f, "Value({}, {})", self.tag as u8, self.data.id)
 			}
@@ -159,7 +159,7 @@ impl fmt::Debug for Value {
 					let id = self.data.string;
 					let mut entry: *mut strings::StringEntry = std::ptr::null_mut();
 					assert_eq!(funcs::get_string_table_entry(&mut entry, id), 1);
-					write!(f, "{:?}", CStr::from_ptr((*entry).data).to_string_lossy())
+					write!(f, "{:?}", crate::text_of(CStr::from_ptr((*entry).data).to_bytes()))
 				}
 				_ => write!(f, "Value({}, {})", self.tag as u8, self.data.id)
 			}

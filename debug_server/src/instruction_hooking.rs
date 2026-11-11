@@ -11,6 +11,7 @@ use crate::{
 };
 
 // Could move these to dmasm
+const OPCODE_DBGFILE: u32 = 0x84;
 const OPCODE_DBGLINE: u32 = 0x85;
 const OPCODE_THROW: u32 = 0x12D;
 const OPCODE_DEBUG_BREAK: u32 = 0x1337;
@@ -154,6 +155,14 @@ unsafe fn mark(ctx: *mut raw_types::procs::ExecutionContext) -> Option<ProcInsta
 	}
 }
 
+/// Mark the caller as a step target, unless it is a hidden debugger helper.
+unsafe fn mark_caller(ctx: *mut raw_types::procs::ExecutionContext) -> Option<ProcInstanceRef> {
+	if ctx.is_null() || Proc::from_id(unsafe { (**(*ctx).proc_instance()).proc }).is_some_and(|proc| crate::launched::runs_spawns(&proc)) {
+		return None;
+	}
+	unsafe { mark(ctx) }
+}
+
 /// Pause if a client requests it. Return the resume action, or `None`
 /// if execution was not paused.
 fn handle_breakpoint(ctx: *mut raw_types::procs::ExecutionContext, reason: BreakpointReason) -> Option<DebuggerAction> {
@@ -170,34 +179,34 @@ fn handle_breakpoint(ctx: *mut raw_types::procs::ExecutionContext, reason: Break
 			let (ctx, caller) = get_proc_ctx(stack_id);
 			DebuggerAction::StepOver {
 				target: ProcInstanceRef::new(unsafe { *(*ctx).proc_instance() }),
-				caller: unsafe { mark(caller) }
+				caller: unsafe { mark_caller(caller) }
 			}
 		}
 		ContinueKind::StepInto { stack_id } => {
 			let (ctx, caller) = get_proc_ctx(stack_id);
 			DebuggerAction::StepInto {
 				parent: ProcInstanceRef::new(unsafe { *(*ctx).proc_instance() }),
-				caller: unsafe { mark(caller) }
+				caller: unsafe { mark_caller(caller) }
 			}
 		}
 		ContinueKind::StepOverInstruction { stack_id } => {
 			let (ctx, caller) = get_proc_ctx(stack_id);
 			DebuggerAction::StepOverInstruction {
 				target: ProcInstanceRef::new(unsafe { *(*ctx).proc_instance() }),
-				caller: unsafe { mark(caller) }
+				caller: unsafe { mark_caller(caller) }
 			}
 		}
 		ContinueKind::StepIntoInstruction { stack_id } => {
 			let (ctx, caller) = get_proc_ctx(stack_id);
 			DebuggerAction::StepIntoInstruction {
 				parent: ProcInstanceRef::new(unsafe { *(*ctx).proc_instance() }),
-				caller: unsafe { mark(caller) }
+				caller: unsafe { mark_caller(caller) }
 			}
 		}
 		ContinueKind::StepOut { stack_id } => {
 			// Just continue the code if nothing called it
 			let (_, caller) = get_proc_ctx(stack_id);
-			match unsafe { mark(caller) } {
+			match unsafe { mark_caller(caller) } {
 				Some(target) => DebuggerAction::StepOut { target },
 				None => {
 					step_ended();
@@ -370,6 +379,10 @@ impl InstructionHook for Server {
 		// stepped over.
 		let server = self;
 		let in_eval = server.is_in_eval();
+		// Track the frame in case evaluation is interrupted by sleep.
+		if in_eval {
+			server.eval_runs(ctx);
+		}
 
 		if !in_eval && server.process() {
 			unsafe {
@@ -412,6 +425,10 @@ impl InstructionHook for Server {
 					CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Pause).unwrap_or(DebuggerAction::None);
 					did_breakpoint = true;
 				}
+
+				// Skip debug markers when stepping. DreamMaker can insert a
+				// .dme location between an included proc's source locations.
+				DebuggerAction::BreakOnNext if is_dbgline || opcode == OPCODE_DBGFILE => {}
 
 				DebuggerAction::BreakOnNext => {
 					CURRENT_ACTION = DebuggerAction::None;

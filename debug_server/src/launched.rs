@@ -116,6 +116,11 @@ pub fn can_spawn() -> Result<(), String> {
 	Err("this world can't run spawned code: it doesn't have the debugger's helper procs for it".to_owned())
 }
 
+/// Identify the debugger helpers that form the outer frames of spawned code.
+pub fn runs_spawns(proc: &Proc) -> bool {
+	KEEPALIVE_OURS.load(Ordering::Relaxed) && matches!(proc.path.as_str(), "/auxtools_keepalive" | "/auxtools_spawned")
+}
+
 static WORLD_LOAD: WorldLoad = WorldLoad { prepare, ready, failed };
 
 /// Whether a launcher started this world
