@@ -22,6 +22,8 @@ static CLIENTS: AtomicU32 = AtomicU32::new(0);
 static PORT: AtomicU16 = AtomicU16::new(0);
 /// Wake notification pending for clients.
 static WOKE: AtomicBool = AtomicBool::new(false);
+/// Signal that the event channel may need draining on the world thread.
+static EVENTS: AtomicBool = AtomicBool::new(false);
 
 /// Idle interval before waking a world with connected clients.
 const PATIENCE: Duration = Duration::from_secs(1);
@@ -50,6 +52,18 @@ pub fn client_left() {
 
 pub fn set_port(port: u16) {
 	PORT.store(port, Ordering::Relaxed);
+}
+
+/// Signal a new event. Call after sending it to the channel.
+pub fn event_sent() {
+	EVENTS.store(true, Ordering::Release);
+}
+
+/// Consume the pending-event flag. If set, drain the channel; later sends
+/// set the flag again.
+pub fn events_pending() -> bool {
+	// Avoid an atomic write on every instruction when the flag is clear.
+	EVENTS.load(Ordering::Acquire) && EVENTS.swap(false, Ordering::AcqRel)
 }
 
 /// Consume the wake notification.

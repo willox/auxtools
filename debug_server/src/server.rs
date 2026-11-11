@@ -440,6 +440,7 @@ impl Server {
 					return;
 				};
 				let _ = acceptor.events.send(Event::Connected(next_id, connection.clone()));
+				waker::event_sent();
 				acceptor.events.clone()
 			};
 
@@ -3175,9 +3176,12 @@ impl Server {
 			self.notify("Woke world suspended by world.sleep_offline to process debugger requests");
 		}
 
-		while let Some(request) = self.recv_request(Wait::No) {
-			// Not `||`, that would skip every request after a Pause
-			should_pause |= self.handle_request(request);
+		// Avoid polling an empty channel on every DM instruction.
+		if waker::events_pending() {
+			while let Some(request) = self.recv_request(Wait::No) {
+				// Not `||`, that would skip every request after a Pause
+				should_pause |= self.handle_request(request);
+			}
 		}
 
 		should_pause
@@ -3425,10 +3429,12 @@ impl ServerThread {
 				eprintln!("Debug server thread failed to handle request: {}", e);
 				break;
 			}
+			waker::event_sent();
 		}
 
 		waker::client_left();
 		let _ = self.events.send(Event::Disconnected(id));
+		waker::event_sent();
 	}
 }
 
