@@ -142,7 +142,9 @@ pub struct ExecutionContext {
 	// 0 while the proc is sleeping. There is no separate "paused" byte
 	not_suspended: u8,
 	caller_chain_preserve_depth: u8,
-	background: u8,
+	// Nonzero for background execution, from `set background = 1` or BYOND's
+	// infinite loop check. Background procs sleep periodically.
+	pub background: u8,
 	exception_state: u8,
 	// the `try` blocks the proc is inside, innermost first: null when it's in
 	// none

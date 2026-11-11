@@ -370,6 +370,10 @@ impl InstructionHook for Server {
 		// stepped over.
 		let server = self;
 		let in_eval = server.is_in_eval();
+		// Track the frame in case evaluation is interrupted by sleep.
+		if in_eval {
+			server.eval_runs(ctx);
+		}
 
 		if !in_eval && server.process() {
 			unsafe {

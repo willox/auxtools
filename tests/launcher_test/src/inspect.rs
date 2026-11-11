@@ -128,6 +128,18 @@ fn eval_failures(pid: &str, code: &Path) {
 	);
 	println!("ok: eval runtime error call stack");
 
+	// Long loops yield in the background, so synchronous eval loses the result.
+	let looped = "var/x = 0; for(var/i in 1 to 2000000) x++; return x";
+	let said = fails(pid, &["eval", looped]);
+	assert!(
+		said.starts_with("evaluation aborted") && said.contains("background") && said.contains("eval --spawn --wait"),
+		"unexpected eval output: {}",
+		said
+	);
+	// Spawned eval can wait for the result.
+	assert_eq!(run(pid, &["eval", "--spawn", "--wait", looped], 0).out, "2000000\n");
+	println!("ok: background loop evaluation");
+
 	// Match the text BYOND prints, without embedded macros.
 	assert_eq!(run(pid, &["eval", "\"\\improper AI \\bold Chamber\""], 0).out, "\"AI Chamber\"\n");
 	let named = json_of(pid, &["eval", "--json", "new /obj/macro_named"]);

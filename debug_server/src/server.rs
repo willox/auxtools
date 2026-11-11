@@ -298,6 +298,8 @@ pub struct Server {
 	state: Option<State>,
 	in_eval: bool,
 	eval_error: Option<String>,
+	/// Last executing evaluation frame; identifies the frame if it sleeps.
+	eval_ran: *mut raw_types::procs::ExecutionContext,
 	breakpoints: Breakpoints,
 	/// Why and where the world is paused, while it is
 	paused: Option<Stop>,
@@ -387,6 +389,7 @@ impl Server {
 			state: None,
 			in_eval: false,
 			eval_error: None,
+			eval_ran: std::ptr::null_mut(),
 			breakpoints: HashMap::new(),
 			moved_breakpoints: HashMap::new(),
 			paused: None,
@@ -479,6 +482,11 @@ impl Server {
 
 	pub const fn is_in_eval(&self) -> bool {
 		self.in_eval
+	}
+
+	/// Record the current evaluation frame.
+	pub fn eval_runs(&mut self, ctx: *mut raw_types::procs::ExecutionContext) {
+		self.eval_ran = ctx;
 	}
 
 	/// Evaluation runtime error and stack between the failing proc and
@@ -2116,6 +2124,7 @@ impl Server {
 		// of this one, and a runtime would pause inside the pause we're in.
 		self.in_eval = true;
 		self.eval_error = None;
+		self.eval_ran = std::ptr::null_mut();
 
 		let result = self.compile_and_run_expr(frame_id, command);
 		self.eval_given.clear();
@@ -2339,6 +2348,23 @@ impl Server {
 					}
 
 					Ok(list.get(1).unwrap())
+				} else if !self.eval_ran.is_null() && background_known() && unsafe { *(*self.eval_ran).background() } != 0 {
+					// Background procs sleep periodically, including those
+					// moved there by world.loop_checks after about a million
+					// iterations.
+					Err(
+						"evaluation aborted: BYOND moved the code to the background, so its result is unavailable. This can happen after about a \
+						 million loop iterations (world.loop_checks), or with `set background = 1`. The code is still running. Use `eval --spawn \
+						 --wait` to wait for a result"
+							.to_owned()
+					)
+				} else if !background_known() {
+					Err(
+						"evaluation aborted because the code slept or BYOND moved it to the background, so its result is unavailable. BYOND does \
+						 that after about a million loop iterations (world.loop_checks), or with `set background = 1`. Use `eval --spawn --wait` to \
+						 wait for a result"
+							.to_owned()
+					)
 				} else {
 					// The stub returns a list unless it's cut short, and a
 					// runtime error is told apart above
@@ -3408,6 +3434,13 @@ impl Server {
 		}
 		self.send_or_disconnect(Response::Journal { entries, first, last });
 	}
+}
+
+/// Whether a frame's background flag can be read. Its place in the
+/// execution context was found on BYOND 516; older builds lay it out
+/// differently.
+fn background_known() -> bool {
+	auxtools::version::get().0 >= 516
 }
 
 impl Drop for Server {
