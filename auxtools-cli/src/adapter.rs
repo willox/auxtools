@@ -933,7 +933,10 @@ impl Adapter {
 		}
 		self.waiting_for_code = match &self.code {
 			// A world that restarted waits for its reloads again
-			Some(code) => code.send(code::Command::Connected { byond }).is_ok() && self.code_read,
+			Some(code) => {
+				let world = self.generation;
+				code.send(code::Command::Connected { byond, world }).is_ok() && self.code_read
+			}
 			None => false
 		};
 		if !self.waiting_for_code {
@@ -1008,9 +1011,23 @@ impl Adapter {
 				self.watching = true;
 				self.say_ready();
 			}
-			code::Event::Reload { request, summary, notes } => {
-				self.reload_seen = Some(std::time::SystemTime::now());
-				let applied = self.reload(*request, &summary, notes);
+			code::Event::Reload {
+				request,
+				summary,
+				notes,
+				world
+			} => {
+				// A reboot invalidates pending reloads: a rebuilt .dmb may
+				// already contain the changes. The source worker will use the
+				// new baseline.
+				let applied = if self.debuggee.as_ref().is_some_and(|d| d.generation != world) {
+					self.out
+						.console(format!("Hot reload skipped: prepared before the world restarted: {}", summary));
+					false
+				} else {
+					self.reload_seen = Some(std::time::SystemTime::now());
+					self.reload(*request, &summary, notes)
+				};
 				if let Some(code) = &self.code {
 					let _ = code.send(code::Command::Reloaded(applied));
 				}

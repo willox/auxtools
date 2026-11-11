@@ -40,12 +40,14 @@ pub enum Event {
 	Ready,
 	/// The files are being watched: a change from now on is reloaded
 	Watching,
-	/// Changes to apply. The adapter replies with `Command::Reloaded`.
-	/// `notes` are included in the journal's warnings.
+	/// Changes prepared for `world`, identified by `Command::Connected`.
+	/// The adapter replies with `Command::Reloaded`. `notes` become journal
+	/// warnings.
 	Reload {
 		request: Box<HotReloadRequest>,
 		summary: String,
-		notes: Vec<String>
+		notes: Vec<String>,
+		world: u64
 	},
 	/// Rejected changes and diagnostics for the journal.
 	NotReloaded {
@@ -63,8 +65,8 @@ pub enum Event {
 
 /// Commands from the adapter to the source worker.
 pub enum Command {
-	/// The world connected, on this BYOND version
-	Connected { byond: (u32, u32) },
+	/// A world connected with this BYOND version and connection generation.
+	Connected { byond: (u32, u32), world: u64 },
 	/// Whether the last reload was applied
 	Reloaded(bool)
 }
@@ -89,6 +91,7 @@ pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>
 				inputs,
 				commands: receiver,
 				reconnected: Cell::new(false),
+				world: Cell::new(0),
 				parsed: Cell::new(false),
 				macros: RefCell::new(None)
 			};
@@ -107,6 +110,8 @@ struct Code {
 	commands: mpsc::Receiver<Command>,
 	/// A reboot occurred while awaiting a reload response.
 	reconnected: Cell<bool>,
+	/// Connection generation used to prepare reloads.
+	world: Cell<u64>,
 	/// A full parse occurred since the last heap trim.
 	parsed: Cell<bool>,
 	/// The macros the world was last given
@@ -130,6 +135,12 @@ impl Code {
 		self.out.console(format!("Hot reload: {}", message.into()));
 	}
 
+	/// Schedule source synchronization for a newly connected world.
+	fn connected(&self, world: u64) {
+		self.world.set(world);
+		self.reconnected.set(true);
+	}
+
 	fn send(&self, event: Event) -> bool {
 		self.inputs.send(Input::Code(event)).is_ok()
 	}
@@ -144,12 +155,18 @@ impl Code {
 		// on the running world's BYOND build.
 		let byond = loop {
 			match self.commands.recv() {
-				Ok(Command::Connected { byond }) => break byond,
+				Ok(Command::Connected { byond, world }) => {
+					self.world.set(world);
+					break byond;
+				}
 				Ok(Command::Reloaded(_)) => {}
 				Err(_) => return
 			}
 		};
 		self.parse_options.byond = Some(byond);
+		// Record this before parsing so a rebuild during the parse is detected
+		// as a new baseline on the next connection.
+		let dmb_modified = self.dmb_modified();
 
 		let started = Instant::now();
 		let built = match self.parse() {
@@ -166,7 +183,7 @@ impl Code {
 		let files = files(&built, &self.options.dme);
 		let mut watching = Watching {
 			files: Watched::new(&self.root, &files),
-			dmb_modified: self.dmb_modified(),
+			dmb_modified,
 			edited_since_built: HashSet::new(),
 			applied: None,
 			built
@@ -196,7 +213,7 @@ impl Code {
 		loop {
 			let wait = INTERVAL.max(watching.files.took * (LOOKING_SHARE - 1));
 			match self.commands.recv_timeout(wait) {
-				Ok(Command::Connected { .. }) => self.reconnected.set(true),
+				Ok(Command::Connected { world, .. }) => self.connected(world),
 				Ok(Command::Reloaded(_)) => {}
 				Err(mpsc::RecvTimeoutError::Disconnected) => return,
 				Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -309,8 +326,15 @@ impl Code {
 			}
 			self.log("using the rebuilt .dmb as the source baseline");
 			watching.dmb_modified = dmb_modified;
+			// Include pending edits in the baseline rather than reloading them.
+			watching.files.changed(&self.root);
 			match self.parse() {
-				Ok(built) => watching.built = built,
+				Ok(built) => {
+					for file in files(&built, &self.options.dme) {
+						watching.files.add(&self.root, &file);
+					}
+					watching.built = built;
+				}
 				Err(e) => self.log(format!("couldn't read the code: {}", e))
 			}
 			watching.applied = None;
@@ -353,8 +377,8 @@ impl Code {
 	/// Return false if sending `Event::Ready` fails.
 	fn ready(&self) -> bool {
 		while let Ok(command) = self.commands.try_recv() {
-			if let Command::Connected { .. } = command {
-				self.reconnected.set(true);
+			if let Command::Connected { world, .. } = command {
+				self.connected(world);
 			}
 		}
 		self.reconnected.get() || self.send(Event::Ready)
@@ -419,15 +443,17 @@ impl Code {
 		if !self.send(Event::Reload {
 			request: Box::new(request),
 			summary: summary(changes),
-			notes: changes.warnings.clone()
+			notes: changes.warnings.clone(),
+			world: self.world.get()
 		}) {
 			return None;
 		}
 		loop {
 			match self.commands.recv() {
 				Ok(Command::Reloaded(applied)) => return Some(applied),
-				// Reboot interrupted delivery; `catch_up` will retry.
-				Ok(Command::Connected { .. }) => self.reconnected.set(true),
+				// The adapter rejects reloads prepared before a reboot;
+				// `catch_up` will prepare them for the new world.
+				Ok(Command::Connected { world, .. }) => self.connected(world),
 				Err(_) => return None
 			}
 		}

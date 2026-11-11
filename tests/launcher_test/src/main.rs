@@ -1487,6 +1487,42 @@ fn launch_from_the_command_line(server: &str) {
 	);
 	println!("ok: reboot waits for hot reloads to be reapplied");
 
+	// Pause the launcher so it receives a source edit and reboot together.
+	// The rebuilt world already contains the edit; do not apply it again.
+	#[cfg(unix)]
+	{
+		let rebaselined = || read_log().matches("using the rebuilt .dmb as the source baseline").count();
+		let before = rebaselined();
+		let launcher_text = launcher.to_string();
+		assert!(Command::new("kill").args(["-STOP", &launcher_text]).status().unwrap().success());
+		let edited = std::fs::read_to_string(&code).unwrap();
+		std::fs::write(&code, format!("{}\n/proc/zz_agent_probe()\n\treturn 7\n", edited)).unwrap();
+		let built = Command::new(paths::find_dm()).with_byond_paths().arg(&dme).output().unwrap();
+		std::fs::write(dir.join("reboot"), "yes").unwrap();
+		// The world reboots by itself within half a second
+		std::thread::sleep(Duration::from_secs(3));
+		assert!(Command::new("kill").args(["-CONT", &launcher_text]).status().unwrap().success());
+		assert!(built.status.success(), "dreammaker build failed");
+		let started = Instant::now();
+		while rebaselined() == before {
+			assert!(
+				started.elapsed() < Duration::from_secs(60),
+				"the launcher did not adopt the rebuilt .dmb:\n{}",
+				read_log()
+			);
+			std::thread::sleep(Duration::from_millis(100));
+		}
+		assert_eq!(run(&["eval", "zz_agent_probe()"], 0).trim(), "7");
+		let printed = run(&["proc", "/zz_agent_probe"], 0);
+		assert!(
+			printed.contains("definitions: 1\n") && printed.contains("reloaded: no\n"),
+			"proc already included in the rebuilt .dmb was reloaded: {}\nlauncher log:\n{}",
+			printed,
+			read_log()
+		);
+		println!("ok: rebuilt worlds skip reloads already included in the build");
+	}
+
 	// Whenever in the world's round it's asked: a proc that wakes between the
 	// world's Del() and the next world loading is the old world's, and the
 	// debugger waits for the new one
