@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "auxtools"
-version = "0.1.0"
+version = "3.0.0-dev"
 dependencies = [
  "ahash",
  "auxtools-impl",
@@ -612,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "debug_server"
-version = "2.4.0"
+version = "3.0.0-dev"
 dependencies = [
  "auxtools",
  "bincode",
