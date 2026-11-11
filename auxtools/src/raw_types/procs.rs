@@ -35,8 +35,8 @@ pub struct ProcMetadata {
 	pub bytecode: misc::BytecodeId,
 	pub locals: misc::LocalsId,
 	pub parameters: misc::ParametersId,
-	// the proc `..()` goes to, 0xFFFF for none. Brings the entry to the 44 bytes
-	// BYOND strides its proc table by
+	// the proc `..()` goes to, 0xFFFF for none. Brings the entry to the 44
+	// bytes BYOND strides its proc table by
 	#[only_in(Post1630)]
 	next_override: ProcId
 }
@@ -138,7 +138,6 @@ pub struct ExecutionContext {
 	pub iterator_filter_type: values::Value,
 	pub iterator_filter_bitflags: u32,
 	pub iterator_kind: u8,
-	// byond-re calls this one `jnz_lchk_loop_count`
 	pub infinite_loop_count: u32,
 	// 0 while the proc is sleeping. There is no separate "paused" byte
 	not_suspended: u8,
@@ -181,7 +180,6 @@ mod layout_tests {
 
 	// The numbers below are read off the binaries, 516.1688: what BYOND
 	// allocates for each struct and where its own code reaches into them.
-	// The ones for older builds are from byond-re's notes.
 
 	#[test]
 	fn execution_context_linux_and_old_windows() {

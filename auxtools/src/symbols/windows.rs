@@ -1,7 +1,6 @@
-//! Where auxtools finds its BYOND functions and globals in `byondcore.dll`.
+//! BYOND function and global patterns for `byondcore.dll`.
 //!
-//! Copied from `byond_catalog` in the byond-re repo, where `verify_recipes`
-//! checks each pattern against every local build. Keep the two in step.
+//! Patterns were checked on every build in their ranges.
 
 use byond_scan::{Anchor, Extract, OperandSelect, Recipe, SignatureTreatment, VersionRange};
 
@@ -80,8 +79,9 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "get_variable",
 		versions: SUPPORTED,
-		// the 0x0C frame size has to stay pinned: without it the mask matches one of
-		// several common SEH prologues. A changed frame should fail as NotFound.
+		// the 0x0C frame size has to stay pinned: without it the mask matches
+		// one of several common SEH prologues. A changed frame should fail as
+		// NotFound.
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC 0C 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 5D ?? 8B 75 \
@@ -186,9 +186,9 @@ pub(crate) const RECIPES: &[Recipe] = &[
 		name: "value_is_list",
 		versions: SUPPORTED,
 		// this is the function the `islist()` opcode calls. The exported
-		// `ByondValue_IsList` is not used because on 1659 it says no to a `filters`
-		// list. The prologue is a common one, and the tag-range check at the end
-		// (`83 C0 F1 83 F8 46`) is what makes it unique
+		// `ByondValue_IsList` is not used because on 1659 it says no to a
+		// `filters` list. The prologue is a common one, and the tag-range check
+		// at the end (`83 C0 F1 83 F8 46`) is what makes it unique
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 83 EC ?? 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 F4 64 A3 00 00 00 00 89 65 ?? 8B 45 \
@@ -210,8 +210,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "to_string",
 		versions: SUPPORTED,
-		// the prologue changes at 1686 and any shared prefix is ambiguous, so follow
-		// this caller instead. It is unique across the whole range.
+		// the prologue changes at 1686 and any shared prefix is ambiguous, so
+		// follow this caller instead. It is unique across the whole range.
 		anchor: Anchor::Signature(
 			SignatureTreatment::OffsetByCall,
 			"E8 ?? ?? ?? ?? 83 C4 08 8B F0 EB ?? 80 FB 2A 75 ?? 66 83 7D F8"
@@ -232,8 +232,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "current_execution_context",
 		versions: SUPPORTED,
-		// the `A1` load from an absolute address has no base register, which makes
-		// it operand 0
+		// the `A1` load from an absolute address has no base register, which
+		// makes it operand 0
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"A1 ?? ?? ?? ?? 56 53 6A 00 8B 00 57 6A ?? 89 4D ?? FF 70 ?? 8B 4D ?? FF"

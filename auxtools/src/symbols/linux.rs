@@ -1,7 +1,6 @@
-//! Where auxtools finds its BYOND functions and globals in `libbyond.so`.
+//! BYOND function and global patterns for `libbyond.so`.
 //!
-//! Copied from `byond_catalog` in the byond-re repo, where `verify_recipes`
-//! checks each pattern against every local build. Keep the two in step.
+//! Patterns were checked on every build in their ranges.
 
 use byond_scan::{Anchor, Extract, OperandSelect, Recipe, SignatureTreatment, VersionRange};
 
@@ -72,9 +71,9 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "call_proc_by_id",
 		versions: SUPPORTED,
-		// the frame that builds a call record and drops into the interpreter. Every
-		// `mov reg,[esp+disp]` argument load has its displacement wildcarded because
-		// they all move with the frame.
+		// the frame that builds a call record and drops into the interpreter.
+		// Every `mov reg,[esp+disp]` argument load has its displacement
+		// wildcarded because they all move with the frame.
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 31 C0 57 56 53 81 EC ?? ?? ?? ?? F3 0F 7E 8C 24 ?? ?? ?? ?? 8B 8C 24 ?? ?? ?? ?? 8A 84 24 ?? ?? ?? ?? 8B 9C 24 ?? ?? ?? ?? F3 0F 7E \
@@ -86,8 +85,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "call_datum_proc_by_name",
 		versions: SUPPORTED,
-		// positive `ebp` displacements are incoming arguments and stay pinned. The
-		// negative ones are locals and move with the frame.
+		// positive `ebp` displacements are incoming arguments and stay pinned.
+		// The negative ones are locals and move with the frame.
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 31 C9 89 E5 57 56 8D 45 ?? 53 83 EC ?? F3 0F 7E 45 0C 8B 5D 14 C6 45 ?? 00 8B 55 18 8B 75 08 6A 00 66 0F D6 45 ?? 0F B6 FB 66 0F 7E \
@@ -99,8 +98,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "get_variable",
 		versions: SUPPORTED,
-		// `3C 58` is `cmp al, 58h`, the tag bound of the 89-case switch, and it is
-		// what makes this unique
+		// `3C 58` is `cmp al, 58h`, the tag bound of the 89-case switch, and it
+		// is what makes this unique
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 89 E5 57 56 53 83 EC ?? F3 0F 7E 4D 0C 8B 75 08 8B 5D 14 66 0F 6F C1 66 0F 7E CA 66 0F 73 D0 20 0F B6 C2 66 0F 7E 45 ?? 3C 58 77 ??"
@@ -122,9 +121,9 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "inc_ref_count",
 		versions: SUPPORTED,
-		// `80 F9 4A` is `cmp cl, 4Ah`, the tag table bound. The `66 0F 7E C0` before
-		// it is the only thing telling this apart from dec_ref_count in the first 48
-		// bytes.
+		// `80 F9 4A` is `cmp cl, 4Ah`, the tag table bound. The `66 0F 7E C0`
+		// before it is the only thing telling this apart from dec_ref_count in
+		// the first 48 bytes.
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 89 E5 56 53 83 EC ?? F3 0F 7E 4D 08 66 0F 6F C1 66 0F 7E C9 66 0F 73 D0 20 66 0F 7E C0 80 F9 4A 77 ?? 0F B6 C9 FF 24 8D ?? ?? ?? ??"
@@ -135,8 +134,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "dec_ref_count",
 		versions: SUPPORTED,
-		// the fifth call out of the exported ByondValue_DecRef. A shifted call chain
-		// fails silently, so byond-re checks this index with a direct mask as well.
+		// The fifth call from exported ByondValue_DecRef. A shifted call chain
+		// fails silently, so this index was also checked against a direct mask.
 		anchor: Anchor::Export(c"ByondValue_DecRef"),
 		hops: &[4],
 		extract: Extract::Entry
@@ -144,8 +143,9 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "get_assoc_element",
 		versions: SUPPORTED,
-		// splits from set_assoc_element at +0x0E: `8B 7D` here against the setter's
-		// `66 0F 6F`. Everything before that is identical or wildcarded.
+		// splits from set_assoc_element at +0x0E: `8B 7D` here against the
+		// setter's `66 0F 6F`. Everything before that is identical or
+		// wildcarded.
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 89 E5 57 56 53 83 EC ?? F3 0F 7E 4D 0C 8B 7D 08 66 0F 6F C1 66 0F 7E C8 66 0F 7E 4D ?? 66 0F 73 D0 20 66 0F 7E 45 ?? 3C 3C 0F 84 ?? \
@@ -157,8 +157,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "set_assoc_element",
 		versions: SUPPORTED,
-		// the prologue changes after 1659, so follow this caller. It is unique across
-		// the range, and its alignment padding is wildcarded.
+		// the prologue changes after 1659, so follow this caller. It is unique
+		// across the range, and its alignment padding is wildcarded.
 		anchor: Anchor::Signature(
 			SignatureTreatment::OffsetByCall,
 			"E8 ?? ?? ?? ?? 83 C4 20 E9 ?? ?? ?? ?? ?? ?? ?? ?? 31 C9 EB ?? D9 43 04 BA 01 00 00 00"
@@ -169,8 +169,9 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "create_list",
 		versions: SUPPORTED,
-		// `81 FB FF FF 00 00` is `cmp ebx, 0FFFFh`, the failure sentinel. It is what
-		// tells this apart from the `new` dispatcher, which opens the same way.
+		// `81 FB FF FF 00 00` is `cmp ebx, 0FFFFh`, the failure sentinel. It is
+		// what tells this apart from the `new` dispatcher, which opens the same
+		// way.
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 57 56 53 83 EC ?? A1 ?? ?? ?? ?? 8B 7C 24 ?? 85 C0 0F 84 ?? ?? ?? ?? 8B 15 ?? ?? ?? ?? 83 E8 01 A3 ?? ?? ?? ?? 8B 1C 82 81 FB FF FF \
@@ -182,9 +183,9 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "append_to_list",
 		versions: SUPPORTED,
-		// the Value arrives in registers, so the head is a run of movd/punpckldq
-		// instead of stack loads. It opens with `56` where remove_from_list opens
-		// with `55`.
+		// the Value arrives in registers, so the head is a run of
+		// movd/punpckldq instead of stack loads. It opens with `56` where
+		// remove_from_list opens with `55`.
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"56 66 0F 6E CA 66 0F 6E C0 53 66 0F 62 C1 66 0F 7E C6 66 0F 6F D0 66 0F 73 D0 20 89 F1 83 EC ?? 66 0F 7E C0 F3 0F 7E 4C 24 ?? 66 0F 6F \
@@ -196,9 +197,9 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "remove_from_list",
 		versions: SUPPORTED,
-		// the prologue mask only covers up to 1669 and the head changes at 1675, so
-		// follow this caller, which is unique on every build. Its `ebp`
-		// displacements are wildcarded.
+		// the prologue mask only covers up to 1669 and the head changes at
+		// 1675, so follow this caller, which is unique on every build. Its
+		// `ebp` displacements are wildcarded.
 		anchor: Anchor::Signature(
 			SignatureTreatment::OffsetByCall,
 			"E8 ?? ?? ?? ?? 83 85 ?? ?? ?? ?? 01 8B 8D ?? ?? ?? ?? 83 C4 10 83 85 ?? ?? ?? ?? 08 39"
@@ -223,8 +224,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 		name: "value_is_list",
 		versions: SUPPORTED,
 		// this is the function the `islist()` opcode calls. The exported
-		// `ByondValue_IsList` is not used because on Windows 1659 it says no to a
-		// `filters` list, and both platforms should ask the same function.
+		// `ByondValue_IsList` is not used because on Windows 1659 it says no to
+		// a `filters` list, and both platforms should ask the same function.
 		// `80 FA 55` is `cmp dl, 55h`, the highest tag it accepts
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
@@ -248,7 +249,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "to_string",
 		versions: SUPPORTED,
-		// the 89-case interning switch. Stops before unstable alignment padding.
+		// the 89-case interning switch. Stops before unstable alignment
+		// padding.
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 89 E5 57 56 53 83 EC ?? 0F B6 45 08 3C 45 77 ?? 3C 27 77 ?? 8D 50 FF 80 FA 26 77 ?? FF 24 85 ?? ?? ?? ??"
@@ -259,7 +261,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "runtime",
 		versions: SUPPORTED,
-		// throws through __cxa_throw here, where Windows uses _CxxThrowException
+		// throws through __cxa_throw here, where Windows uses
+		// _CxxThrowException
 		anchor: Anchor::Signature(SignatureTreatment::NoOffset, RUNTIME_SIG),
 		hops: &[],
 		extract: Extract::Entry
@@ -267,8 +270,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "current_execution_context",
 		versions: SUPPORTED,
-		// `runtime` opens with a load of this global, and nothing touches memory
-		// before that, so it is operand 0
+		// `runtime` opens with a load of this global, and nothing touches
+		// memory before that, so it is operand 0
 		anchor: Anchor::Signature(SignatureTreatment::NoOffset, RUNTIME_SIG),
 		hops: &[],
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(0))

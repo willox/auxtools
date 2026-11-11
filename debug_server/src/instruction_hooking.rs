@@ -262,8 +262,10 @@ impl InstructionHook for Server {
 				}
 
 				// StepOver breaks on either of the following conditions:
-				// 1) The target context has disappeared - this means it has returned or runtimed
-				// 2) We're inside the target context and on a DbgLine instruction
+				// 1) The target context has disappeared - this means it has
+				//    returned or runtimed
+				// 2) We're inside the target context and on a DbgLine
+				//    instruction
 				DebuggerAction::StepOver { target } => {
 					if is_dbgline && target.is(*(*ctx).proc_instance()) {
 						CURRENT_ACTION = DebuggerAction::BreakOnNext;
@@ -280,9 +282,12 @@ impl InstructionHook for Server {
 				}
 
 				// StepInto breaks on any of the following conditions:
-				// 1) The parent context has disappeared - this means it has returned or runtimed
-				// 2) We're inside a context that is inside the parent context and on a DbgLine instruction
-				// 3) We're inside the parent context and on a DbgLine instruction
+				// 1) The parent context has disappeared - this means it has
+				//    returned or runtimed
+				// 2) We're inside a context that is inside the parent context
+				//    and on a DbgLine instruction
+				// 3) We're inside the parent context and on a DbgLine
+				//    instruction
 				DebuggerAction::StepInto { parent } => {
 					if !is_generated_proc(ctx) {
 						let is_in_parent = parent.is(*(*ctx).proc_instance());

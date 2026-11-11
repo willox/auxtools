@@ -70,8 +70,8 @@ impl State {
 	}
 }
 
-// Server = main-thread code
-// ServerThread = networking-thread code
+// Server runs on the BYOND thread; ServerThread handles network input.
+// A shared event channel preserves event order.
 //
 // The ServerThread tells the Server everything through one channel of Events,
 // so they arrive in the order they happened.
@@ -80,7 +80,8 @@ impl State {
 //
 
 enum Event {
-	// A debug-client arrived. The TcpStream is for the Server to send responses on
+	// A debug-client arrived. The TcpStream is for the Server to send responses
+	// on
 	Connected(TcpStream),
 
 	// A request from the debug-client for the Server to handle
@@ -1061,7 +1062,8 @@ impl Server {
 				self.send_or_disconnect(Response::CurrentInstruction(response));
 			}
 
-			// The following requests are special cases and handled outside of this function
+			// The following requests are special cases and handled outside of
+			// this function
 			Request::Configured | Request::Continue { .. } => {
 				self.send_or_disconnect(Response::Ack);
 			}

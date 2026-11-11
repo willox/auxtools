@@ -9,8 +9,6 @@ static mut STRING_PTR: *mut *const c_char = std::ptr::null_mut();
 
 // The `push` of the "Guest-%u" format string. We want the address of its 4-byte
 // immediate, one byte past the opcode, so we can swap the string pointer out.
-// Copied from `byond_catalog` in the byond-re repo, which checks it against
-// every local build.
 #[cfg(windows)]
 const GUEST_NAME_FORMAT: Recipe = Recipe {
 	name: "guest_name_format",

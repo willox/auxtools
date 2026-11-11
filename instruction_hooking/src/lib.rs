@@ -7,9 +7,7 @@ use auxtools::{
 use retour::RawDetour;
 use std::{any::Any, cell::UnsafeCell, ffi::c_void};
 
-// Where the interpreter reads the next opcode, inside exec_proc. Copied from
-// `byond_catalog` in the byond-re repo, which checks it against every local
-// build.
+// Where the interpreter reads the next opcode, inside exec_proc.
 //
 // The running proc's frame sits in EDI here and in ESI on Linux, so each
 // platform has its own assembly in execute_instruction_hook.*.
