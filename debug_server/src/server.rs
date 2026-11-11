@@ -180,6 +180,13 @@ impl State {
 
 type ClientId = u32;
 
+/// Source markers used by [`Server::place_in`].
+enum Mark {
+	File(String),
+	Line(u32),
+	Other
+}
+
 enum Event {
 	// A debug-client arrived. The Connection is for the Server to answer on.
 	Connected(ClientId, Connection),
@@ -914,38 +921,33 @@ impl Server {
 		let mut current_file = None;
 		let mut reached_offset = false;
 
-		let mut env = disassemble_env::DisassembleEnv;
-		let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+		for (at, mark) in Self::marks(bytecode).iter() {
+			if *at > offset && !reached_offset {
+				reached_offset = true;
+				if current_line_number.is_some() {
+					break;
+				}
+			}
 
-		for node in nodes {
-			if let dmasm::Node::Instruction(ins, debug) = node {
-				if debug.offset > offset && !reached_offset {
-					reached_offset = true;
-					if current_line_number.is_some() {
+			match mark {
+				Mark::File(name) if !(reached_offset && current_line_number.is_some()) => {
+					current_file = Some(name.clone());
+				}
+				Mark::Line(_) if before && *at == offset => {}
+				Mark::Line(line) => {
+					current_line_number = Some(*line);
+					// Before its first line, a proc is at its first line
+					if reached_offset {
 						break;
 					}
 				}
+				_ => {}
+			}
 
-				match ins {
-					dmasm::Instruction::DbgFile(name) if !(reached_offset && current_line_number.is_some()) => {
-						current_file = Some(String::from_utf8_lossy(&name.0).into_owned());
-					}
-					dmasm::Instruction::DbgLine(_) if before && debug.offset == offset => {}
-					dmasm::Instruction::DbgLine(line) => {
-						current_line_number = Some(line);
-						// Before its first line, a proc is at its first line
-						if reached_offset {
-							break;
-						}
-					}
-					_ => {}
-				}
-
-				if debug.offset == offset {
-					reached_offset = true;
-					if current_line_number.is_some() {
-						break;
-					}
+			if *at == offset {
+				reached_offset = true;
+				if current_line_number.is_some() {
+					break;
 				}
 			}
 		}
@@ -955,6 +957,46 @@ impl Server {
 		} else {
 			None
 		}
+	}
+
+	/// Cache instruction offsets and source markers by bytecode content.
+	/// Runtime stack traces would otherwise disassemble each frame's proc.
+	fn marks(bytecode: &[u32]) -> std::sync::Arc<[(u32, Mark)]> {
+		use std::hash::{Hash, Hasher};
+		type Marks = std::sync::Arc<[(u32, Mark)]>;
+		static MARKS: std::sync::LazyLock<Mutex<HashMap<(u64, usize), Marks>>> = std::sync::LazyLock::new(Default::default);
+		// Bound cache memory during long sessions.
+		const KEEP: usize = 8192;
+
+		let key = {
+			let mut hasher = std::collections::hash_map::DefaultHasher::new();
+			bytecode.hash(&mut hasher);
+			(hasher.finish(), bytecode.len())
+		};
+		if let Some(marks) = MARKS.lock().unwrap().get(&key) {
+			return marks.clone();
+		}
+
+		let mut env = disassemble_env::DisassembleEnv;
+		let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+		let marks: Marks = nodes
+			.into_iter()
+			.filter_map(|node| match node {
+				dmasm::Node::Instruction(ins, debug) => Some((debug.offset, match ins {
+					dmasm::Instruction::DbgFile(name) => Mark::File(String::from_utf8_lossy(&name.0).into_owned()),
+					dmasm::Instruction::DbgLine(line) => Mark::Line(line),
+					_ => Mark::Other
+				})),
+				_ => None
+			})
+			.collect();
+
+		let mut cache = MARKS.lock().unwrap();
+		if cache.len() >= KEEP {
+			cache.clear();
+		}
+		cache.insert(key, marks.clone());
+		marks
 	}
 
 	/// The file and line of the code at `offset` of a proc. The file is the
