@@ -165,7 +165,7 @@ impl Proc {
 
 #[no_mangle]
 extern "C" fn on_runtime(error: *const c_char) {
-	let str = unsafe { CStr::from_ptr(error) }.to_string_lossy();
+	let str = crate::text_of(unsafe { CStr::from_ptr(error) }.to_bytes());
 
 	for func in inventory::iter::<RuntimeErrorHook> {
 		func.0(&str);

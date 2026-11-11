@@ -1,6 +1,25 @@
 use crate::*;
 use std::{ffi::CStr, fmt};
 
+/// Decode BYOND text without macros, as `world.log` and `json_encode` do.
+/// Macros such as `\improper` and `\bold` are stored as 0xFF followed by a
+/// macro code. The 0xFF byte cannot occur in UTF-8 text.
+pub fn text_of(bytes: &[u8]) -> String {
+	if !bytes.contains(&0xFF) {
+		return String::from_utf8_lossy(bytes).into_owned();
+	}
+	let mut text = Vec::with_capacity(bytes.len());
+	let mut iter = bytes.iter();
+	while let Some(&byte) = iter.next() {
+		if byte == 0xFF {
+			iter.next();
+		} else {
+			text.push(byte);
+		}
+	}
+	String::from_utf8_lossy(&text).into_owned()
+}
+
 /// A wrapper around [Values](struct.Value.html) that make working with strings
 /// a little easier
 pub struct StringRef {
@@ -171,7 +190,7 @@ impl From<&StringRef> for String {
 			let id = string.value.raw.data.string;
 			let mut entry: *mut raw_types::strings::StringEntry = std::ptr::null_mut();
 			assert_eq!(raw_types::funcs::get_string_table_entry(&mut entry, id), 1);
-			CStr::from_ptr((*entry).data).to_string_lossy().into()
+			text_of(CStr::from_ptr((*entry).data).to_bytes())
 		}
 	}
 }

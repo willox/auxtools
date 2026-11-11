@@ -128,6 +128,12 @@ fn eval_failures(pid: &str, code: &Path) {
 	);
 	println!("ok: eval runtime error call stack");
 
+	// Match the text BYOND prints, without embedded macros.
+	assert_eq!(run(pid, &["eval", "\"\\improper AI \\bold Chamber\""], 0).out, "\"AI Chamber\"\n");
+	let named = json_of(pid, &["eval", "--json", "new /obj/macro_named"]);
+	assert!(named["name"] == "AI Chamber" && named["vars"]["name"] == "AI Chamber", "{}", named);
+	println!("ok: text macro removal");
+
 	// Paused, the same
 	run(pid, &["pause"], 0);
 	let said = fails(pid, &["eval", "fail_in(3)"]);

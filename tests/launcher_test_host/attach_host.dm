@@ -80,6 +80,10 @@ var/datum/held/held = new
 	var/list/L = null
 	return L[1]
 
+// Embedded text macro for debugger output checks.
+/obj/macro_named
+	name = "\improper AI Chamber"
+
 // For the command line's eval: a runtime error two procs down from it, and
 // one a proc catches itself
 /proc/fail_in(n)
