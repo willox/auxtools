@@ -17,6 +17,7 @@ path = "src/main.rs"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bincode = "1"
+clap = { version = "4", default-features = false, features = ["std", "help", "usage", "error-context", "derive"] }
 dmasm = { workspace = true }
 dreammaker = { workspace = true }
 dap-types = { workspace = true }
