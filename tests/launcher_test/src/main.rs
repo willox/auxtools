@@ -352,9 +352,10 @@ fn command_line_shape() {
 	assert!(
 		of_pause
 			.starts_with("Wait for execution to pause and report the location and reason.\n\nUsage:\n  auxtools [--pid PID] wait pause [OPTIONS]\n")
-			&& of_pause.contains("\n  --timeout SECONDS   Set the wait deadline. [default: unlimited]\n")
-			&& of_pause.contains("\n  --pid PID           Select the world process.\n")
-			&& of_pause.contains("\n  -h, --help          Show help for this command.\n")
+			&& of_pause.contains("\n  --timeout SECONDS           Set the wait deadline. [default: unlimited]\n")
+			&& of_pause.contains("\n  --pid PID                   Select the world process.\n")
+			&& of_pause.contains("\n  --response-timeout SECONDS  Set the wait for each response from the world. [default: 30]\n")
+			&& of_pause.contains("\n  -h, --help                  Show help for this command.\n")
 			&& of_pause.contains("\nExit codes:\n  0  World paused, or was already paused.\n")
 			&& !of_pause.contains("--log"),
 		"help wait pause said {}",
@@ -445,6 +446,14 @@ fn command_line_shape() {
 		(
 			&["version", "--pid", "1"],
 			"error: --pid cannot be used with 'version': it does not select an existing world."
+		),
+		(
+			&["list", "--response-timeout", "1"],
+			"error: --response-timeout cannot be used with 'list': it does not select an existing world."
+		),
+		(
+			&["--response-timeout", "1", "stop"],
+			"error: --response-timeout cannot be used with 'stop': it waits for the process to exit; use --timeout."
 		),
 		(
 			&["trace"],
@@ -1374,9 +1383,26 @@ fn launch_from_the_command_line(server: &str) {
 		let mine = |listed: Vec<serde_json::Value>| listed.into_iter().find(|world| world["pid"] == pid);
 		let listed = mine(client::listed_worlds()).unwrap_or_else(|| panic!("list doesn't show the world"));
 		assert_eq!(listed["responsive"], json!(true), "{}", listed);
+		// Run checks concurrently to minimize time spent under SIGSTOP.
 		assert!(Command::new("kill").args(["-STOP", &pid_text]).status().unwrap().success());
-		let (code, table) = launcher_command(&["list"]);
-		let stopped = launcher_command(&["list", "--json"]).1;
+		let asked: Vec<_> = [
+			&["list"][..],
+			&["list", "--json"],
+			&["--pid", &pid_text, "status", "--response-timeout", "1"],
+			&["--pid", &pid_text, "--response-timeout", "1.5", "pause"]
+		]
+		.iter()
+		.map(|args| {
+			std::thread::spawn({
+				let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+				move || launcher_command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+			})
+		})
+		.collect();
+		let mut answers = asked.into_iter().map(|asking| asking.join().unwrap());
+		let (code, table) = answers.next().unwrap();
+		let stopped = answers.next().unwrap().1;
+		let (status, paused) = (answers.next().unwrap(), answers.next().unwrap());
 		assert!(Command::new("kill").args(["-CONT", &pid_text]).status().unwrap().success());
 		let worlds: serde_json::Value = serde_json::from_str(&stopped).unwrap_or_else(|_| panic!("list --json said {}", stopped));
 		let listed = worlds.as_array().unwrap().iter().find(|world| world["pid"] == pid);
@@ -1392,6 +1418,21 @@ fn launch_from_the_command_line(server: &str) {
 			table
 		);
 		println!("ok: list shows unresponsive worlds");
+		for ((code, printed), seconds) in [(status, "1 second"), (paused, "1.5 seconds")] {
+			assert_eq!(
+				(code, printed.as_str()),
+				(
+					2,
+					format!(
+						"error: timed out after {} waiting for the world to respond; it is busy or hung. Set --response-timeout to wait longer.\n",
+						seconds
+					)
+					.as_str()
+				),
+				"a command to a stopped world"
+			);
+		}
+		println!("ok: response timeouts for stalled worlds");
 	}
 
 	let printed = run(&["reboot"], 0);

@@ -91,6 +91,16 @@ fn execute(raw: &[String]) -> Result<()> {
 	if cli.pid.is_some() && !command.selects_world() {
 		return Err(format!("--pid cannot be used with '{}': it does not select an existing world.", command.name()).into());
 	}
+	if cli.response_timeout.is_some() && !command.awaits_responses() {
+		return Err(match command {
+			Command::Stop(_) => "--response-timeout cannot be used with 'stop': it waits for the process to exit; use --timeout.".to_owned(),
+			_ => format!(
+				"--response-timeout cannot be used with '{}': it does not select an existing world.",
+				command.name()
+			)
+		}
+		.into());
+	}
 	// Validate arguments before connecting to a world.
 	args::rules(&command)?;
 	match command {
@@ -113,6 +123,7 @@ fn execute(raw: &[String]) -> Result<()> {
 				None => only_world()?
 			};
 			let mut world = World::connect(pid)?;
+			world.patience = cli.response_timeout.unwrap_or(args::DEFAULT_RESPONSE_TIMEOUT);
 			if let Some(limit) = hold_max {
 				world.hold_max(limit)?;
 			}
@@ -312,7 +323,9 @@ pub struct World {
 	/// to this depth
 	json: Option<u32>,
 	/// What `wait pause` adds to the JSON of a pause
-	waited: Map<String, Value>
+	waited: Map<String, Value>,
+	/// How long to wait for each response (`--response-timeout`).
+	patience: Duration
 }
 
 impl World {
@@ -336,7 +349,8 @@ impl World {
 			failed_conditions: vec![],
 			show_instruction: false,
 			json: None,
-			waited: Map::new()
+			waited: Map::new(),
+			patience: args::DEFAULT_RESPONSE_TIMEOUT
 		})
 	}
 
@@ -481,13 +495,34 @@ impl World {
 	}
 
 	fn request(&mut self, request: Request) -> Result<Response> {
+		let until = Instant::now() + self.patience;
+		self.request_by(request, until)?.ok_or_else(|| self.unresponsive("respond"))
+	}
+
+	/// Send a request and receive its answer, or `None` at the deadline.
+	fn request_by(&mut self, request: Request, until: Instant) -> Result<Option<Response>> {
 		local::send(&mut self.stream, &request).map_err(|_| hung_up())?;
 		loop {
-			match self.next(None)?.expect("no time limit") {
-				event @ (Response::BreakpointHit { .. } | Response::Resumed | Response::StepEnded | Response::Log { .. }) => self.events.push(event),
-				response => return Ok(response)
+			match self.next(Some(until))? {
+				None => return Ok(None),
+				Some(event @ (Response::BreakpointHit { .. } | Response::Resumed | Response::StepEnded | Response::Log { .. })) => {
+					self.events.push(event)
+				}
+				Some(response) => return Ok(Some(response))
 			}
 		}
+	}
+
+	/// Report a response or pause timeout.
+	fn unresponsive(&self, act: &str) -> Failure {
+		Failure(
+			TIMED_OUT,
+			format!(
+				"timed out after {} waiting for the world to {}; it is busy or hung. Set --response-timeout to wait longer.",
+				seconds_text(self.patience),
+				act
+			)
+		)
 	}
 
 	/// Why it's paused, if it is
@@ -992,8 +1027,12 @@ impl World {
 			return self.report(Some(&reason));
 		}
 		self.request(Request::Pause)?;
-		let reason = self.await_pause(None, true)?.expect("no time limit");
-		self.report(Some(&reason))
+		// A running world pauses at its next instruction.
+		let until = Instant::now() + self.patience;
+		match self.await_pause(Some(until), true)? {
+			Some(reason) => self.report(Some(&reason)),
+			None => Err(self.unresponsive("pause"))
+		}
 	}
 
 	/// `continue`: lets a paused world carry on, and doesn't wait for more

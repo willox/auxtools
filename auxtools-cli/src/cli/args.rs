@@ -13,12 +13,20 @@ const JSON: &str = "Emit one JSON value on stdout.";
 const HOLD_MAX: &str =
 	"Automatically resume a retained pause after this many\nseconds with no debugger connected.\n[default: AUXTOOLS_HOLD_MAX, or unlimited if unset]";
 
+pub const RESPONSE_TIMEOUT: &str = "Set the wait for each response from the world. [default: 30]";
+
+/// Default response timeout, overridden by `--response-timeout`.
+pub const DEFAULT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[derive(Parser)]
 #[command(name = "auxtools", disable_help_subcommand = true, disable_version_flag = true)]
 pub struct Cli {
 	/// The world's process: before the command or after it
 	#[arg(long, global = true, value_name = "PID", value_parser = pid, help = "Select the world process.")]
 	pub pid: Option<u32>,
+	/// Response timeout, accepted before or after the command.
+	#[arg(long, global = true, value_name = "SECONDS", value_parser = seconds, help = RESPONSE_TIMEOUT)]
+	pub response_timeout: Option<Duration>,
 	#[arg(long, short = 'V', hide = true)]
 	pub version: bool,
 	#[command(subcommand)]
@@ -81,6 +89,11 @@ impl Command {
 	/// Whether it's a command to a running world, which `--pid` chooses
 	pub const fn selects_world(&self) -> bool {
 		!matches!(self, Self::Launch(_) | Self::List(_) | Self::Dap | Self::Help(_) | Self::Version(_))
+	}
+
+	/// Whether response timeouts apply. `stop` waits for process exit instead.
+	pub const fn awaits_responses(&self) -> bool {
+		self.selects_world() && !matches!(self, Self::Stop(_))
 	}
 }
 
@@ -574,6 +587,10 @@ mod tests {
 		assert_eq!(parsed(&["wait", "pause", "--pid", "7"]).pid, Some(7));
 		assert_eq!(parsed(&["wait", "--pid", "7", "pause"]).pid, Some(7));
 		assert_eq!(parsed(&["status"]).pid, None);
+		for given in [&["--response-timeout", "2.5", "status"][..], &["status", "--response-timeout=2.5"]] {
+			assert_eq!(parsed(given).response_timeout, Some(Duration::from_millis(2500)), "{:?}", given);
+		}
+		assert_eq!(parsed(&["status"]).response_timeout, None);
 		assert_eq!(
 			refused(&["--pid", "soon", "status"]),
 			"invalid value 'soon' for --pid: expected a process ID. Run 'auxtools status --help' for usage."

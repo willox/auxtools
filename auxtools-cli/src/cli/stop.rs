@@ -131,13 +131,14 @@ pub fn reboot(world: &mut World, args: &args::Reboot) -> Result<()> {
 		}
 		match again.as_mut() {
 			None => again = World::connect(pid).ok(),
-			Some(world) => match world.started() {
-				Ok(true) => {
+			Some(world) => match world.started(Some(until)) {
+				Ok(Some(true)) => {
 					world.leave();
 					done(args.json, json!({ "pid": pid, "rebooted": true }), format!("pid {}: rebooted", pid));
 					return Ok(());
 				}
-				Ok(false) => {}
+				// Retry response timeouts until the reboot deadline.
+				Ok(_) => {}
 				// Reconnect if the connection closes, including during another
 				// reboot.
 				Err(_) => again = None

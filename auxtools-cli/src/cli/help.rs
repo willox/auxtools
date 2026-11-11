@@ -46,7 +46,7 @@ Output:
 Exit codes:
   0  Execution paused or the step completed.
   1  Step request failed.
-  2  Step deadline expired.
+  2  Step deadline expired, or the world did not respond in time.
   3  World exited or rebooted before the operation completed.";
 
 pub const PAGES: &[Page] = &[
@@ -175,7 +175,8 @@ Output:
 
 Exit codes:
   0  Entries were printed; with --follow, the world exited.
-  1  Command failed."
+  1  Command failed.
+  2  The world did not respond in time."
 	},
 	Page {
 		path: &["stack"],
@@ -243,7 +244,8 @@ Output:
 Exit codes:
   0  Evaluation completed, or the code was spawned.
   1  Evaluation failed; with --wait, the spawned code ended in a runtime error.
-  2  --wait deadline expired. The spawned code keeps running.
+  2  --wait deadline expired (the spawned code keeps running), or the world
+     did not respond in time.
   3  World exited or rebooted before the spawned code finished (--wait)."
 	},
 	Page {
@@ -444,6 +446,7 @@ Input:
 Exit codes:
   0  Duration or hit limit reached, or interrupted with Ctrl-C.
   1  Setup or command failed.
+  2  The world did not respond in time.
   3  World exited or rebooted."
 	},
 	Page {
@@ -512,6 +515,13 @@ World selection:
                Without --pid, select the only compatible world.
                Use `auxtools list` to find process IDs.
 
+Responses:
+  --response-timeout SECONDS
+               Set the wait for each response from the world. [default: 30]
+               Exit with code 2 if the world does not respond in time.
+               Event waits are separate: use --timeout or --for where
+               available. log --follow has no event deadline.
+
 Output:
   --json       Request structured output where supported.
                log and trace emit JSON Lines; other commands emit one JSON value.
@@ -569,7 +579,7 @@ fn option_rows(command: &clap::Command, path: &[&str]) -> Vec<(String, String)> 
 	let mut common_json = false;
 	for arg in command.get_arguments() {
 		let id = arg.get_id().as_str();
-		if arg.is_positional() || arg.is_hide_set() || matches!(id, "help" | "pid") {
+		if arg.is_positional() || arg.is_hide_set() || matches!(id, "help" | "pid" | "response_timeout") {
 			continue;
 		}
 		let help = arg.get_help().map(ToString::to_string).unwrap_or_default();
@@ -585,6 +595,10 @@ fn option_rows(command: &clap::Command, path: &[&str]) -> Vec<(String, String)> 
 	let selects_world = !matches!(path.first(), Some(&("launch" | "list" | "dap" | "help" | "version")));
 	if selects_world {
 		rows.push(("--pid PID".to_owned(), "Select the world process.".to_owned()));
+	}
+	// `stop` waits for process exit rather than responses.
+	if selects_world && path.first() != Some(&"stop") {
+		rows.push(("--response-timeout SECONDS".to_owned(), super::args::RESPONSE_TIMEOUT.to_owned()));
 	}
 	if common_json {
 		rows.push(("--json".to_owned(), COMMON_JSON.to_owned()));
@@ -884,7 +898,8 @@ mod tests {
 			let names: Vec<&str> = path.iter().map(String::as_str).collect();
 			let text = render(page(&names).unwrap(), &command);
 			for arg in command.get_arguments().filter(|arg| !arg.is_positional() && !arg.is_hide_set()) {
-				if arg.get_id() == "help" || (arg.get_id() == "pid" && !text.contains("--pid PID ")) {
+				let global = |id: &str, spec: &str| arg.get_id() == id && !text.contains(spec);
+				if arg.get_id() == "help" || global("pid", "--pid PID ") || global("response_timeout", "--response-timeout SECONDS ") {
 					continue;
 				}
 				let long = arg.get_long().map(|long| format!("--{}", long));
@@ -962,15 +977,15 @@ mod tests {
 			text
 		);
 		let (_, eval) = commands.iter().find(|(path, _)| path == &["eval".to_owned()]).unwrap();
-		assert!(render(page(&["eval"]).unwrap(), eval).contains("\n  -f, --file FILE    Read the expression from FILE.\n"));
+		assert!(render(page(&["eval"]).unwrap(), eval).contains("\n  -f, --file FILE             Read the expression from FILE.\n"));
 		let (_, launch) = commands.iter().find(|(path, _)| path == &["launch".to_owned()]).unwrap();
 		assert!(
 			render(page(&["launch"]).unwrap(), launch).contains("\n  -D NAME[=VALUE]   Set a preprocessor define used by hot reload. Repeatable.\n")
 		);
 		let (_, trace) = commands.iter().find(|(path, _)| path == &["trace".to_owned()]).unwrap();
 		assert!(render(page(&["trace"]).unwrap(), trace).contains(
-			"\n  --by EXPR       Group hits by expression value and print counts at exit.\n  --by caller     Group hits by the calling proc and \
-			 source line.\n"
+			"\n  --by EXPR                   Group hits by expression value and print counts at exit.\n  --by caller                 Group hits by \
+			 the calling proc and source line.\n"
 		));
 	}
 }
