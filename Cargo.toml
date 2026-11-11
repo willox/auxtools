@@ -9,7 +9,7 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/auxtools/auxtools"
 rust-version = "1.88"
-version = "3.0.1-dev"
+version = "3.0.1"
 
 [workspace.dependencies]
 lazy_static = "1"
