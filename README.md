@@ -104,7 +104,7 @@ System libraries:
     ```sh
     sudo dpkg --add-architecture i386
     sudo apt-get update
-    sudo apt-get install build-essential g++-multilib libc6-i386 libstdc++6:i386 pkg-config libssl-dev libssl-dev:i386
+    sudo apt-get install build-essential g++-multilib libc6-i386 libstdc++6:i386
     ```
 
 * Other Linux distributions install the appropriate **32-bit development** and **32-bit runtime** packages.
@@ -120,7 +120,6 @@ Build the workspace in release mode:
 Linux:
 
 ```sh
-export PKG_CONFIG_ALLOW_CROSS=1
 cargo build --workspace --release --target i686-unknown-linux-gnu
 ```
 
@@ -140,7 +139,7 @@ To cross-compile Windows builds on Linux, install clang 19 or newer, lld and LLV
 ci/msvc/fetch-sdk.sh ~/.cache/msvc-sdk
 export MSVC_SDK=~/.cache/msvc-sdk
 . ci/msvc/env.sh
-cargo build --workspace --exclude byond_get --release --target i686-pc-windows-msvc
+cargo build --workspace --release --target i686-pc-windows-msvc
 ```
 
 ## Continuous integration

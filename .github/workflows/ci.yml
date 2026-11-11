@@ -74,9 +74,8 @@ jobs:
           key: crates-linux-${{ hashFiles('Cargo.lock') }}
           restore-keys: crates-linux-
 
-      # byond_get isn't built: it wants OpenSSL, and ci/fetch-byond.sh does its job
       - name: Build
-        run: cargo build --release --locked --target "$TARGET" --workspace --exclude byond_get
+        run: cargo build --release --locked --target "$TARGET" --workspace
 
       - name: Unit tests
         run: cargo test --release --locked --target "$TARGET" -p auxtools-cli
@@ -162,7 +161,7 @@ jobs:
       - name: Build
         run: |
           . ci/msvc/env.sh
-          cargo build --release --locked --target "$TARGET" --workspace --exclude byond_get
+          cargo build --release --locked --target "$TARGET" --workspace
 
       - name: Build the unit tests
         run: |
