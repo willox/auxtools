@@ -1,0 +1,4 @@
+// A world that runs until told to stop, for tests/launcher_test to attach to
+// and hot reload. The test runs a copy of it, which it edits.
+#define DEBUG
+#include "attach_host.dm"
