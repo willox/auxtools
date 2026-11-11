@@ -38,9 +38,9 @@ fn gone_by(pid: u32, until: Instant) -> bool {
 /// What a command that's done says: a line, or with `--json` the same as JSON
 fn done(as_json: bool, document: serde_json::Value, line: String) {
 	if as_json {
-		println!("{}", document);
+		say!("{}", document);
 	} else {
-		println!("{}", line);
+		say!("{}", line);
 	}
 }
 

@@ -668,7 +668,7 @@ pub fn attach(command: clap::Command) -> clap::Command {
 /// `auxtools help [COMMAND [SUBCOMMAND]]`
 pub fn show(path: &[String]) -> Result<()> {
 	if path.is_empty() {
-		print!("{}", overview());
+		say_part!("{}", overview());
 		return Ok(());
 	}
 	let root = super::args::command();
@@ -680,7 +680,7 @@ pub fn show(path: &[String]) -> Result<()> {
 	}
 	let names: Vec<&str> = path.iter().map(String::as_str).collect();
 	match page(&names) {
-		Some(page) => print!("{}", render(page, command)),
+		Some(page) => say_part!("{}", render(page, command)),
 		None => return Err(Failure(1, format!("no help page for '{}'.", path.join(" "))))
 	}
 	Ok(())

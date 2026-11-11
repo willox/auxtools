@@ -924,6 +924,28 @@ fn command_line_trace(pid: u64, code: &Path) {
 	);
 	println!("ok: trace handles closed output pipe");
 
+	// Closing stdout must also work for output larger than the pipe buffer.
+	let mut evaluating = Command::new(client::launcher_path())
+		.args(["--pid", &pid, "eval", "jointext(new/list(100000), \"xxxxxxxx\")"])
+		.stdout(Stdio::piped())
+		.stderr(Stdio::piped())
+		.spawn()
+		.unwrap();
+	let mut out = evaluating.stdout.take().unwrap();
+	let mut start = [0; 9];
+	out.read_exact(&mut start).unwrap();
+	assert_eq!(&start, b"\"xxxxxxxx");
+	drop(out);
+	let evaluated = evaluating.wait_with_output().unwrap();
+	let err = String::from_utf8_lossy(&evaluated.stderr);
+	assert!(
+		err.is_empty() && evaluated.status.code().unwrap_or(0) == 0,
+		"eval failed after stdout closed: {} ({})",
+		err,
+		evaluated.status
+	);
+	println!("ok: eval handles closed output pipe");
+
 	#[cfg(unix)]
 	{
 		let tracing = Command::new(client::launcher_path())
