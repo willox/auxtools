@@ -12,7 +12,10 @@ extern "system" fn exception_filter(_: *mut EXCEPTION_POINTERS) -> LONG {
 		if let Some(dbg) = &mut *DEBUG_SERVER.get() {
 			let ctx = *raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
 
-			dbg.handle_breakpoint(ctx, BreakpointReason::Runtime("native exception".to_owned()));
+			dbg.handle_breakpoint(ctx, BreakpointReason::Runtime {
+				message: "native exception".to_owned(),
+				caught: false
+			});
 		}
 	}
 

@@ -1,0 +1,17 @@
+#!/bin/sh
+# Stands in for MASM, which only Visual Studio has: where the build asks for
+# FILE.asm to be assembled, clang assembles FILE.S, the same code in GNU's
+# syntax. The object is marked as having no exception handlers of its own
+# (@feat.00, as MASM's /safeseh does), which the linker asks of every 32-bit
+# object.
+set -eu
+out= src=
+for arg in "$@"; do
+	case "$arg" in
+		-Fo* | /Fo*) out=${arg#???} ;;
+		*.asm) src=$(realpath "${arg%.asm}.S") ;;
+	esac
+done
+[ -n "$out" ] && [ -f "$src" ] || { echo "ml.exe stand-in: expected -FoOBJECT and FILE.asm with a FILE.S next to it, got: $*" >&2; exit 1; }
+printf '.def @feat.00\n.scl 3\n.type 0\n.endef\n.globl @feat.00\n.set @feat.00, 1\n#include "%s"\n' "$src" |
+	"${MSVC_CLANG:-clang}" --target=i686-pc-windows-msvc -x assembler-with-cpp -c - -o "$out"

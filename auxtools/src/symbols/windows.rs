@@ -1,13 +1,18 @@
-//! Where auxtools finds its BYOND functions and globals in `byondcore.dll`.
+//! BYOND function and global patterns for `byondcore.dll`.
 //!
-//! Copied from `byond_catalog` in the byond-re repo, where `verify_recipes`
-//! checks each pattern against every local build. Keep the two in step.
+//! Patterns were checked on every build in their ranges. Before 516.1659,
+//! each recipe was checked by resolving it against those builds.
 
 use byond_scan::{Anchor, Extract, OperandSelect, Recipe, SignatureTreatment, VersionRange};
 
 // Checked on every build in this range. Older builds are refused by the
 // resolver, newer ones are tried and can still fail.
-const SUPPORTED: VersionRange = VersionRange { min: 1659, max: 1688 };
+const SUPPORTED: VersionRange = VersionRange { min: 1637, max: 1688 };
+// The patterns that changed with 516 (and alists, which came with it)
+const SINCE_516: VersionRange = VersionRange { min: 1648, max: 1688 };
+// What 515 has in their place. Those for the variables and lists are from
+// auxtools before byond-scan, which found them on 515.
+const BYOND_515: VersionRange = VersionRange { min: 1637, max: 1647 };
 
 // One loader mask finds the variable-name table. Operands that don't use a
 // register are count=0, global_values=1, the sizing lea=3 and variable_names=4.
@@ -79,9 +84,10 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	},
 	Recipe {
 		name: "get_variable",
-		versions: SUPPORTED,
-		// the 0x0C frame size has to stay pinned: without it the mask matches one of
-		// several common SEH prologues. A changed frame should fail as NotFound.
+		versions: SINCE_516,
+		// the 0x0C frame size has to stay pinned: without it the mask matches
+		// one of several common SEH prologues. A changed frame should fail as
+		// NotFound.
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC 0C 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 5D ?? 8B 75 \
@@ -92,7 +98,7 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	},
 	Recipe {
 		name: "set_variable",
-		versions: SUPPORTED,
+		versions: SINCE_516,
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC 24 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 4D ??"
@@ -133,7 +139,7 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	},
 	Recipe {
 		name: "set_assoc_element",
-		versions: SUPPORTED,
+		versions: SINCE_516,
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 ?? ?? ?? ?? 50 83 EC ?? 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 ?? 64 A3 ?? ?? ?? ?? 8B 5D ?? 80 FB \
@@ -154,7 +160,7 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	},
 	Recipe {
 		name: "append_to_list",
-		versions: SUPPORTED,
+		versions: SINCE_516,
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 8B 4D ?? 0F B6 C1 48 56 57 83 F8 54 0F 87 ?? ?? ?? ?? 0F B6 80 ?? ?? ?? ??"
@@ -164,7 +170,7 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	},
 	Recipe {
 		name: "remove_from_list",
-		versions: SUPPORTED,
+		versions: SINCE_516,
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 83 EC 08 53 8B 5D ?? 0F B6 C3 48 56 57 83 F8 54 0F 87 ?? ?? ?? ??"
@@ -184,11 +190,11 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	},
 	Recipe {
 		name: "value_is_list",
-		versions: SUPPORTED,
+		versions: SINCE_516,
 		// this is the function the `islist()` opcode calls. The exported
-		// `ByondValue_IsList` is not used because on 1659 it says no to a `filters`
-		// list. The prologue is a common one, and the tag-range check at the end
-		// (`83 C0 F1 83 F8 46`) is what makes it unique
+		// `ByondValue_IsList` is not used because on 1659 it says no to a
+		// `filters` list. The prologue is a common one, and the tag-range check
+		// at the end (`83 C0 F1 83 F8 46`) is what makes it unique
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 83 EC ?? 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 F4 64 A3 00 00 00 00 89 65 ?? 8B 45 \
@@ -210,8 +216,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "to_string",
 		versions: SUPPORTED,
-		// the prologue changes at 1686 and any shared prefix is ambiguous, so follow
-		// this caller instead. It is unique across the whole range.
+		// the prologue changes at 1686 and any shared prefix is ambiguous, so
+		// follow this caller instead. It is unique across the whole range.
 		anchor: Anchor::Signature(
 			SignatureTreatment::OffsetByCall,
 			"E8 ?? ?? ?? ?? 83 C4 08 8B F0 EB ?? 80 FB 2A 75 ?? 66 83 7D F8"
@@ -232,8 +238,8 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	Recipe {
 		name: "current_execution_context",
 		versions: SUPPORTED,
-		// the `A1` load from an absolute address has no base register, which makes
-		// it operand 0
+		// the `A1` load from an absolute address has no base register, which
+		// makes it operand 0
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"A1 ?? ?? ?? ?? 56 53 6A 00 8B 00 57 6A ?? 89 4D ?? FF 70 ?? 8B 4D ?? FF"
@@ -269,16 +275,81 @@ pub(crate) const RECIPES: &[Recipe] = &[
 	// repeated count=2
 	Recipe {
 		name: "alist_table_count",
-		versions: SUPPORTED,
+		versions: SINCE_516,
 		anchor: Anchor::Signature(SignatureTreatment::NoOffset, ALIST_SIG),
 		hops: &[],
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(0))
 	},
 	Recipe {
 		name: "alist_table_ptr",
-		versions: SUPPORTED,
+		versions: SINCE_516,
 		anchor: Anchor::Signature(SignatureTreatment::NoOffset, ALIST_SIG),
 		hops: &[],
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
+	},
+	Recipe {
+		name: "get_variable",
+		versions: BYOND_515,
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 83 EC 28 A1 ?? ?? ?? ?? 33 C5 89 45 F0 53 56 57 50 8D 45 F4 64 A3 00 00 00 00 8B 5D"
+		),
+		hops: &[],
+		extract: Extract::Entry
+	},
+	Recipe {
+		name: "set_variable",
+		versions: BYOND_515,
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 83 EC 0C 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 F4 64 A3 00 00 00 00 8B 4D"
+		),
+		hops: &[],
+		extract: Extract::Entry
+	},
+	Recipe {
+		name: "set_assoc_element",
+		versions: BYOND_515,
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 83 EC 14 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 F4 64 A3 00 00 00 00 8B 5D 08 80"
+		),
+		hops: &[],
+		extract: Extract::Entry
+	},
+	Recipe {
+		name: "append_to_list",
+		versions: BYOND_515,
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"55 8B EC 8B 4D 08 0F B6 C1 48 56 57 83 F8 53 0F 87 AA 00 00 00 0F B6 80 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? FF 75 0C E8 ?? ?? ?? ?? 8B F0 \
+			 83 C4 04 85 F6 0F 84 94 00 00 00 8B 46 0C 40 50 56 E8 ?? ?? ?? ?? 8B 7E 0C 83 C4 08 85"
+		),
+		hops: &[],
+		extract: Extract::Entry
+	},
+	Recipe {
+		name: "remove_from_list",
+		versions: BYOND_515,
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"55 8B EC 83 EC 08 53 8B 5D 08 0F B6 C3 48 56 57 83 F8 53 0F 87 23 01 00 00 0F B6 80 ?? ?? ?? ?? 8B 4D 10 FF 24 85 ?? ?? ?? ?? 8B 7D 0C \
+			 6A 0F 57 53 E8 ?? ?? ?? ?? 50 E8 ?? ?? ?? ?? 83 C4 10 85 C0 0F 84 02 01 00 00 8B 08 8B 40 0C 85 C0 0F 84 F5 00 00 00 8B 75 14 8B 5D 10"
+		),
+		hops: &[],
+		extract: Extract::Entry
+	},
+	Recipe {
+		name: "value_is_list",
+		versions: BYOND_515,
+		// what the `islist()` opcode calls in 515: the same shape as 516's,
+		// with one list tag fewer (`83 F8 45`)
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 51 53 56 57 A1 ?? ?? ?? ?? 33 C5 50 8D 45 F4 64 A3 00 00 00 00 89 65 F0 8B 4D 08 0F \
+			 B6 C1 83 C0 F1 83 F8 45"
+		),
+		hops: &[],
+		extract: Extract::Entry
 	}
 ];

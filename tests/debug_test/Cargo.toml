@@ -9,7 +9,9 @@ edition.workspace = true
 # compiled before `cargo run` runs us.
 [dependencies]
 debug_server = { path = "../../debug_server" }
+auxtools-cli = { path = "../../auxtools-cli" }
 serde = { version = "1", features = ["derive"] }
+dmasm = { workspace = true }
 bincode = "1"
 
 [lints]

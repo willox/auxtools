@@ -155,6 +155,12 @@ impl Proc {
 	pub fn hook(&self, func: ProcHook) -> Result<(), HookFailure> {
 		hook_by_id(self.id, func, self.path.to_owned())
 	}
+
+	/// Whether this library installed a Rust hook for the proc. Hooks in other
+	/// auxtools libraries loaded into the same world are not visible here.
+	pub fn is_hooked(&self) -> bool {
+		PROC_HOOKS.0.borrow().contains_key(&self.id)
+	}
 }
 
 #[no_mangle]
@@ -164,6 +170,60 @@ extern "C" fn on_runtime(error: *const c_char) {
 	for func in inventory::iter::<RuntimeErrorHook> {
 		func.0(&str);
 	}
+}
+
+/// Whether interpreter calls bypass the call_proc_by_id detour. GCC inlined
+/// them on Linux before 516.1664. Those builds dispatch proc hooks through
+/// the instruction hook (see `proc_starting`).
+pub fn calls_bypass_detour() -> bool {
+	cfg!(unix) && crate::version::get().1 < 1664
+}
+
+/// What a hooked frame runs instead of its code: `End`, which returns `.`
+static RETURN_DOT: [u32; 1] = [0x00];
+
+/// Dispatch deferred work and proc hooks at the first instruction on builds
+/// where [`calls_bypass_detour`] is true. A hook's result replaces execution
+/// of the original proc.
+///
+/// # Safety
+/// `ctx` must be the running frame on BYOND's thread.
+pub unsafe fn proc_starting(ctx: *mut raw_types::procs::ExecutionContext) {
+	if std::ptr::eq(*(*ctx).bytecode() as *const u32, RETURN_DOT.as_ptr()) {
+		return;
+	}
+	crate::on_proc_call();
+
+	let instance = *(*ctx).proc_instance();
+	let proc_id = (*instance).proc;
+	let Some(hook) = PROC_HOOKS.0.borrow().get(&proc_id).map(|(hook, _)| *hook) else {
+		return;
+	};
+	// The frame keeps its own references to these
+	let src = Value::from_raw((*instance).src);
+	let usr = Value::from_raw((*instance).usr);
+	let args = std::slice::from_raw_parts((*instance).args(), (*instance).args_count() as usize)
+		.iter()
+		.map(|v| Value::from_raw(*v))
+		.collect();
+	let result = match hook(&src, &usr, args) {
+		Ok(r) => {
+			let raw = r.raw;
+			std::mem::forget(r);
+			raw
+		}
+		Err(e) => {
+			let path = PROC_HOOKS.0.borrow()[&proc_id].1.clone();
+			if let Some(trace) = Proc::find("/proc/auxtools_stack_trace") {
+				let _ = trace.call(&[&Value::from_string(format!("{} HookPath: {}", e.message.as_str(), path)).unwrap()]);
+			}
+			Value::NULL.raw
+		}
+	};
+	// `.` is null at a proc's start; it takes our reference
+	*(*ctx).dot_mut() = result;
+	*(*ctx).bytecode_mut() = RETURN_DOT.as_ptr() as *mut u32;
+	*(*ctx).bytecode_offset_mut() = 0;
 }
 
 #[no_mangle]
@@ -180,6 +240,8 @@ extern "C" fn call_proc_by_id_hook(
 	_callback: u32,
 	_callback_value: u32
 ) -> u8 {
+	crate::on_proc_call();
+
 	// copy the fn out so no borrow is held while the hook runs DM code, which
 	// can call back into here or register hooks
 	let Some(hook) = PROC_HOOKS.0.borrow().get(&proc_id).map(|(hook, _)| *hook) else {

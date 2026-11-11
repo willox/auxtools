@@ -1,0 +1,3 @@
+// An environment of its own that the world's includes. DreamMaker names the
+// files it includes as it does, from here: tool.dm, not lib/tool.dm.
+#include "tool.dm"

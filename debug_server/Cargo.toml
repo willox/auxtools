@@ -1,6 +1,6 @@
 [package]
 name = "debug_server"
-version = "2.4.0"
+version.workspace = true
 publish = false
 authors.workspace = true
 edition.workspace = true
@@ -17,10 +17,12 @@ instruction_hooking = { path = "../instruction_hooking" }
 lazy_static = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 bincode = "1"
-clap = "3"
+clap = "4"
 dmasm = { workspace = true }
+dreammaker = { workspace = true }
 region = "3"
 retour = { workspace = true }
+interprocess = "=2.4.7"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["libloaderapi", "errhandlingapi", "ioapiset", "processthreadsapi"] }

@@ -9,6 +9,7 @@ edition.workspace = true
 serde = { version = "1", features = ["derive"] }
 bincode = "1"
 dmasm = { workspace = true }
+auxtools-cli = { path = "../../auxtools-cli" }
 
 [lints]
 workspace = true

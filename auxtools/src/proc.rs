@@ -56,6 +56,29 @@ fn entry_by_id(id: raw_types::procs::ProcId) -> *mut raw_types::procs::ProcEntry
 }
 
 impl Proc {
+	/// The override id of a proc set apart (see [`Proc::set_apart`])
+	pub const APART: u32 = u32::MAX;
+
+	/// The definitions of a path, by override id
+	pub fn overrides<S: Into<String>>(path: S) -> Vec<Self> {
+		let path = strip_path(path.into());
+		PROCS_BY_NAME.with(|h| h.borrow().get(&path).cloned().unwrap_or_default())
+	}
+
+	/// Renumber a path's definitions after reload, using the supplied order.
+	/// Omitted definitions are no longer available through
+	/// [`Proc::find_override`].
+	pub fn set_overrides<S: Into<String>>(path: S, procs: Vec<Self>) {
+		let path = strip_path(path.into());
+		PROC_OVERRIDE_IDS.with(|override_ids| {
+			let mut override_ids = override_ids.borrow_mut();
+			for (i, proc) in procs.iter().enumerate() {
+				override_ids.insert(proc.id, i as u32);
+			}
+		});
+		PROCS_BY_NAME.with(|h| h.borrow_mut().insert(path, procs));
+	}
+
 	/// BYOND's own record for this proc.
 	///
 	/// Don't hold on to the pointer. BYOND moves its whole proc table whenever
@@ -70,7 +93,8 @@ impl Proc {
 		get_proc(path)
 	}
 
-	/// Finds the n'th re-defined proc with the given path
+	/// Finds the n'th re-defined proc with the given path. [`Proc::APART`]
+	/// finds the one set apart.
 	pub fn find_override<S: Into<String>>(path: S, override_id: u32) -> Option<Self> {
 		get_proc_override(path, override_id)
 	}
@@ -120,6 +144,20 @@ impl Proc {
 		crate::bytecode_manager::set_bytecode(self, bytecode);
 	}
 
+	/// Register proc table entries appended since `first` for name lookup.
+	pub fn add_to_table(first: raw_types::procs::ProcId) {
+		let mut id = first.0;
+		while let Some(proc) = Proc::from_id(raw_types::procs::ProcId(id)) {
+			register_proc(proc);
+			id += 1;
+		}
+	}
+
+	/// How many locals a new frame of this proc gets.
+	pub fn locals_count(&self) -> usize {
+		unsafe { raw_types::misc::get_locals(*(*self.entry()).metadata.locals()).1 }
+	}
+
 	pub unsafe fn bytecode_mut_ptr(&self) -> (*mut u32, u16) {
 		raw_types::misc::get_bytecode(*(*self.entry()).metadata.bytecode())
 	}
@@ -166,6 +204,25 @@ impl Proc {
 		Err(runtime!("External proc call failed"))
 	}
 
+	/// Exclude a debugger helper from source override numbering.
+	/// The helper uses [`Proc::APART`]; existing and future source definitions
+	/// keep their source-order IDs. Only one helper per path can be set apart.
+	pub fn set_apart(&self) {
+		PROC_OVERRIDE_IDS.with(|override_ids| {
+			let mut override_ids = override_ids.borrow_mut();
+			PROCS_BY_NAME.with(|h| {
+				if let Some(procs) = h.borrow_mut().get_mut(&self.path) {
+					procs.retain(|proc| proc.id != self.id);
+					for (i, proc) in procs.iter().enumerate() {
+						override_ids.insert(proc.id, i as u32);
+					}
+				}
+			});
+			override_ids.insert(self.id, Self::APART);
+		});
+		PROCS_APART.with(|apart| apart.borrow_mut().insert(self.path.clone(), self.clone()));
+	}
+
 	pub fn override_id(&self) -> u32 {
 		PROC_OVERRIDE_IDS.with(|override_ids| match override_ids.borrow().get(&self.id) {
 			Some(id) => *id,
@@ -183,6 +240,7 @@ impl fmt::Debug for Proc {
 
 thread_local!(static PROCS_BY_NAME: RefCell<HashMap<String, Vec<Proc>, RandomState>> = RefCell::new(HashMap::with_hasher(RandomState::default())));
 thread_local!(static PROC_OVERRIDE_IDS: RefCell<FxHashMap<raw_types::procs::ProcId, u32>> = RefCell::new(FxHashMap::default()));
+thread_local!(static PROCS_APART: RefCell<HashMap<String, Proc, RandomState>> = RefCell::new(HashMap::with_hasher(RandomState::default())));
 
 fn strip_path(p: String) -> String {
 	p.replace("/proc/", "/").replace("/verb/", "/")
@@ -195,37 +253,43 @@ pub fn populate_procs() {
 		if proc.is_none() {
 			break;
 		}
-		let proc = proc.unwrap();
-
-		PROC_OVERRIDE_IDS.with(|override_ids| {
-			let mut override_ids = override_ids.borrow_mut();
-
-			PROCS_BY_NAME.with(|h| {
-				match h.borrow_mut().entry(proc.path.clone()) {
-					Entry::Occupied(mut o) => {
-						let vec = o.get_mut();
-						override_ids.insert(proc.id, vec.len() as u32);
-						vec.push(proc);
-					}
-					Entry::Vacant(v) => {
-						override_ids.insert(proc.id, 0);
-						v.insert(vec![proc]);
-					}
-				};
-			});
-		});
+		register_proc(proc.unwrap());
 
 		i += 1;
 	}
 }
 
+fn register_proc(proc: Proc) {
+	PROC_OVERRIDE_IDS.with(|override_ids| {
+		let mut override_ids = override_ids.borrow_mut();
+
+		PROCS_BY_NAME.with(|h| {
+			match h.borrow_mut().entry(proc.path.clone()) {
+				Entry::Occupied(mut o) => {
+					let vec = o.get_mut();
+					override_ids.insert(proc.id, vec.len() as u32);
+					vec.push(proc);
+				}
+				Entry::Vacant(v) => {
+					override_ids.insert(proc.id, 0);
+					v.insert(vec![proc]);
+				}
+			};
+		});
+	});
+}
+
 pub fn clear_procs() {
 	PROCS_BY_NAME.with(|h| h.borrow_mut().clear());
 	PROC_OVERRIDE_IDS.with(|override_ids| override_ids.borrow_mut().clear());
+	PROCS_APART.with(|apart| apart.borrow_mut().clear());
 }
 
 pub fn get_proc_override<S: Into<String>>(path: S, override_id: u32) -> Option<Proc> {
 	let s = strip_path(path.into());
+	if override_id == Proc::APART {
+		return PROCS_APART.with(|apart| apart.borrow().get(&s).cloned());
+	}
 	PROCS_BY_NAME.with(|h| h.borrow().get(&s)?.get(override_id as usize).cloned())
 }
 

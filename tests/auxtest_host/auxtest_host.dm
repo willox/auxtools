@@ -62,12 +62,17 @@ var/datum/weak_test_datum
 	var/list/L = list(1, 2)
 	return list(
 		null, 1, "string", M, /list, &L,
-		L, alist("a" = 1), L.vars, args,
+#if DM_VERSION >= 516
+		alist("a" = 1),
+#endif
+		L, L.vars, args,
 		M.verbs, M.contents, M.vars, M.overlays, M.group, M.vis_contents,
 		M.filters, M.filters[1],
 		F.dir, world.contents, world.vars, global.vars,
 	)
 
+// 516's alists. 515 has none.
+#if DM_VERSION >= 516
 // 7 is a key here and not a position, and "n" has a null value on purpose
 /proc/auxtest_alist_sample()
 	return alist("a" = 1, 7 = "seven", "n" = null)
@@ -77,6 +82,7 @@ var/datum/weak_test_datum
 	for (var/k in A)
 		keys += list(k)
 	return keys
+#endif
 
 /proc/auxtest_islist(value)
 	return islist(value)

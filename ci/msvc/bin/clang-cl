@@ -1,0 +1,5 @@
+#!/bin/sh
+# clang as Visual C++'s compiler for 32-bit Windows, with the headers
+# ci/msvc/fetch-sdk.sh fetched
+exec "${MSVC_CLANG:-clang}" --driver-mode=cl --target=i686-pc-windows-msvc -fms-compatibility-version=19.40 /EHsc \
+	"/imsvc$MSVC_SDK/crt/include" "/imsvc$MSVC_SDK/sdk/include/ucrt" "/imsvc$MSVC_SDK/sdk/include/um" "/imsvc$MSVC_SDK/sdk/include/shared" "$@"

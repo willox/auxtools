@@ -1,0 +1,33 @@
+[package]
+name = "auxtools-cli"
+description = "BYOND debugger launcher, CLI and debug adapter"
+version.workspace = true
+publish = false
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license = "GPL-3.0"
+
+[[bin]]
+name = "auxtools"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+clap = { version = "4", default-features = false, features = ["std", "help", "usage", "error-context", "derive"] }
+dmasm = { workspace = true }
+dreammaker = { workspace = true }
+dap-types = { workspace = true }
+interprocess = "=2.4.7"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["errhandlingapi", "handleapi", "jobapi2", "libloaderapi", "memoryapi", "minwindef", "ntdef", "processthreadsapi", "synchapi", "tlhelp32", "winbase", "winerror", "winnt", "winreg"] }
+
+[lints]
+workspace = true

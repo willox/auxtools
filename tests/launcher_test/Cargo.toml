@@ -1,0 +1,17 @@
+[package]
+name = "launcher_test"
+version = "0.1.0"
+publish = false
+authors.workspace = true
+edition.workspace = true
+
+# Same trick as test_runner: depending on the cdylib gets debug_server
+# compiled first. The launcher is a program, so build it too (see main.rs).
+[dependencies]
+debug_server = { path = "../../debug_server" }
+serde_json = "1"
+# For a stand-in for a world that speaks another version of the protocol
+interprocess = "=2.4.7"
+
+[lints]
+workspace = true

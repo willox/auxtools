@@ -1,0 +1,12 @@
+// The world tests/dap_test debugs: none of auxtools' procs, built with DEBUG
+// so its code says which file and line it's on
+#define DEBUG
+// For the debug console, which expands the code's macros where the code is read
+#define TWICE(x) ((x) * 2)
+#include "main.dm"
+#include "stepping.dm"
+#include "values.dm"
+#include "errors.dm"
+#include "watching.dm"
+#include "sub/tool.dm"
+#include "lib\lib.dme"

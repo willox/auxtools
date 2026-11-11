@@ -68,7 +68,11 @@ fn test_lists() {
 		}
 	}
 
-	let sample = Proc::find("/proc/auxtest_alist_sample").unwrap().call(&[])?;
+	// 515 has no alists, so these sample values are absent.
+	let Some(alist_sample) = Proc::find("/proc/auxtest_alist_sample") else {
+		return Ok(Value::from(true));
+	};
+	let sample = alist_sample.call(&[])?;
 	let alist = sample.as_list()?;
 	if !alist.is_alist() || list_a.is_alist() {
 		return Err(runtime!("test_lists: is_alist is wrong"));

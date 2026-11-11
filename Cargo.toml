@@ -1,19 +1,23 @@
 [workspace]
-members = ["auxcov", "auxtools", "auxtools-impl", "debug_server", "instruction_hooking", "tests/auxtest", "tests/byond_get", "tests/debug_test", "tests/test_runner", "tools/debug_client"]
+members = ["auxcov", "auxtools", "auxtools-impl", "debug_server", "instruction_hooking", "tests/auxtest", "tests/dap_test", "tests/debug_test", "tests/hot_reload_test", "tests/launcher_test", "tests/test_runner", "tools/debug_client", "auxtools-cli"]
+default-members = ["auxtools-cli"]
 resolver = "2"
 
 [workspace.package]
 authors = ["Sophie Wallace <sophie@wiox.me>", "Lucy <lucy@absolucy.moe>"]
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/wilox/auxtools"
+repository = "https://github.com/auxtools/auxtools"
 rust-version = "1.88"
-version = "0.1.0"
+version = "3.0.0-dev"
 
 [workspace.dependencies]
 lazy_static = "1"
 retour = { version = "=0.4.0-alpha.4", default-features = false }
-dmasm = { git = "https://github.com/willox/dmasm" }
+dmasm = { git = "https://github.com/auxtools/dmasm", branch = "master", features = ["serde"] }
+# auxtools' SpacemanDMM, with the parser fixes dmasm's proc compiler needs
+dreammaker = { git = "https://github.com/auxtools/SpacemanDMM", branch = "master" }
+dap-types = { git = "https://github.com/auxtools/SpacemanDMM", branch = "master" }
 byond-scan = { git = "https://github.com/Absolucy/byond-scan" }
 
 [workspace.lints.rust]
@@ -36,3 +40,8 @@ lto = 'thin'
 codegen-units = 1
 incremental = true
 debug = true
+
+# Finding BYOND's functions scans its code once per pattern, which takes tens
+# of seconds unoptimised, at the start of every world a dev build debugs
+[profile.dev.package.byond-scan]
+opt-level = 3

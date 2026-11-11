@@ -76,6 +76,8 @@ extern "C"
 	DEFINE_byond(get_proc_array_entry, void *, (uint32_t));
 	DEFINE_byond_REGPARM3(get_string_id, uint32_t, (const char *, uint8_t, uint8_t, uint8_t));
 	DEFINE_byond(get_variable, Value, (Value, uint32_t));
+	// byondapi's own export, cdecl everywhere
+	DEFINE_byond(read_pointer, bool, (const Value *, Value *));
 	DEFINE_byond(set_variable, void, (Value, uint32_t, Value));
 	DEFINE_byond(get_string_table_entry, void *, (uint32_t));
 	DEFINE_byond(inc_ref_count, void, (Value));
@@ -92,6 +94,9 @@ extern "C"
 	DEFINE_byond(remove_from_list, bool, (Value, Value));
 	using Fnremove_from_list_regparm_byond = bool(LINUX_REGPARM2 *)(Value, Value);
 	bool remove_from_list_in_registers = false;
+	// Linux 515 before 515.1644 hands the count back in `eax`, as Windows does
+	using Fnget_length_count_byond = uint32_t (*)(Value);
+	bool get_length_returns_count = false;
 	// The one function here whose *return* differs by platform, not just its
 	// argument placement. Windows hands the count straight back in `eax`. Linux
 	// returns a DM Value through a caller-supplied buffer, so the count has to be
@@ -232,6 +237,23 @@ extern "C" uint8_t get_variable(Value *out, Value datum, uint32_t string_id)
 		clean(datum);
 		*out = get_variable_byond(datum, string_id);
 		return 1;
+	}
+	BYOND_CATCH
+	{
+		return 0;
+	}
+}
+
+// What a pointer (`&x`) names. On some builds reading through a pointer to a
+// var of a deleted object is a runtime error rather than a refusal, which
+// would otherwise be the running proc's.
+extern "C" uint8_t read_pointer(Value *out, const Value *pointer)
+{
+	RuntimeContext ctx(true);
+
+	BYOND_TRY
+	{
+		return read_pointer_byond(pointer, out) ? 1 : 0;
 	}
 	BYOND_CATCH
 	{
@@ -404,7 +426,14 @@ extern "C" uint8_t get_length(uint32_t *out, Value value)
 #ifdef _WIN32
 		*out = get_length_byond(value);
 #else
-		*out = length_value_to_count(get_length_byond(value));
+		if (get_length_returns_count)
+		{
+			*out = reinterpret_cast<Fnget_length_count_byond>(reinterpret_cast<void *>(get_length_byond))(value);
+		}
+		else
+		{
+			*out = length_value_to_count(get_length_byond(value));
+		}
 #endif
 		return 1;
 	}
