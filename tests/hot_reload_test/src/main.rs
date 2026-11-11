@@ -683,6 +683,27 @@ fn main() {
 	assert_eq!(eval(&mut client, "old_puppy.speak()"), "\"woof!!!?\"");
 	println!("ok: remove and restore definition");
 
+	// Re-adding an identical proc must allocate a fresh ID.
+	let without = "/proc/cat_says()\n";
+	let with = "/proc/again()\n\treturn 7\n\n/proc/cat_says()\n";
+	let mut removal = None;
+	for round in 0..2 {
+		let changes = source.edit("reload.dm", without, with);
+		assert_eq!(changes.new_procs.len(), 1, "round {}", round);
+		let result = reload(&mut watcher, &changes);
+		assert!(result.warnings.is_empty(), "round {}: {:?}", round, result.warnings);
+		assert_eq!(eval(&mut client, "again()"), "7");
+		let changes = source.edit("reload.dm", with, without);
+		assert_eq!(changes.removed_procs.len(), 1, "round {}", round);
+		let result = reload(&mut watcher, &changes);
+		assert!(result.warnings.is_empty(), "round {}: {:?}", round, result.warnings);
+		removal = Some(changes);
+	}
+	// Repeated removal produces a warning without rejecting the reload.
+	let result = reload(&mut watcher, &removal.unwrap());
+	assert_eq!(result.warnings.len(), 1, "{:?}", result.warnings);
+	println!("ok: repeated proc addition and removal");
+
 	// A new parameter next to `in` lists: one BYOND has built in, and an
 	// expression it keeps
 	let changes = source.edit(
