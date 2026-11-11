@@ -1,0 +1,268 @@
+{
+	"name": "auxtools",
+	"displayName": "auxtools Debugger (Beta)",
+	"description": "Debug BYOND worlds with breakpoints, stepping, variable inspection and hot reload.",
+	"version": "3.0.0-dev",
+	"publisher": "auxtools",
+	"license": "GPL-3.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/willox/auxtools"
+	},
+	"engines": {
+		"vscode": "^1.80.0"
+	},
+	"categories": [
+		"Debuggers"
+	],
+	"keywords": [
+		"byond",
+		"dreammaker",
+		"dm",
+		"auxtools"
+	],
+	"main": "./extension.js",
+	"activationEvents": [
+		"onDebugResolve:auxtools",
+		"onDebugDynamicConfigurations:auxtools",
+		"onCommand:auxtools.pickWorld",
+		"onDebugInitialConfigurations",
+		"workspaceContains:**/*.dme",
+		"workspaceContains:**/*.dmb"
+	],
+	"contributes": {
+		"languages": [
+			{
+				"id": "dm",
+				"aliases": [
+					"DreamMaker",
+					"dm"
+				],
+				"extensions": [
+					".dm",
+					".dme"
+				]
+			}
+		],
+		"breakpoints": [
+			{
+				"language": "dm"
+			}
+		],
+		"commands": [
+			{
+				"command": "auxtools.debugDreamSeeker",
+				"title": "Debug in DreamSeeker",
+				"category": "auxtools"
+			},
+			{
+				"command": "auxtools.debugDreamDaemon",
+				"title": "Debug in DreamDaemon",
+				"category": "auxtools"
+			},
+			{
+				"command": "auxtools.attach",
+				"title": "Attach to a running world",
+				"category": "auxtools"
+			},
+			{
+				"command": "auxtools.pickWorld",
+				"title": "Pick a running world",
+				"category": "auxtools"
+			}
+		],
+		"menus": {
+			"commandPalette": [
+				{
+					"command": "auxtools.debugDreamSeeker",
+					"when": "isWindows"
+				},
+				{
+					"command": "auxtools.pickWorld",
+					"when": "false"
+				}
+			]
+		},
+		"configuration": {
+			"title": "auxtools Debugger",
+			"properties": {
+				"auxtools.byondPath": {
+					"type": "string",
+					"default": "",
+					"markdownDescription": "BYOND installation directory, containing `bin`. Leave empty for automatic discovery."
+				},
+				"auxtools.launcherPath": {
+					"type": "string",
+					"default": "",
+					"markdownDescription": "Path to a custom `auxtools` launcher."
+				},
+				"auxtools.debugLibrary": {
+					"type": "string",
+					"default": "",
+					"markdownDescription": "Path to a custom `debug_server.dll` or `libdebug_server.so`."
+				}
+			}
+		},
+		"debuggers": [
+			{
+				"type": "auxtools",
+				"label": "BYOND (auxtools)",
+				"languages": [
+					"dm"
+				],
+				"configurationAttributes": {
+					"launch": {
+						"properties": {
+							"dmb": {
+								"type": "string",
+								"description": "The world to run",
+								"default": "${workspaceFolder}/${workspaceFolderBasename}.dmb"
+							},
+							"dme": {
+								"type": "string",
+								"description": "Project .dme path. Defaults to the file beside the .dmb; its directory is the source root."
+							},
+							"server": {
+								"type": "string",
+								"enum": [
+									"dreamseeker",
+									"dreamdaemon",
+									"dd"
+								],
+								"enumDescriptions": [
+									"Host and join the world in DreamSeeker (Windows)",
+									"DreamDaemon",
+									"Console DreamDaemon (dd.exe on Windows), with output in the Debug Console"
+								],
+								"description": "BYOND host program. Defaults to DreamSeeker on Windows and DreamDaemon on Linux."
+							},
+							"defines": {
+								"type": "array",
+								"items": {
+									"type": "string"
+								},
+								"description": "Build defines as NAME or NAME=VALUE. Must match DreamMaker for hot reload.",
+								"default": []
+							},
+							"hotReload": {
+								"type": "boolean",
+								"description": "Reload supported source changes on save, including when running without debugging.",
+								"default": true
+							},
+							"noDebug": {
+								"type": "boolean",
+								"description": "Run without debugging. Hot reload remains available, as with Run Without Debugging.",
+								"default": false
+							},
+							"sleepingThreads": {
+								"type": "integer",
+								"minimum": 0,
+								"description": "Maximum sleeping procs listed in the Call Stack view while paused.",
+								"default": 100
+							},
+							"byondPath": {
+								"type": "string",
+								"description": "BYOND installation path. Overrides auxtools.byondPath and automatic discovery."
+							},
+							"args": {
+								"type": "array",
+								"items": {
+									"type": "string"
+								},
+								"description": "Arguments after the .dmb, replacing the defaults: -trusted, plus -close for windowed DreamDaemon on Windows."
+							},
+							"env": {
+								"type": "object",
+								"additionalProperties": {
+									"type": "string"
+								},
+								"description": "Environment variables for the world"
+							},
+							"debugLibrary": {
+								"type": "string",
+								"description": "Path to a custom debug library."
+							}
+						}
+					},
+					"attach": {
+						"properties": {
+							"processId": {
+								"type": [
+									"string",
+									"number"
+								],
+								"description": "World process ID. If omitted, select a running debugger-enabled world.",
+								"default": "${command:auxtools.pickWorld}"
+							},
+							"dme": {
+								"type": "string",
+								"description": "Project .dme path, if different from the file beside the running .dmb."
+							},
+							"defines": {
+								"type": "array",
+								"items": {
+									"type": "string"
+								},
+								"description": "Build defines as NAME or NAME=VALUE. Must match DreamMaker.",
+								"default": []
+							},
+							"hotReload": {
+								"type": "boolean",
+								"description": "Reload source changes on save. Disabled by default for attach sessions to avoid competing reloads.",
+								"default": false
+							},
+							"sleepingThreads": {
+								"type": "integer",
+								"minimum": 0,
+								"description": "Maximum sleeping procs listed in the Call Stack view while paused.",
+								"default": 100
+							}
+						}
+					}
+				},
+				"initialConfigurations": [
+					{
+						"type": "auxtools",
+						"request": "launch",
+						"name": "Debug world",
+						"dmb": "${workspaceFolder}/${workspaceFolderBasename}.dmb"
+					}
+				],
+				"configurationSnippets": [
+					{
+						"label": "auxtools: Debug in DreamSeeker",
+						"description": "Debug the built world in DreamSeeker",
+						"body": {
+							"type": "auxtools",
+							"request": "launch",
+							"name": "Debug in DreamSeeker",
+							"dmb": "^\"\\${workspaceFolder}/${1:world}.dmb\"",
+							"server": "dreamseeker"
+						}
+					},
+					{
+						"label": "auxtools: Debug in DreamDaemon",
+						"description": "Debug the built world in DreamDaemon",
+						"body": {
+							"type": "auxtools",
+							"request": "launch",
+							"name": "Debug in DreamDaemon",
+							"dmb": "^\"\\${workspaceFolder}/${1:world}.dmb\"",
+							"server": "dreamdaemon"
+						}
+					},
+					{
+						"label": "auxtools: Attach to a running world",
+						"description": "Attach to a world started by the auxtools launcher.",
+						"body": {
+							"type": "auxtools",
+							"request": "attach",
+							"name": "Attach to a world",
+							"processId": "^\"\\${command:auxtools.pickWorld}\""
+						}
+					}
+				]
+			}
+		]
+	}
+}
