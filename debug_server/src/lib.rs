@@ -1,9 +1,15 @@
 mod assemble_env;
 mod ckey_override;
+mod connection;
+mod hot_reload;
 mod instruction_hooking;
+mod journal;
+mod launched;
+mod macros;
 mod server;
 mod server_types;
 mod stddef;
+mod waker;
 
 #[cfg(windows)]
 mod crash_handler_windows;
@@ -16,8 +22,8 @@ mod mem_profiler_stub;
 
 use std::{
 	cell::UnsafeCell,
-	net::{IpAddr, Ipv4Addr, SocketAddr},
-	panic::{catch_unwind, AssertUnwindSafe}
+	panic::{catch_unwind, AssertUnwindSafe},
+	sync::atomic::{AtomicU32, Ordering}
 };
 
 pub(crate) use ::instruction_hooking::disassemble_env::DisassembleEnv;
@@ -28,26 +34,33 @@ use mem_profiler_stub as mem_profiler;
 
 pub static mut DEBUG_SERVER: UnsafeCell<Option<server::Server>> = UnsafeCell::new(None);
 
+/// World generation, incremented on reboot or shutdown.
+pub static WORLD_ENDS: AtomicU32 = AtomicU32::new(0);
+
+/// Abort debug server work when evaluated DM code ends the world.
+/// Unwinding code must not access the destroyed server.
+pub struct WorldEnded;
+
+/// Running BYOND build used for compilation.
+pub(crate) fn world_byond() -> dmasm::ByondVersion {
+	let (major, build) = auxtools::version::get();
+	dmasm::ByondVersion::new(major, build)
+}
+
+/// Handle panics at the BYOND callback boundary.
+fn recover(payload: &(dyn std::any::Any + Send), server: &mut server::Server) {
+	if !payload.is::<WorldEnded>() {
+		server.recover_from_panic();
+	}
+}
+
 #[shutdown]
 fn debugger_shutdown() {
+	WORLD_ENDS.fetch_add(1, Ordering::Relaxed);
 	// INSTRUCTION_HOOKS are cleared on shutdown so we don't need to worry about
 	// that.
 	unsafe {
 		DEBUG_SERVER.get_mut().take();
-	}
-}
-
-fn get_default_mode() -> String {
-	match std::env::var("AUXTOOLS_DEBUG_MODE") {
-		Ok(val) => val,
-		Err(_) => "NONE".into()
-	}
-}
-
-fn get_default_port() -> u16 {
-	match std::env::var("AUXTOOLS_DEBUG_PORT") {
-		Ok(val) => val.parse::<u16>().unwrap_or(server_types::DEFAULT_PORT),
-		Err(_) => server_types::DEFAULT_PORT
 	}
 }
 
@@ -64,45 +77,14 @@ impl InstructionHook for DebugServerInstructionHook<'static> {
 		// BYOND calls this through extern "C" code, and a panic that gets back
 		// out there aborts the whole game. Losing the debugger is the better
 		// deal.
-		if catch_unwind(AssertUnwindSafe(|| debug_server.handle_instruction(ctx))).is_err() {
-			debug_server.recover_from_panic();
+		if let Err(payload) = catch_unwind(AssertUnwindSafe(|| debug_server.handle_instruction(ctx))) {
+			recover(&*payload, debug_server);
 		}
 	}
 }
 
-#[hook("/proc/enable_debugging")]
-fn enable_debugging(mode: Value, port: Value) {
-	let mode = mode.as_string().unwrap_or_else(|_| get_default_mode());
-	let port = port.as_number().map(|x| x as u16).unwrap_or_else(|_| get_default_port());
-
-	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-
-	// A second server would mean a second instruction hook, and both hooks
-	// would run the one server on every instruction
-	if mode != "NONE" && unsafe { (*DEBUG_SERVER.get()).is_some() } {
-		return Err(runtime!("debugging is already enabled"));
-	}
-
-	let server = match mode.as_str() {
-		"NONE" => {
-			return Ok(Value::NULL);
-		}
-
-		"LAUNCHED" => server::Server::connect(&addr).map_err(|e| runtime!("Couldn't create debug server: {}", e))?,
-
-		"BACKGROUND" => server::Server::listen(&addr).map_err(|e| runtime!("Couldn't create debug server: {}", e))?,
-
-		"BLOCK" => {
-			let mut server = server::Server::listen(&addr).map_err(|e| runtime!("Couldn't create debug server: {}", e))?;
-			server.process_until_configured(); // might never return 😳
-			server
-		}
-
-		_ => {
-			return Err(runtime!("invalid debugging mode: {:?}", mode));
-		}
-	};
-
+/// Makes `server` the debug server, run on every instruction
+fn install_server(server: server::Server) {
 	let debug_server_instruction_hook;
 	unsafe {
 		*DEBUG_SERVER.get() = Some(server);
@@ -112,6 +94,4 @@ fn enable_debugging(mode: Value, port: Value) {
 
 		INSTRUCTION_HOOKS.get_mut().push(Box::new(debug_server_instruction_hook));
 	}
-
-	Ok(Value::NULL)
 }

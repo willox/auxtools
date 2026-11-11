@@ -12,7 +12,7 @@ static mut STRING_PTR: *mut *const c_char = std::ptr::null_mut();
 #[cfg(windows)]
 const GUEST_NAME_FORMAT: Recipe = Recipe {
 	name: "guest_name_format",
-	versions: VersionRange { min: 1659, max: 1688 },
+	versions: VersionRange { min: 1637, max: 1688 },
 	anchor: Anchor::Signature(
 		SignatureTreatment::NoOffset,
 		"68 ?? ?? ?? ?? 50 E8 ?? ?? ?? ?? 83 C4 0C 8D 8D ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 85 ?? ?? ?? ??"
