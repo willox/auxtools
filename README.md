@@ -7,17 +7,62 @@ Currently, it implements some of the features such as the debug server, but is p
 ## Features
 Code Coverage - A tool to generate cobertura code coverage XML reports for a codebase. Note that, due to a [BYOND issue](http://www.byond.com/forum/post/108025) it requires some additional work to have properly un-mangled file names in the report.
 
-Debug Server - Working with SpaceManiac's [SpacemanDMM](https://github.com/SpaceManiac/SpacemanDMM), Auxtools interfaces with the debugger frontend to provide debugger information and management of breakpoints.
+Debug Server - Debug DM worlds from [VS Code](editors/vscode) or the command line, with experimental hot reload.
 
-*Dissassembly*  - When currently stopped at a breakpoint, enter the `#dis` command into the Debug Console in VSC to see the DM bytecode for the current proc. You can also provide it any arbitrary proc path like `#dis /mob/proc/Life`.
+## The debugger
+
+The debugger supports line, function, instruction and data breakpoints; conditional breakpoints and logpoints; runtime error breakpoints; line and instruction stepping; sleeping proc stacks; variable inspection and assignment; expression and proc-body evaluation; and disassembly. A journal records runtime errors, reloads, output and reboots.
+
+No changes to the world's source are required. `auxtools` launches a compiled `.dmb` in DreamSeeker, DreamDaemon or `dd.exe` with the debug library loaded. Build the world with your project's usual tools. After `world.Reboot()`, the launcher reconnects and restores breakpoints and reloads.
+
+Multiple debuggers can connect to the same world. Each session has independent breakpoints and runtime error settings. Pausing stops the world for every session; any session can resume it.
+
+Use `auxtools list` to find running worlds. Worlds using an incompatible debugger protocol are listed but cannot be attached to.
+
+For VS Code, install the extension and press F5 in a workspace containing a built world. See the [extension README](editors/vscode/README.md) for configuration and debugging features.
+
+For command-line use, run `auxtools help COMMAND` for options, behavior, output and exit codes. `--pid PID` selects a world when several are running. Results go to stdout and diagnostics to stderr. `--json` returns a JSON value, or JSON Lines for `log` and `trace`.
+
+```sh
+auxtools launch tgstation.dmb --detach
+auxtools wait pause --break code/game/foo.dm:120
+auxtools vars
+auxtools eval 'src.health'
+auxtools step-over
+auxtools continue
+auxtools trace /mob/proc/Life --by caller --for 5
+auxtools log --runtimes --follow
+auxtools wait reload
+auxtools reboot
+auxtools stop
+```
+
+Exit codes are 0 for success, 1 for failure, 2 for timeout, 3 if the world exits or reboots before completion, and 4 if a world launched in the foreground exits unsuccessfully.
+
+Editors use `auxtools dap` as the debug adapter.
+
+## Hot reload (experimental)
+
+The launcher watches source files and reloads changes when they are saved. Hot reload is enabled by default for launched worlds, including **Run Without Debugging**. Supply the same `defines` used to build the `.dmb`.
+
+Supported changes include proc bodies, proc and verb additions, proc removals, new types and variables, variable defaults, parameters and `set` statements. The launcher reports changes that require a rebuild, including parent type changes and unsupported declaration changes.
+
+Existing calls finish on their original bytecode. Existing instances retain their verbs and built-in values; computed defaults apply to new instances. Reloads are restored after reboot.
+
+Proc-body edits can use a single-file parse. Other edits trigger a full project parse. See the [extension documentation](editors/vscode/README.md#hot-reload-experimental) for reload limits and the [hot reload tests](tests/hot_reload_test) for supported cases.
 
 ## Supported BYOND versions
 
-516.1659 through 516.1688 on Windows, and 516.1664 through 516.1688 on Linux. Those are the builds the patterns that find BYOND's functions were checked against. A newer build is still tried, and fails at init with the name of whatever stopped matching. An older build, or another major version, is refused at init with an error that names the build.
+Windows and Linux: 515.1637–515.1647 and 516.1648–516.1688.
 
-The patterns are run by [byond-scan](https://github.com/Absolucy/byond-scan) and live in `auxtools/src/symbols/`.
+Symbol patterns were checked throughout these ranges. Newer builds are attempted but may fail initialization if a pattern no longer matches. Older builds and unsupported major versions are rejected with a version error.
 
-What was run on Linux (516.1687): the `auxtest` suite, and `debug_test`, which sets breakpoints, evaluates expressions and re-attaches through a stand-in for the debugger. The code coverage tool's report was checked on Windows and Linux 1687 against a world with a known set of lines. Stepping and breakpoints with a real debugger attached were not tested on either platform.
+The patterns use [byond-scan](https://github.com/Absolucy/byond-scan) and are stored in `auxtools/src/symbols/`.
+
+CI tests the debugger, hot reload and CLI on 515.1637, 515.1647, 516.1659, 516.1685 and 516.1688. The integration suites cover the debug server, source reloads, launcher lifecycle, CLI output and DAP behavior. Linux tests run on Ubuntu 22.04; Windows tests run in `dd.exe` on Windows Server 2022 and under Wine.
+
+The VS Code extension has separate integration coverage on Linux 516.1688 using a harness outside this repository. It has no automated Windows coverage. DreamSeeker and windowed DreamDaemon were checked manually with the first part
+of `launcher_test` before the CLI was added; they are outside these automated runs. The `auxtest` suite and coverage reports were last checked on 516.1687.
 
 ## Dependencies
 
@@ -66,21 +111,25 @@ System libraries:
 
 ## Compiling
 
-The [Cargo] tool handles compilation, as well as automatically downloading and
-compiling all Rust dependencies. To compile in release mode (recommended for speed):
+Cargo downloads and builds Rust dependencies. The lockfile pins two git dependencies:
+[auxtools/dmasm](https://github.com/auxtools/dmasm) for proc compilation and hot reload, and
+[auxtools/SpacemanDMM](https://github.com/auxtools/SpacemanDMM) for parser fixes.
+
+Build the workspace in release mode:
 
 Linux:
+
 ```sh
 export PKG_CONFIG_ALLOW_CROSS=1
-cargo build --release --target i686-unknown-linux-gnu
-# output: target/i686-unknown-linux-gnu/release/libauxtools.so,libdebug_server.so,libauxcov.so
+cargo build --workspace --release --target i686-unknown-linux-gnu
 ```
+
+Outputs in `target/i686-unknown-linux-gnu/release`: `libauxtools.so`, `libdebug_server.so`, `libauxcov.so`, `auxtools`.
 
 Windows:
 
 ```sh
-cargo build --release --target i686-pc-windows-msvc
-# output: target/i686-pc-windows-msvc/release/auxtools.dll,debug_server.dll,auxcov.dll
+cargo build --workspace --release --target i686-pc-windows-msvc
 ```
 
 [Rust]: https://rust-lang.org
@@ -93,5 +142,5 @@ cargo build --release --target i686-pc-windows-msvc
 Auxtools is licensed under the [MIT license](https://en.wikipedia.org/wiki/MIT_License).
 See [LICENSE](./LICENSE) for more details.
 
-The Auxtool Debug Server (located @ ./debug_server) and Auxcov Code Coverage tool (located @ ./auxcov) is licensed under the [GPL 3.0 license](https://www.gnu.org/licenses/gpl-3.0.en.html).
-See [debug_server/LICENSE](./debug_server/LICENSE) or [auxcov/LICENSE](./auxcov/LICENSE) for more details.
+The debug server, launcher and Auxcov coverage tool are licensed under GPL-3.0.
+See [debug_server/LICENSE](./debug_server/LICENSE), [auxtools-cli/LICENSE](./auxtools-cli/LICENSE) and [auxcov/LICENSE](./auxcov/LICENSE).
