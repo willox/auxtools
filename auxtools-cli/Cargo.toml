@@ -1,6 +1,6 @@
 [package]
 name = "auxtools-cli"
-description = "Starts BYOND worlds with auxtools' debugger in them, and reaches the worlds that run it"
+description = "BYOND debugger launcher, CLI and debug adapter"
 version.workspace = true
 publish = false
 authors.workspace = true
@@ -9,11 +9,17 @@ rust-version.workspace = true
 repository.workspace = true
 license = "GPL-3.0"
 
+[[bin]]
+name = "auxtools"
+path = "src/main.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 bincode = "1"
 dmasm = { workspace = true }
 dreammaker = { workspace = true }
+dap-types = { workspace = true }
 interprocess = "=2.4.7"
 
 [target.'cfg(unix)'.dependencies]
