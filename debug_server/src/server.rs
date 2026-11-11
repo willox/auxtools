@@ -199,7 +199,6 @@ enum Event {
 }
 
 struct Client {
-	connection: Connection,
 	// Runtime error filters for uncaught and caught errors.
 	uncaught: Option<RuntimeFilter>,
 	caught: Option<RuntimeFilter>,
@@ -207,13 +206,13 @@ struct Client {
 	debugs: bool,
 	/// Journal event kinds to stream to this client.
 	follow: Option<Vec<JournalKind>>,
-	/// Queue for the journal subscriber's writer thread (see `deliver`).
-	outbox: Option<mpsc::SyncSender<Vec<u8>>>,
+	/// Outbound messages for the client writer (see `deliver`).
+	outbox: mpsc::SyncSender<Vec<u8>>,
 	/// Maximum held-pause duration without a debugging client.
 	hold_max: Option<Duration>
 }
 
-/// Maximum queued subscriber messages before disconnecting a slow client.
+/// Disconnect slow clients when their outgoing queue reaches this limit.
 const OUTBOX: usize = 1024;
 
 /// How many procs of a runtime error's stack the record keeps
@@ -2924,13 +2923,13 @@ impl Server {
 
 			match event {
 				Event::Connected(id, connection) => {
+					let outbox = Self::writer(connection.clone());
 					self.clients.insert(id, Client {
-						connection,
 						uncaught: None,
 						caught: None,
 						debugs: true,
 						follow: None,
-						outbox: None,
+						outbox,
 						hold_max: None
 					});
 					if let Wait::Until(_) = wait {
@@ -3093,7 +3092,7 @@ impl Server {
 	/// Sends one client something, at any moment
 	fn tell(&mut self, client: ClientId, response: Response) {
 		if let Some(to) = self.clients.get_mut(&client) {
-			if Self::send(&mut to.connection, &response).is_err() {
+			if !Self::deliver(to, &response) {
 				self.remove_client(client);
 			}
 		}
@@ -3349,14 +3348,11 @@ impl Server {
 
 	/// Disconnect a client and remove its breakpoint claims.
 	fn remove_client(&mut self, id: ClientId) {
-		let Some(mut client) = self.clients.remove(&id) else {
+		let Some(client) = self.clients.remove(&id) else {
 			return;
 		};
-		// One that follows the record is told by its writer, once what's
-		// waiting for it is written (see `writer`)
-		if client.outbox.is_none() {
-			let _ = Self::send(&mut client.connection, &Response::Disconnect);
-		}
+		// The writer drains queued messages before sending Disconnect.
+		drop(client);
 		if self.current == Some(id) {
 			self.current = None;
 		}
@@ -3415,13 +3411,10 @@ impl Server {
 	}
 
 	/// Deliver a message; return false if the client must be disconnected.
-	/// Journal subscribers use a writer queue so slow readers cannot block
-	/// the world. Disconnect them if the queue fills.
+	/// Queue writes off the world thread: Windows flushes block until the
+	/// client reads the data. Disconnect clients whose queues fill.
 	fn deliver(client: &mut Client, response: &Response) -> bool {
-		match &client.outbox {
-			Some(outbox) => Self::encode(response).is_ok_and(|bytes| outbox.try_send(bytes).is_ok()),
-			None => Self::send(&mut client.connection, response).is_ok()
-		}
+		Self::encode(response).is_ok_and(|bytes| client.outbox.try_send(bytes).is_ok())
 	}
 
 	/// Start a per-client writer. Drain queued messages before disconnecting.
@@ -3476,9 +3469,6 @@ impl Server {
 	fn handle_journal(&mut self, after: u64, kinds: Vec<JournalKind>, limit: Option<u32>, follow: bool) {
 		let (entries, first, last) = journal::read(after, &kinds, limit);
 		if let Some(client) = self.current.and_then(|id| self.clients.get_mut(&id)) {
-			if follow && client.outbox.is_none() {
-				client.outbox = Some(Self::writer(client.connection.clone()));
-			}
 			client.follow = follow.then_some(kinds);
 		}
 		self.send_or_disconnect(Response::Journal { entries, first, last });
@@ -3507,7 +3497,7 @@ impl Drop for Server {
 		// are told to go
 		while let Ok(event) = self.events.try_recv() {
 			if let Event::Connected(_, mut connection) = event {
-				let _ = Self::send(&mut connection, &Response::Disconnect);
+				thread::spawn(move || Self::send(&mut connection, &Response::Disconnect).is_ok());
 			}
 		}
 	}
