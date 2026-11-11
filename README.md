@@ -4,8 +4,6 @@ auxtools is a Rust-based successor to the [extools](https://github.com/MCHSL/ext
 
 Currently, it implements some of the features such as the debug server, but is planned to supplant most functionality (maptick, etc.).
 
-Code Documentation: https://auxtools.willox.dev
-
 ## Features
 Code Coverage - A tool to generate cobertura code coverage XML reports for a codebase. Note that, due to a [BYOND issue](http://www.byond.com/forum/post/108025) it requires some additional work to have properly un-mangled file names in the report.
 
