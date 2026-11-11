@@ -206,7 +206,7 @@ impl Code {
 				}
 			}
 			while self.reconnected.take() {
-				if !self.catch_up(watching) || !self.send(Event::Ready) {
+				if !self.catch_up(watching) {
 					return;
 				}
 			}
@@ -297,11 +297,16 @@ impl Code {
 		}
 	}
 
-	/// Synchronize source after reconnection. A reboot loses previous reloads;
-	/// a rebuilt `.dmb` establishes a new baseline.
+	/// Restore reloads after a reboot, or adopt a rebuilt `.dmb` as the
+	/// baseline. Send `Event::Ready` when the world can resume. Return false on
+	/// disconnect.
 	fn catch_up(&self, watching: &mut Watching) -> bool {
 		let dmb_modified = self.dmb_modified();
 		if dmb_modified != watching.dmb_modified {
+			// The rebuilt world can run while we parse its source.
+			if !self.ready() {
+				return false;
+			}
 			self.log("using the rebuilt .dmb as the source baseline");
 			watching.dmb_modified = dmb_modified;
 			match self.parse() {
@@ -317,7 +322,7 @@ impl Code {
 		watching.applied = None;
 		watching.built.clear_patches();
 		if watching.edited_since_built.is_empty() {
-			return true;
+			return self.ready();
 		}
 
 		self.log("world rebooted; restoring source changes since the build");
@@ -325,21 +330,34 @@ impl Code {
 			Ok(current) => current,
 			Err(e) => {
 				self.log(format!("couldn't read the code: {}", e));
-				return self.not_reloaded(e);
+				return self.not_reloaded(e) && self.ready();
 			}
 		};
 		let changes = diff(&watching.built, &current, Some(&watching.edited_since_built));
-		match self.reload(&changes, &current) {
-			None => false,
-			Some(applied) => {
-				if applied {
-					watching.applied = Some(current);
-					watching.built.clear_patches();
-					return self.give_macros();
-				}
-				true
+		let Some(applied) = self.reload(&changes, &current) else {
+			return false;
+		};
+		if !self.ready() {
+			return false;
+		}
+		if !applied {
+			return true;
+		}
+		watching.applied = Some(current);
+		watching.built.clear_patches();
+		// Send evaluation macros after releasing the world.
+		self.give_macros()
+	}
+
+	/// Release the world unless a newer connection needs synchronization first.
+	/// Return false if sending `Event::Ready` fails.
+	fn ready(&self) -> bool {
+		while let Ok(command) = self.commands.try_recv() {
+			if let Command::Connected { .. } = command {
+				self.reconnected.set(true);
 			}
 		}
+		self.reconnected.get() || self.send(Event::Ready)
 	}
 
 	/// Send macros if they changed. Returns false if the adapter disconnected.

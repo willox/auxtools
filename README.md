@@ -47,7 +47,7 @@ The launcher watches source files and reloads changes when they are saved. Hot r
 
 Supported changes include proc bodies, proc and verb additions, proc removals, new types and variables, variable defaults, parameters and `set` statements. The launcher reports changes that require a rebuild, including parent type changes and unsupported declaration changes.
 
-Existing calls finish on their original bytecode. Existing instances retain their verbs and built-in values; computed defaults apply to new instances. Reloads are restored after reboot.
+Existing calls finish on their original bytecode. Existing instances retain their verbs and built-in values; computed defaults apply to new instances. Worlds launched with hot reload wait for reloads to be restored after reboot before running any code.
 
 Proc-body edits can use a single-file parse. Other edits trigger a full project parse. See the [extension documentation](editors/vscode/README.md#hot-reload-experimental) for reload limits and the [hot reload tests](tests/hot_reload_test) for supported cases.
 

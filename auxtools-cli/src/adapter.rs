@@ -732,13 +732,14 @@ impl Adapter {
 		});
 
 		let game_args = args.args.unwrap_or_else(|| default_args(server));
-		// While debugging, the world waits for the client's breakpoints
+		// Debugged worlds wait for breakpoints. Hot reload also requires a wait
+		// after reboot; release the initial launch as soon as we connect.
 		let launch = Launch {
 			program,
 			dmb: &dmb,
 			args: &game_args,
 			env: &args.env,
-			debug: Some((library, self.debugging))
+			debug: Some((library, self.debugging || args.hot_reload))
 		};
 		let (out, inputs, files) = (self.out.clone(), self.inputs.clone(), self.files.clone());
 		let batch = journal::batch_output(self.inputs.clone());

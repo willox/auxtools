@@ -1375,6 +1375,24 @@ fn launch_from_the_command_line(server: &str) {
 	wait_for_text("the background launcher's log", "The world restarted", read_log);
 	println!("ok: reboot waits for reconnection");
 
+	// Reboot must wait for hot reloads to be restored.
+	let source = std::fs::read_to_string(&code).unwrap();
+	std::fs::write(&code, format!("{}\n/proc/added_by_reload()\n\treturn 99\n", source)).unwrap();
+	wait_for_text("the background launcher's log", "Hot reload: added /added_by_reload", read_log);
+	run(&["reboot", "--timeout", "60"], 0);
+	assert_eq!(run(&["eval", "added_by_reload()"], 0).trim(), "99");
+	let loaded: serde_json::Value = serde_json::from_str(&run(&["log", "--world", "--last", "1", "--json"], 0)).unwrap();
+	let status: serde_json::Value = serde_json::from_str(&run(&["status", "--json"], 0)).unwrap();
+	assert!(
+		loaded["event"] == "loaded"
+			&& status["last_reload"]["applied"] == true
+			&& status["last_reload"]["number"].as_u64() > loaded["number"].as_u64(),
+		"after reboot, the world loaded at {} and the last reload is {}",
+		loaded,
+		status["last_reload"]
+	);
+	println!("ok: reboot waits for hot reloads to be reapplied");
+
 	// Whenever in the world's round it's asked: a proc that wakes between the
 	// world's Del() and the next world loading is the old world's, and the
 	// debugger waits for the new one
@@ -1396,6 +1414,7 @@ fn launch_from_the_command_line(server: &str) {
 	assert_eq!(printed.trim(), format!("pid {}: stopped", pid));
 	assert!(!alive(pid), "world process is still running");
 	assert!(gone_within(launcher, 10), "the background launcher didn't go with the world");
+	std::fs::write(&code, source).unwrap();
 	let said = read_log();
 	assert!(
 		said.contains("attach test: world/Del") && said.contains("The world exited with code 0"),

@@ -132,19 +132,20 @@ Exit codes:
 	Page {
 		path: &["reboot"],
 		brief: "Reboot a world and wait for debugger readiness",
-		summary: "Reboot the world and wait for its debugger to respond.",
+		summary: "Reboot the world and wait for it to start running.",
 		usage: "auxtools [--pid PID] reboot [--timeout SECONDS] [--json]",
 		arguments: "",
 		sections: "Behavior:
   Calls world.Reboot() to reload the DMB. Existing debugger connections close.
-  The launcher reconnects and reapplies hot reload changes.
+  Worlds launched with hot reload wait for reloads to be restored before
+  running any code. This command returns when the new world starts running.
   This command initiates a reboot; wait reboot only observes one.
 
 Output:
   JSON contains pid and rebooted.
 
 Exit codes:
-  0  World rebooted and its debugger responded.
+  0  World rebooted and started running.
   1  Reboot request failed.
   2  Reboot timed out.
   3  World process exited instead of rebooting."
@@ -404,7 +405,8 @@ Exit codes:
 		arguments: "",
 		sections: "Behavior:
   Observe a reboot; do not initiate it or pause execution.
-  Reconnect after the reboot and return when the debugger reports the load.
+  Reconnect after the reboot and return when the new world starts running,
+  after its launcher has reapplied hot reload changes.
   With --since, a retained world-load event can satisfy the wait immediately.
 
 Output:
