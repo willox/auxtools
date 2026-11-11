@@ -89,6 +89,7 @@ pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>
 				inputs,
 				commands: receiver,
 				reconnected: Cell::new(false),
+				parsed: Cell::new(false),
 				macros: RefCell::new(None)
 			};
 			code.run();
@@ -106,6 +107,8 @@ struct Code {
 	commands: mpsc::Receiver<Command>,
 	/// A reboot occurred while awaiting a reload response.
 	reconnected: Cell<bool>,
+	/// A full parse occurred since the last heap trim.
+	parsed: Cell<bool>,
 	/// The macros the world was last given
 	macros: RefCell<Option<Vec<Macro>>>
 }
@@ -132,6 +135,7 @@ impl Code {
 	}
 
 	fn parse(&self) -> Result<Snapshot, String> {
+		self.parsed.set(true);
 		Snapshot::parse(&self.options.dme, &self.parse_options)
 	}
 
@@ -205,6 +209,9 @@ impl Code {
 				if !self.catch_up(watching) || !self.send(Event::Ready) {
 					return;
 				}
+			}
+			if self.parsed.take() {
+				give_back_memory();
 			}
 		}
 	}
@@ -555,6 +562,15 @@ fn files(snapshot: &Snapshot, dme: &Path) -> Vec<PathBuf> {
 	let mut files = snapshot.files();
 	files.push(dme.to_owned());
 	files
+}
+
+/// Return freed parse memory to the OS; glibc can retain large unused heaps.
+fn give_back_memory() {
+	#[cfg(all(target_os = "linux", target_env = "gnu"))]
+	// SAFETY: malloc_trim only releases unused memory.
+	unsafe {
+		libc::malloc_trim(0);
+	}
 }
 
 fn modified_time(root: &Path, file: &Path) -> Option<SystemTime> {
