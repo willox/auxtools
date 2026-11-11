@@ -74,3 +74,34 @@ var/reboot_requested = FALSE
 	return "hi [who]"
 
 var/mob/helper/helper = new
+
+// BYOND pushes past a buffer in its own frame running stored(), and loses the
+// registers it saved there (see call_keeping_registers in hooks.cpp)
+var/overrun_global = 2
+
+/proc/overrun_args(x1 = null, x2, x3)
+
+/datum/overrun
+	var/list/items = list(1, 2)
+
+/datum/overrun/proc/stored(x1, x2 = "")
+	var/loops = 0
+	var/n1 = 256
+	var/s1 = "3.5"
+	var/list/L = list(1, "  pad  ")
+	var/v
+	src.items["b"] ||= overrun_args((args.Copy() + null), text2path("/datum/nope"), src.items["k"])
+	var/list/l45 = (L - (min(max(overrun_global, -16777216), 16777215) << 2))
+
+/datum/overrun/proc/calls(a, b = 2, c)
+	var/datum/overrun/o = new /datum/overrun
+	var/datum/p = new /datum
+	var/v
+	if (isloc((v || 1)))
+	else
+		o.stored(findlasttextEx({"multi "quoted" text"}, "a\tb"), "[p]\t[null])")
+
+/proc/overrun()
+	var/datum/overrun/o = new
+	o.calls(113, 227, "c113")
+	return 7
