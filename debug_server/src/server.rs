@@ -1352,12 +1352,37 @@ impl Server {
 		Ok(variables)
 	}
 
+	/// Hide outer debugger helper frames, preserving frame positions and IDs.
+	/// Keep stacks containing only helpers visible, so a pause in the keepalive
+	/// loop still has a location.
+	fn shown(stack: &[debug::StackFrame]) -> &[debug::StackFrame] {
+		match stack.iter().rposition(|frame| !crate::launched::runs_spawns(&frame.proc)) {
+			Some(last) => &stack[..=last],
+			None => stack
+		}
+	}
+
+	/// Whether a sleeping stack contains only debugger helpers.
+	fn only_runs_spawns(instance: *mut raw_types::procs::ProcInstance) -> bool {
+		// From the outermost frame to the innermost
+		let mut ctx = unsafe { (*instance).context };
+		while !ctx.is_null() {
+			let proc = Proc::from_id(unsafe { (**(*ctx).proc_instance()).proc });
+			if !proc.is_some_and(|proc| crate::launched::runs_spawns(&proc)) {
+				return false;
+			}
+			ctx = unsafe { *(*ctx).parent_context() };
+		}
+		true
+	}
+
 	/// Use the outermost proc instance's BYOND ID as a stable stack ID.
 	/// The instance address changes on first sleep; spawned copies receive
-	/// distinct IDs. IDs may be reused after a proc ends.
+	/// distinct IDs. IDs may be reused after a proc ends. For spawned code,
+	/// use the outermost visible frame so its ID survives sleeping.
 	fn thread_of(&self, stack: &[debug::StackFrame]) -> u32 {
 		// 0 is "the running proc's" in a request
-		stack
+		Self::shown(stack)
 			.last()
 			.map_or(0, |frame| unsafe { (*frame.instance).argslist_idx.id }.wrapping_add(1))
 	}
@@ -1636,13 +1661,21 @@ impl Server {
 	fn handle_stacks(&mut self, sleeping: Option<u32>) {
 		let sleeping = sleeping.unwrap_or(DEFAULT_SLEEPING_STACKS) as usize;
 		if let Some(state) = &mut self.state {
-			state.read_sleeping(sleeping);
+			// Allow for the hidden keepalive stack.
+			state.read_sleeping(sleeping.saturating_add(1));
 		}
 		let mut asleep = 0;
 		let stacks = match &self.state {
 			Some(state) => {
-				asleep = debug::CallStacks::suspended_instances().len();
-				let listed = std::iter::once(state.active()).chain(state.suspended().iter().take(sleeping));
+				// Exclude sleeping helper stacks from the count and results.
+				let instances = debug::CallStacks::suspended_instances();
+				asleep = instances.len() - instances.into_iter().filter(|&instance| Self::only_runs_spawns(instance)).count();
+				let suspended = state
+					.suspended()
+					.iter()
+					.filter(|stack| !stack.iter().all(|frame| crate::launched::runs_spawns(&frame.proc)))
+					.take(sleeping);
+				let listed = std::iter::once(state.active()).chain(suspended);
 				listed
 					.enumerate()
 					.filter(|(_, stack)| !stack.is_empty())
@@ -1675,6 +1708,7 @@ impl Server {
 			Some(stack) => {
 				let stack_id = position.unwrap_or(0);
 				let thread = self.thread_of(stack);
+				let stack = Self::shown(stack);
 				let start_frame = start_frame.unwrap_or(0);
 				let end_frame = start_frame.saturating_add(count.unwrap_or(stack.len() as u32));
 
@@ -3406,7 +3440,7 @@ impl Server {
 
 	/// The procs the running code is in, as the record keeps them
 	fn journal_stack(&self) -> Vec<JournalFrame> {
-		debug::CallStacks::active()
+		Self::shown(&debug::CallStacks::active())
 			.iter()
 			.take(JOURNAL_FRAMES)
 			.map(|frame| {

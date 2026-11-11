@@ -638,10 +638,14 @@ fn command_line_more(pid: u64, dir: &Path) {
 	// keeps
 	let first = printed.split_once(": ").map(|(_, rest)| rest).unwrap_or_default();
 	assert!(
-		printed.starts_with("stack ") && first.starts_with("/run_until_stopped\n#0 /run_until_stopped") && printed.contains(" (sleeping)\n#0 "),
+		printed.starts_with("stack ")
+			&& first.starts_with("/run_until_stopped\n#0 /run_until_stopped")
+			&& printed.contains(": /doze (sleeping)\n#0 /doze  attach_host.dm:"),
 		"stack --all said {}",
 		printed
 	);
+	// Exclude the sleeping debugger helper.
+	assert!(!printed.contains("auxtools_keepalive"), "stack --all said {}", printed);
 	println!("ok: CLI running and sleeping stacks");
 
 	let printed = run(&["vars"], 0);

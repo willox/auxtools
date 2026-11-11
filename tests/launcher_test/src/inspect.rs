@@ -771,6 +771,17 @@ fn spawned(pid: &str, code: &Path) {
 		"log said {}",
 		printed
 	);
+	// Runtime journal stacks exclude the debugger's outer helper frames.
+	let printed = run(pid, &["log", "--runtimes", "--last", "1"], 0).out;
+	let frames: Vec<&str> = printed.lines().skip(1).collect();
+	assert!(
+		frames.len() == 3
+			&& frames[0].starts_with("  /fail_deeper  ")
+			&& frames[1].starts_with("  /slow_fail  ")
+			&& frames[2].starts_with("  /auxtools_spawn_stub  "),
+		"log said {}",
+		printed
+	);
 	println!("ok: spawned runtime error stacks");
 
 	// A breakpoint in what it calls stops the world
@@ -795,12 +806,28 @@ fn spawned(pid: &str, code: &Path) {
 	);
 	let stack = run(pid, &["stack"], 0).out;
 	assert!(
-		stack.lines().nth(1).is_some_and(|line| line.starts_with("#1 /auxtools_spawn_stub")),
+		stack.lines().count() == 2 && stack.lines().nth(1).is_some_and(|line| line.starts_with("#1 /auxtools_spawn_stub")),
 		"stack said {}",
 		stack
 	);
+	// Sleeping helper stacks are hidden too.
+	let stacks = run(pid, &["stack", "--all"], 0).out;
+	assert!(
+		!stacks.contains("auxtools_keepalive") && !stacks.contains("auxtools_spawned"),
+		"stack --all said {}",
+		stacks
+	);
 	assert_eq!(run(pid, &["eval", "n"], 0).out, "6\n");
-	run(pid, &["continue"], 0);
+	// Stepping out of the expression completes without stopping in a helper.
+	let stepped = run(pid, &["step-out", "--timeout", "10"], 0).out;
+	assert!(stepped.contains("#0 /auxtools_spawn_stub  "), "step-out said {}", stepped);
+	let stepped = run(pid, &["step-out", "--timeout", "10"], 0);
+	assert!(
+		stepped.err.contains("no frame remained to pause in") && stepped.out.ends_with(": running\n"),
+		"step-out said {}{}",
+		stepped.out,
+		stepped.err
+	);
 	println!("ok: breakpoints in spawned calls");
 
 	let ran = run(pid, &["eval", "--spawn", "--wait", "--timeout", "0.5", "slow_double(1, 50)"], 2);

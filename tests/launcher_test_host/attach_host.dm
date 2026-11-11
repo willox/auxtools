@@ -30,6 +30,12 @@ var/datum/held/held = new
 	..()
 	spawn(1)
 		run_until_stopped()
+	doze()
+
+// Keep a world proc asleep for stack listings without waking during the test.
+/proc/doze()
+	set waitfor = FALSE
+	sleep(36000)
 
 // A world whose shutdown code doesn't shut it down, when the test asks for one
 /world/Del()
