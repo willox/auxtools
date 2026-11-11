@@ -1,0 +1,357 @@
+name: CI
+
+# Cross-compile Linux and Windows binaries on Linux, test the BYOND matrix
+# on Linux, Windows and Wine, and package both targets in the VS Code extension.
+#
+# Run automatically for repositories owned by willox or auxtools. Other forks
+# can start a run through Actions > CI > Run workflow.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # Build each artifact from source without reusing prior build outputs.
+  CARGO_INCREMENTAL: 0
+  RUST_VERSION: 1.99.1
+  # Pin nightly rustfmt for the options in .rustfmt.toml.
+  RUSTFMT_TOOLCHAIN: nightly-2026-10-24
+
+jobs:
+  format:
+    name: Check the formatting
+    if: github.event_name == 'workflow_dispatch' || github.repository_owner == 'willox' || github.repository_owner == 'auxtools'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install rustfmt
+        run: rustup toolchain install "$RUSTFMT_TOOLCHAIN" --profile minimal --component rustfmt --no-self-update
+
+      - name: Check the formatting
+        run: cargo "+$RUSTFMT_TOOLCHAIN" fmt --all -- --check
+
+  build-linux:
+    name: Build for Linux
+    if: github.event_name == 'workflow_dispatch' || github.repository_owner == 'willox' || github.repository_owner == 'auxtools'
+    # Build on Ubuntu 22.04 for glibc 2.35 compatibility.
+    # ci/check-linux.sh verifies the resulting requirements.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      TARGET: i686-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the 32-bit compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-multilib g++-multilib
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --target "$TARGET" --no-self-update
+          rustup default "$RUST_VERSION"
+
+      - name: Restore downloaded crates
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: crates-linux-${{ hashFiles('Cargo.lock') }}
+          restore-keys: crates-linux-
+
+      # byond_get isn't built: it wants OpenSSL, and ci/fetch-byond.sh does its job
+      - name: Build
+        run: cargo build --release --locked --target "$TARGET" --workspace --exclude byond_get
+
+      - name: Unit tests
+        run: cargo test --release --locked --target "$TARGET" -p auxtools-cli
+
+      - name: The extension's tests
+        run: |
+          node editors/vscode/expression.test.js
+          node editors/vscode/unsaved.test.js
+
+      - name: Split the debug information off, check and pack
+        run: |
+          cd "target/$TARGET/release"
+          "$GITHUB_WORKSPACE/ci/split-debug.sh" auxtools libdebug_server.so
+          "$GITHUB_WORKSPACE/ci/check-linux.sh" auxtools libdebug_server.so
+          strip --strip-debug libauxtest.so test_runner debug_test hot_reload_test launcher_test dap_test
+          tar -czf "$RUNNER_TEMP/auxtools-linux.tar.gz" auxtools libdebug_server.so
+          tar -czf "$RUNNER_TEMP/auxtools-linux-symbols.tar.gz" auxtools.debug libdebug_server.so.debug
+          tar -cf "$RUNNER_TEMP/bundle-linux.tar" auxtools libdebug_server.so libauxtest.so test_runner debug_test hot_reload_test launcher_test dap_test
+
+      - name: Upload the launcher and the debug library
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/auxtools-linux.tar.gz
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload their debug information
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/auxtools-linux-symbols.tar.gz
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload the bundle for the later jobs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundle-linux
+          path: ${{ runner.temp }}/bundle-linux.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  build-windows:
+    name: Build for Windows
+    if: github.event_name == 'workflow_dispatch' || github.repository_owner == 'willox' || github.repository_owner == 'auxtools'
+    # Microsoft C++ headers require clang 19 or newer.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    env:
+      TARGET: i686-pc-windows-msvc
+      MSVC_SDK: ${{ github.workspace }}/.msvc-sdk
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install LLVM's tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang lld llvm
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --target "$TARGET" --no-self-update
+          rustup default "$RUST_VERSION"
+
+      - name: Restore downloaded crates
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: crates-windows-${{ hashFiles('Cargo.lock') }}
+          restore-keys: crates-windows-
+
+      - name: Restore the Windows SDK
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .msvc-sdk
+          key: msvc-sdk-${{ hashFiles('ci/msvc/fetch-sdk.sh') }}
+
+      - name: Fetch the Windows SDK
+        run: ci/msvc/fetch-sdk.sh "$MSVC_SDK"
+
+      - name: Build
+        run: |
+          . ci/msvc/env.sh
+          cargo build --release --locked --target "$TARGET" --workspace --exclude byond_get
+
+      - name: Build the unit tests
+        run: |
+          . ci/msvc/env.sh
+          ci/unit-tests.sh "target/$TARGET/release/unit" --release --locked --target "$TARGET" -p auxtools-cli
+
+      - name: Check and pack
+        run: |
+          cd "target/$TARGET/release"
+          "$GITHUB_WORKSPACE/ci/check-windows.sh" auxtools.exe debug_server.dll
+          python3 -m zipfile -c "$RUNNER_TEMP/auxtools-windows.zip" auxtools.exe debug_server.dll
+          python3 -m zipfile -c "$RUNNER_TEMP/auxtools-windows-symbols.zip" auxtools-cli.pdb debug_server.pdb
+          tar -cf "$RUNNER_TEMP/bundle-windows.tar" auxtools.exe debug_server.dll auxtest.dll test_runner.exe debug_test.exe hot_reload_test.exe launcher_test.exe dap_test.exe unit
+
+      - name: Upload the launcher and the debug library
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/auxtools-windows.zip
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload their debug information
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/auxtools-windows-symbols.zip
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload the bundle for the later jobs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundle-windows
+          path: ${{ runner.temp }}/bundle-windows.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  test-linux:
+    name: Linux, BYOND ${{ matrix.byond }}
+    needs: build-linux
+    # Test Linux binaries on the minimum supported glibc environment.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        byond: ["515.1637", "515.1647", "516.1659", "516.1685", "516.1688"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the 32-bit libraries BYOND needs
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libc6:i386 libstdc++6:i386 libgcc-s1:i386 libcurl4:i386
+
+      - name: Download the bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundle-linux
+          path: bundle
+
+      - name: Restore BYOND
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .byond
+          key: byond-${{ matrix.byond }}-linux-${{ hashFiles('ci/byond.sha256') }}
+
+      - name: Fetch BYOND
+        run: ci/fetch-byond.sh "${{ matrix.byond }}" linux .byond
+
+      - name: Test
+        run: |
+          mkdir programs
+          tar -xf bundle/bundle-linux.tar -C programs
+          ci/run-tests.sh programs .byond/byond
+
+  test-windows:
+    name: Windows, BYOND ${{ matrix.byond }}
+    needs: build-windows
+    # Test Windows binaries on Server 2022 (Windows 10 generation).
+    runs-on: windows-2022
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        byond: ["515.1637", "515.1647", "516.1659", "516.1685", "516.1688"]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundle-windows
+          path: bundle
+
+      - name: Restore BYOND
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .byond
+          key: byond-${{ matrix.byond }}-windows-${{ hashFiles('ci/byond.sha256') }}
+
+      - name: Fetch BYOND
+        run: ci/fetch-byond.sh "${{ matrix.byond }}" windows .byond
+
+      - name: Test
+        run: |
+          mkdir programs
+          tar -xf bundle/bundle-windows.tar -C programs
+          ci/run-tests.sh programs .byond/byond
+
+  test-wine:
+    name: Wine, BYOND ${{ matrix.byond }}
+    needs: build-windows
+    # Use Wine 10.0.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        byond: ["515.1637", "515.1647", "516.1659", "516.1685", "516.1688"]
+    env:
+      WINE: wine
+      WINEARCH: win32
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Wine
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wine wine32:i386
+          wine --version
+
+      - name: Download the bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundle-windows
+          path: bundle
+
+      - name: Restore BYOND
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .byond
+          key: byond-${{ matrix.byond }}-windows-${{ hashFiles('ci/byond.sha256') }}
+
+      - name: Fetch BYOND
+        run: ci/fetch-byond.sh "${{ matrix.byond }}" windows .byond
+
+      - name: Test
+        run: |
+          mkdir programs
+          tar -xf bundle/bundle-windows.tar -C programs
+          ci/run-tests.sh programs .byond/byond
+
+  package:
+    name: Pack the VS Code extension
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the Linux bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundle-linux
+          path: bundle
+
+      - name: Download the Windows bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundle-windows
+          path: bundle
+
+      # package.py takes the programs from where cargo builds them
+      - name: Pack
+        run: |
+          mkdir -p target/i686-unknown-linux-gnu/release target/i686-pc-windows-msvc/release
+          tar -xf bundle/bundle-linux.tar -C target/i686-unknown-linux-gnu/release auxtools libdebug_server.so
+          tar -xf bundle/bundle-windows.tar -C target/i686-pc-windows-msvc/release auxtools.exe debug_server.dll
+          python3 editors/vscode/package.py | tee packed.txt
+          grep -q "(2 platforms)" packed.txt
+
+      - name: Upload the extension
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: auxtools-*.vsix
+          archive: false
+          if-no-files-found: error

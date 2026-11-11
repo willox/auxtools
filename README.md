@@ -132,6 +132,35 @@ Windows:
 cargo build --workspace --release --target i686-pc-windows-msvc
 ```
 
+Outputs in `target/i686-pc-windows-msvc/release`: `auxtools.dll`, `debug_server.dll`, `auxcov.dll`, `auxtools.exe`.
+
+To cross-compile Windows builds on Linux, install clang 19 or newer, lld and LLVM, then fetch the SDK (about 800 MB):
+
+```sh
+ci/msvc/fetch-sdk.sh ~/.cache/msvc-sdk
+export MSVC_SDK=~/.cache/msvc-sdk
+. ci/msvc/env.sh
+cargo build --workspace --exclude byond_get --release --target i686-pc-windows-msvc
+```
+
+## Continuous integration
+
+`.github/workflows/ci.yml` builds, tests and packages both platforms. It runs on pull requests and pushes to `master` in the willox and auxtools organizations; other forks can run it manually.
+
+Linux binaries target glibc 2.35 and later. Windows binaries target Windows 10 and later and link the C runtime statically. `ci/check-linux.sh` and `ci/check-windows.sh` check these requirements.
+
+CI uses pinned Rust and action versions. Format code with `cargo +nightly-2026-10-24 fmt --all`; the rustfmt configuration requires nightly options.
+
+BYOND test archives come from the [BYOND build mirror](https://byond-builds.dm-lang.org), verified against `ci/byond.sha256`. To run the integration suites locally, use `ci/run-tests.sh PROGRAMS BYOND`.
+
+| Artifact | Contents |
+| --- | --- |
+| `auxtools-linux.tar.gz` | Launcher and debug library |
+| `auxtools-linux-symbols.tar.gz` | `auxtools.debug`, `libdebug_server.so.debug`; place beside the binaries for gdb |
+| `auxtools-windows.zip` | Launcher and debug library |
+| `auxtools-windows-symbols.zip` | `auxtools-cli.pdb`, `debug_server.pdb` |
+| `auxtools-VERSION.vsix` | VS Code extension with Linux and Windows binaries |
+
 [Rust]: https://rust-lang.org
 [Cargo]: https://doc.rust-lang.org/cargo
 [rustup]: https://rustup.rs

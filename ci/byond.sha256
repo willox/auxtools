@@ -1,0 +1,14 @@
+# SHA-256 of the BYOND builds the tests run on, as ci/fetch-byond.sh downloads
+# them: NAME_byond_linux.zip for Linux, NAME_byond.zip for Windows. A build
+# that isn't here isn't fetched. The mirror's copies had these hashes on
+# 2026-11-11.
+cf490baaa77f90469d567496212f9c8bdd84ad81cb8cbb8879863a3706beb5b4  515.1637_byond.zip
+46ddff9e97c843e59e39a6545c901c86abe806fc813eefd3e057d7513486bd33  515.1637_byond_linux.zip
+e1406abe7f4f8a790999f58837f6505d154f8acb5f954c32086625d24b90ffcc  515.1647_byond.zip
+547c696959c488b8d29196a48b864a9d02616e58fce422892b12a473a1aa6d8d  515.1647_byond_linux.zip
+9deb2704a818aa034d4b562b391a047fe0a5b3ff07e0dd85d4a6ec938cc0c5fe  516.1659_byond.zip
+8e65eb7063a0fdf0091f60599d0020f0c3a936e93b17441869c897d85ec6a1cd  516.1659_byond_linux.zip
+e24078f1e6d719681118d6505b2a3f263fb173c1b63465d2f68f3e0ec177126f  516.1685_byond.zip
+041cc8ca22f43d3ce9477fb4251b119f61495d6e59df1fcaca5b3dfc3b4adb1b  516.1685_byond_linux.zip
+9079f29b0747719233715dfeff223641e6fb69bd16b8ba9676d5cd42cfcd0148  516.1688_byond.zip
+16278f318cdeb4b77c57868dd7135032fde717ea6226269d22b2a1a50968e7f9  516.1688_byond_linux.zip
