@@ -83,9 +83,12 @@ Exit codes:
 		sections: "Output:
   Text displays a table of worlds. JSON returns an array of world records.
   Both include process IDs, program and world information, protocol versions,
-  and protocol compatibility. An empty JSON array means no worlds were found.
-  Worlds with compatible=false require a matching CLI version.
-  A world record contains pid, program, dmb, args, cwd, protocol, and compatible."
+  protocol compatibility, and responsiveness. An empty JSON array means no
+  worlds were found. Worlds with compatible=false require a matching CLI version.
+  A world record contains pid, program, dmb, args, cwd, protocol, compatible,
+  and responsive. responsive is false if the world did not answer within
+  5 seconds; its dmb, args, and cwd are then unknown. Incompatible worlds
+  are not queried and have responsive=null."
 	},
 	Page {
 		path: &["status"],

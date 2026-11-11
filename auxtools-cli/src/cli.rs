@@ -143,15 +143,22 @@ fn list(as_json: bool) -> Result<()> {
 		println!("No worlds found with the debug library loaded.");
 		return Ok(());
 	}
-	let mut rows = vec![["PID", "PROGRAM", "PROTOCOL", "COMPATIBLE", "DMB", "CWD", "ARGS"].map(str::to_owned)];
+	let mut rows = vec![["PID", "PROGRAM", "PROTOCOL", "COMPATIBLE", "RESPONSIVE", "DMB", "CWD", "ARGS"].map(str::to_owned)];
 	for world in &worlds {
-		// (of a world of another version, only its process is known)
+		// World details are unavailable for incompatible or unresponsive
+		// worlds.
 		let unknown = |text: String| if text.is_empty() { "-".to_owned() } else { text };
 		rows.push([
 			world.pid.to_string(),
 			world.program.clone(),
 			world.protocol.to_string(),
 			if world.compatible { "yes" } else { "no" }.to_owned(),
+			match world.responsive {
+				Some(true) => "yes",
+				Some(false) => "no",
+				None => "-"
+			}
+			.to_owned(),
 			unknown(world.dmb.as_ref().map(|dmb| dmb.display().to_string()).unwrap_or_default()),
 			unknown(world.cwd.clone()),
 			unknown(world.args.join(" "))

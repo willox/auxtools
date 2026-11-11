@@ -558,7 +558,7 @@ fn another_version() {
 	let header: Vec<&str> = table.lines().next().unwrap_or_default().split_whitespace().collect();
 	assert_eq!(
 		header,
-		["PID", "PROGRAM", "PROTOCOL", "COMPATIBLE", "DMB", "CWD", "ARGS"],
+		["PID", "PROGRAM", "PROTOCOL", "COMPATIBLE", "RESPONSIVE", "DMB", "CWD", "ARGS"],
 		"list said {}",
 		table
 	);
@@ -568,7 +568,8 @@ fn another_version() {
 		.unwrap_or_else(|| panic!("the other version's world isn't in the table: {}", table))
 		.split_whitespace()
 		.collect();
-	assert_eq!((row[2], row[3]), (theirs.to_string().as_str(), "no"), "list said {}", table);
+	assert_eq!((row[2], row[3], row[4]), (theirs.to_string().as_str(), "no", "-"), "list said {}", table);
+	assert_eq!(listed["responsive"], json!(null), "{}", listed);
 
 	let pid_text = pid.to_string();
 	let (code, printed) = launcher_command(&["--pid", &pid_text, "status"]);
@@ -1366,6 +1367,32 @@ fn launch_from_the_command_line(server: &str) {
 	assert_eq!(run(&["eval", "6", "*", "7"], 0).trim(), "42");
 	wait_for_text("the background launcher's log", "attach test: 1", read_log);
 	println!("ok: detached launch readiness and commands");
+
+	// Keep stalled worlds visible in both text and JSON listings.
+	#[cfg(unix)]
+	{
+		let mine = |listed: Vec<serde_json::Value>| listed.into_iter().find(|world| world["pid"] == pid);
+		let listed = mine(client::listed_worlds()).unwrap_or_else(|| panic!("list doesn't show the world"));
+		assert_eq!(listed["responsive"], json!(true), "{}", listed);
+		assert!(Command::new("kill").args(["-STOP", &pid_text]).status().unwrap().success());
+		let (code, table) = launcher_command(&["list"]);
+		let stopped = launcher_command(&["list", "--json"]).1;
+		assert!(Command::new("kill").args(["-CONT", &pid_text]).status().unwrap().success());
+		let worlds: serde_json::Value = serde_json::from_str(&stopped).unwrap_or_else(|_| panic!("list --json said {}", stopped));
+		let listed = worlds.as_array().unwrap().iter().find(|world| world["pid"] == pid);
+		assert!(
+			listed.is_some_and(|world| world["responsive"] == false && world["compatible"] == true && world["dmb"].is_null()),
+			"list --json said {}",
+			stopped
+		);
+		let row = table.lines().find(|line| line.split_whitespace().next() == Some(pid_text.as_str()));
+		assert!(
+			code == 0 && row.is_some_and(|row| row.split_whitespace().nth(4) == Some("no")),
+			"list said {}",
+			table
+		);
+		println!("ok: list shows unresponsive worlds");
+	}
 
 	let printed = run(&["reboot"], 0);
 	assert_eq!(printed.trim(), format!("pid {}: rebooted", pid));

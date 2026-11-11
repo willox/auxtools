@@ -6,7 +6,7 @@ use std::{
 	io::{self, Read, Write},
 	path::{Path, PathBuf},
 	sync::Arc,
-	time::Duration
+	time::{Duration, Instant}
 };
 
 pub use interprocess::local_socket::Stream;
@@ -116,35 +116,65 @@ pub struct World {
 	pub protocol: u32,
 	/// Whether the protocol matches. Incompatible worlds cannot be queried
 	/// or attached to.
-	pub compatible: bool
+	pub compatible: bool,
+	/// Whether the world answered within [`PROBE_PATIENCE`]. `None` for
+	/// incompatible worlds, which are not queried.
+	pub responsive: Option<bool>
 }
 
-/// Discover debug servers by querying BYOND processes.
+/// How long to wait for all world probes.
+pub const PROBE_PATIENCE: Duration = Duration::from_secs(5);
+
+/// Query BYOND processes concurrently. Keep unresponsive worlds in the list
+/// with their world details unknown.
 /// List incompatible endpoints without sending protocol messages.
 pub fn worlds() -> Vec<World> {
-	server_processes()
+	let probes: Vec<_> = server_processes()
 		.into_iter()
-		.filter_map(|(pid, program)| {
-			probe(pid, program.clone()).or_else(|| {
-				other_protocol(pid).map(|protocol| World {
+		.map(|(pid, program)| {
+			let answer = connect_to(world_name(pid)).ok().map(probe);
+			(pid, program, answer)
+		})
+		.collect();
+	let until = Instant::now() + PROBE_PATIENCE;
+	probes
+		.into_iter()
+		.filter_map(|(pid, program, answer)| {
+			let unknown = |protocol, compatible, responsive| World {
+				pid,
+				program: program.clone(),
+				dmb: None,
+				args: vec![],
+				cwd: String::new(),
+				protocol,
+				compatible,
+				responsive
+			};
+			match answer.map(|answer| answer.recv_timeout(until.saturating_duration_since(Instant::now()))) {
+				Some(Ok(Ok((args, cwd)))) => Some(World {
 					pid,
-					program,
-					dmb: None,
-					args: vec![],
-					cwd: String::new(),
-					protocol,
-					compatible: false
-				})
-			})
+					program: program.clone(),
+					dmb: world_dmb(&args, &cwd),
+					args,
+					cwd,
+					protocol: PROTOCOL_VERSION,
+					compatible: true,
+					responsive: Some(true)
+				}),
+				// The debugger accepts connections but did not answer.
+				Some(Err(_)) => Some(unknown(PROTOCOL_VERSION, true, Some(false))),
+				// Check for an incompatible endpoint after a failed connection
+				// or query.
+				Some(Ok(Err(_))) | None => other_protocol(pid).map(|protocol| unknown(protocol, false, None))
+			}
 		})
 		.collect()
 }
 
-fn probe(pid: u32, program: String) -> Option<World> {
-	let stream = connect_to(world_name(pid)).ok()?;
+/// Query world details on a worker thread. The world handles requests
+/// between DM instructions, so a stalled world may never answer.
+fn probe(stream: Stream) -> std::sync::mpsc::Receiver<io::Result<(Vec<String>, String)>> {
 	let (sender, receiver) = std::sync::mpsc::channel();
-	// A world busy with something else answers between DM instructions, and
-	// one that has hung doesn't
 	std::thread::spawn(move || {
 		let mut stream = stream;
 		let answer = (|| {
@@ -160,16 +190,7 @@ fn probe(pid: u32, program: String) -> Option<World> {
 		let _ = send(&mut stream, &Request::Disconnect);
 		let _ = sender.send(answer);
 	});
-	let (args, cwd) = receiver.recv_timeout(Duration::from_secs(5)).ok()?.ok()?;
-	Some(World {
-		pid,
-		program,
-		dmb: world_dmb(&args, &cwd),
-		args,
-		cwd,
-		protocol: PROTOCOL_VERSION,
-		compatible: true
-	})
+	receiver
 }
 
 /// The .dmb a BYOND program's command line runs
