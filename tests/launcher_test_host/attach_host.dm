@@ -117,3 +117,8 @@ var/datum/held/held = new
 /datum/twice/act()
 	. = ..()
 	return "second"
+
+// DreamMaker inserts a .dme location between this proc's source locations.
+// Keep this proc last to reproduce it.
+/proc/last_in_file()
+	return "last [rounds]"

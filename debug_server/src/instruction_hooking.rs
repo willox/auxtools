@@ -11,6 +11,7 @@ use crate::{
 };
 
 // Could move these to dmasm
+const OPCODE_DBGFILE: u32 = 0x84;
 const OPCODE_DBGLINE: u32 = 0x85;
 const OPCODE_THROW: u32 = 0x12D;
 const OPCODE_DEBUG_BREAK: u32 = 0x1337;
@@ -424,6 +425,10 @@ impl InstructionHook for Server {
 					CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Pause).unwrap_or(DebuggerAction::None);
 					did_breakpoint = true;
 				}
+
+				// Skip debug markers when stepping. DreamMaker can insert a
+				// .dme location between an included proc's source locations.
+				DebuggerAction::BreakOnNext if is_dbgline || opcode == OPCODE_DBGFILE => {}
 
 				DebuggerAction::BreakOnNext => {
 					CURRENT_ACTION = DebuggerAction::None;

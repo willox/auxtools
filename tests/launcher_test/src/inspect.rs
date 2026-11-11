@@ -341,7 +341,7 @@ fn where_breakpoints_bound(pid: &str, code: &Path) {
 	);
 	println!("ok: resolved wait breakpoint locations");
 
-	let last = line_of(code, "\treturn \"second\"");
+	let last = line_of(code, "\treturn \"last [rounds]\"");
 	let nowhere = [
 		(
 			"nowhere.dm:3",
@@ -829,6 +829,40 @@ fn spawned(pid: &str, code: &Path) {
 		stepped.err
 	);
 	println!("ok: breakpoints in spawned calls");
+
+	// Breakpoints and steps must skip the intervening .dme debug markers.
+	let line = line_of(code, "\treturn \"last [rounds]\"");
+	let printed = run(pid, &["disassemble", "/proc/last_in_file"], 0).out;
+	assert!(printed.contains("attach_host.dme\""), "missing .dme debug marker: {}", printed);
+	let place = format!("/last_in_file  attach_host.dm:{}", line);
+	let waiting = crate::journal::Background::start(pid.parse().unwrap(), &[
+		"wait",
+		"pause",
+		"--break",
+		&format!("attach_host.dm:{}", line),
+		"--timeout",
+		"60"
+	]);
+	std::thread::sleep(std::time::Duration::from_secs(2));
+	run(pid, &["eval", "--spawn", "last_in_file()"], 0);
+	let (exit, printed) = waiting.finish();
+	assert!(
+		exit == 0
+			&& printed.contains(&format!("breakpoint set at {}\n", place))
+			&& printed.contains(&format!("paused at a breakpoint\n#0 {}\n", place)),
+		"wait gave {}: {}",
+		exit,
+		printed
+	);
+	assert!(run(pid, &["stack"], 0).out.starts_with(&format!("#0 {}\n", place)));
+	let stepped = run(pid, &["step-over", "--timeout", "10"], 0).out;
+	assert!(
+		stepped.contains("paused after a step\n#0 /auxtools_spawn_stub  "),
+		"step-over said {}",
+		stepped
+	);
+	run(pid, &["continue"], 0);
+	println!("ok: breakpoints in the last proc of an included file");
 
 	let ran = run(pid, &["eval", "--spawn", "--wait", "--timeout", "0.5", "slow_double(1, 50)"], 2);
 	assert!(

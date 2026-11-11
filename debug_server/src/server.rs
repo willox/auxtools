@@ -924,6 +924,9 @@ impl Server {
 	///
 	/// If `before` is set and the offset points to DbgLine, report the
 	/// preceding line. Non-executable line breakpoints can stop there.
+	/// A DbgFile at this offset has not run yet; keep the preceding line's
+	/// file. DreamMaker can insert the .dme's location between repeated source
+	/// locations at the start of an included file's last proc.
 	fn place_in(bytecode: &[u32], offset: u32, before: bool) -> Option<(Option<String>, u32)> {
 		let mut current_line_number = None;
 		let mut current_file = None;
@@ -938,7 +941,7 @@ impl Server {
 			}
 
 			match mark {
-				Mark::File(name) if !(reached_offset && current_line_number.is_some()) => {
+				Mark::File(name) if !((reached_offset || *at == offset) && current_line_number.is_some()) => {
 					current_file = Some(name.clone());
 				}
 				Mark::Line(_) if before && *at == offset => {}
@@ -1042,6 +1045,7 @@ impl Server {
 		let proc = auxtools::Proc::find_override(proc.path, proc.override_id)?;
 		let mut offset = None;
 		let mut at_offset = false;
+		let mut other_file = false;
 		let mut inside = files.is_none();
 
 		// Without the breakpoints in it: a line's breakpoint can be where the
@@ -1053,9 +1057,20 @@ impl Server {
 
 		for node in nodes {
 			if let dmasm::Node::Instruction(ins, debug) = node {
+				// Skip intervening file markers before placing the breakpoint
+				// (see `place_in`).
 				if at_offset {
-					offset = Some(debug.offset);
-					break;
+					match ins {
+						dmasm::Instruction::DbgFile(_) => {
+							other_file = true;
+							continue;
+						}
+						dmasm::Instruction::DbgLine(_) if other_file => continue,
+						_ => {
+							offset = Some(debug.offset);
+							break;
+						}
+					}
 				}
 
 				match ins {
