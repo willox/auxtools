@@ -17,7 +17,7 @@ instruction_hooking = { path = "../instruction_hooking" }
 lazy_static = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 bincode = "1"
-clap = "3"
+clap = "4"
 dmasm = { workspace = true }
 region = "3"
 retour = { workspace = true }

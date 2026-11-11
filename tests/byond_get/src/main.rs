@@ -9,30 +9,19 @@ fn get_zip_url(major: u32, minor: u32) -> reqwest::Url {
 fn main() {
 	let matches = Command::new("byond_get")
 		.disable_version_flag(true)
-		.arg(
-			Arg::new("major")
-				.help("major BYOND version to fetch (e.g. 513)")
-				.required(true)
-				.takes_value(true)
-		)
-		.arg(
-			Arg::new("minor")
-				.help("minor BYOND version to fetch (e.g. 1539)")
-				.required(true)
-				.takes_value(true)
-		)
+		.arg(Arg::new("major").help("major BYOND version to fetch (e.g. 513)").required(true))
+		.arg(Arg::new("minor").help("minor BYOND version to fetch (e.g. 1539)").required(true))
 		.arg(
 			Arg::new("destination")
-				.allow_invalid_utf8(true)
+				.value_parser(clap::value_parser!(std::ffi::OsString))
 				.help("directory to extract the BYOND build into")
 				.required(true)
-				.takes_value(true)
 		)
 		.get_matches();
 
-	let major = matches.value_of("major").unwrap();
-	let minor = matches.value_of("minor").unwrap();
-	let destination = matches.value_of_os("destination").unwrap();
+	let major = matches.get_one::<String>("major").unwrap();
+	let minor = matches.get_one::<String>("minor").unwrap();
+	let destination = matches.get_one::<std::ffi::OsString>("destination").unwrap();
 
 	let major = major.parse::<u32>().expect("major version must be an integer");
 	let minor = minor.parse::<u32>().expect("minor version must be an integer");
