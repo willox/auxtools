@@ -2,7 +2,7 @@
 	"name": "auxtools",
 	"displayName": "auxtools Debugger",
 	"description": "Debug BYOND worlds with breakpoints, stepping, variable inspection and hot reload.",
-	"version": "3.0.0-dev",
+	"version": "3.0.1-dev",
 	"publisher": "sohpea",
 	"license": "GPL-3.0",
 	"repository": {
