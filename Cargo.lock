@@ -619,6 +619,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dap_test"
+version = "0.1.0"
+dependencies = [
+ "debug_server",
+ "serde_json",
+]
+
+[[package]]
 name = "debug_client"
 version = "0.1.0"
 dependencies = [
