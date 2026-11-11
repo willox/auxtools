@@ -1,6 +1,6 @@
 // for i686-pc-windows-gnu
 .intel_syntax noprefix
-.global _execute_instruction_hook
+.global _execute_instruction_hook_514
 .extern _execute_instruction_original
 .extern _handle_instruction
 
