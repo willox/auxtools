@@ -482,7 +482,8 @@ pub fn run() {
 			"runtime error: undefined variable /datum/thing/sub/var/not_a_name_anywhere"
 		),
 		("/datum/not_a_type", "there's no type /datum/not_a_type"),
-		("sleep(1)", "proc not found: /proc/sleep"),
+		// A statement-only builtin is compiled as a body and cannot sleep here.
+		("sleep(1)", "evaluation aborted because the code slept"),
 		("..()", "relative calls are not supported")
 	]);
 	ok("unresolved and unsupported expression diagnostics");

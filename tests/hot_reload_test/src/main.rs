@@ -106,6 +106,20 @@ impl Source {
 		assert!(changes.refused.is_empty(), "the edit was refused: {:?}", changes.refused);
 		changes
 	}
+
+	/// Apply an edit expected to be rejected, and return the reasons. Leave the
+	/// source edited.
+	fn edit_refused(&mut self, file: &str, from: &str, to: &str) -> Vec<String> {
+		let text = self.text(file);
+		assert_eq!(text.matches(from).count(), 1, "{:?} should be in {} once", from, file);
+		std::fs::write(self.dir.join(file), text.replace(from, to)).unwrap();
+		let old = self.snapshot.take().expect("parsed before editing");
+		self.parse();
+		let edited: HashSet<PathBuf> = [Path::new(file).to_owned()].into_iter().collect();
+		let changes = diff(&old, self.snapshot.as_ref().unwrap(), Some(&edited));
+		assert!(!changes.refused.is_empty(), "the edit wasn't refused");
+		changes.refused
+	}
 }
 
 impl Drop for Source {
@@ -725,16 +739,14 @@ fn main() {
 	// Reject duplicate var declarations on a type and its subtype.
 	const CAT: &str = "/datum/animal/cat\n\tsound = \"meow\"\n";
 	const DUPE: &str = "/datum/animal\n\tvar/dupe = 1\n\n/datum/animal/cat\n\tsound = \"meow\"\n\tvar/dupe = 2\n";
-	let changes = source.edit("reload.dm", CAT, DUPE);
-	let result = expect_reload_result(watcher.request(reload_request(&changes)));
-	assert!(!result.applied, "a duplicate var was applied");
+	// dmasm should reject this before sending it to the world.
+	let refused = source.edit_refused("reload.dm", CAT, DUPE);
 	assert!(
-		result
-			.errors
+		refused
 			.iter()
-			.any(|e| e.contains("/datum/animal/cat already has a var of that name")),
+			.any(|e| e.contains("dupe: duplicate definition (/datum/animal declares it too)")),
 		"{:?}",
-		result.errors
+		refused
 	);
 	source.edit("reload.dm", DUPE, CAT);
 	println!("ok: duplicate var definition refused by type");
