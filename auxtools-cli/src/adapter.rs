@@ -96,7 +96,9 @@ pub enum Input {
 	/// The world paused
 	Stopped {
 		generation: u64,
-		stop: aux::Stop
+		stop: aux::Stop,
+		/// One-based stop sequence number for this connection.
+		number: u64
 	},
 	/// Another client resumed execution.
 	Resumed {
@@ -510,9 +512,9 @@ impl Adapter {
 				});
 			}
 			// Send after the response to the request that resumed execution.
-			Input::Stopped { generation, stop } => {
+			Input::Stopped { generation, stop, number } => {
 				if let Some(debuggee) = self.debuggee.as_mut().filter(|d| d.generation == generation) {
-					debuggee.stopped_at(stop);
+					debuggee.stopped_at(stop, number);
 				}
 			}
 			Input::Resumed { generation } => {
