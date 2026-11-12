@@ -40,6 +40,79 @@ impl AssembleEnv {
 	}
 }
 
+/// Find the last definition at `/type/name`, as a call on that type would.
+fn last_definition(path: &str) -> Option<Proc> {
+	let mut last = None;
+	let mut n = 0;
+	while let Some(proc) = Proc::find_override(path, n) {
+		last = Some(proc);
+		n += 1;
+	}
+	last
+}
+
+/// Type paths from `ty` through its actual parents, nearest first.
+/// Follow the runtime table, including builtin and explicit parent_type
+/// ancestry. Fall back to path prefixes if the table is unavailable.
+fn ancestry(ty: &str) -> Vec<String> {
+	let ty = ty.trim_end_matches('/');
+	if let Some(paths) = crate::hot_reload::ancestry(ty) {
+		return paths;
+	}
+	let mut paths = vec![];
+	let mut at = ty;
+	while !at.is_empty() {
+		paths.push(at.to_owned());
+		at = at.rsplit_once('/').map_or("", |(parent, _)| parent);
+	}
+	paths
+}
+
+fn found(proc: Proc, warning: Option<String>) -> dmasm::compiler::FoundProc {
+	dmasm::compiler::FoundProc {
+		tag: raw_types::values::ValueTag::ProcRef as u8,
+		data: proc.id.0,
+		warning
+	}
+}
+
+/// Resolve `ty::name()` to the nearest definition in the type ancestry,
+/// matching DreamMaker.
+pub fn type_proc(ty: &str, name: &str) -> Result<dmasm::compiler::FoundProc, String> {
+	if dmasm::assembler::AssembleEnv::get_type(&mut AssembleEnv, ty).is_none() {
+		return Err(format!("there's no type {} in the running world", ty));
+	}
+	ancestry(ty)
+		.iter()
+		.find_map(|at| last_definition(&format!("{}/{}", at, name)))
+		.map(|proc| found(proc, None))
+		.ok_or_else(|| format!("{} has no proc called {}", ty, name))
+}
+
+/// Resolve `/type/proc/name` or `/type/verb/name` to the first definition on
+/// the original declaring type. Warn if that type differs from the written
+/// path, which DreamMaker rejects. Only `/proc/name` resolves a global proc.
+pub fn proc_path(path: &str) -> Option<dmasm::compiler::FoundProc> {
+	let (ty, name) = path.rsplit_once("/proc/").or_else(|| path.rsplit_once("/verb/"))?;
+	if name.is_empty() || name.contains('/') {
+		return None;
+	}
+	if ty.is_empty() {
+		return Proc::find(format!("/{}", name)).map(|proc| found(proc, None));
+	}
+	let (at, proc) = ancestry(ty)
+		.into_iter()
+		.filter_map(|at| Proc::find(format!("{}/{}", at, name)).map(|proc| (at, proc)))
+		.last()?;
+	let warning = (at != ty).then(|| {
+		format!(
+			"{}: DreamMaker refuses this path, since {} isn't declared on {}; this is {}/proc/{}",
+			path, name, ty, at, name
+		)
+	});
+	Some(found(proc, warning))
+}
+
 impl dmasm::assembler::AssembleEnv for AssembleEnv {
 	fn get_string_index(&mut self, string: &[u8]) -> Option<u32> {
 		let string = StringRef::from_raw(string).ok()?;
@@ -93,9 +166,9 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 			return Some((raw_types::values::ValueTag::ImageTypepath as u8, id));
 		}
 
-		// A reference to a proc written without `/proc/`, like /obj/foo/bar,
-		// is one text2path() doesn't know
-		Proc::find(path).map(|proc| (raw_types::values::ValueTag::ProcRef as u8, proc.id.0))
+		// Without `/proc/`, a proc path names the last definition, matching
+		// DreamMaker. text2path() does not resolve this form.
+		last_definition(path).map(|proc| (raw_types::values::ValueTag::ProcRef as u8, proc.id.0))
 	}
 
 	// fcopy_rsc() hands back the cache entry a file already has, and adds the

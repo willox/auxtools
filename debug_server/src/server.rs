@@ -2461,7 +2461,9 @@ impl Server {
 					hot_reload::added_global(name).map(dmasm::compiler::ExprGlobal::Id)
 				}
 			},
-			globals: GLOBALS
+			globals: GLOBALS,
+			proc_ref: &crate::assemble_env::type_proc,
+			proc_path: &crate::assemble_env::proc_path
 		};
 		// Include src's type in the cache key because it affects bare-name
 		// resolution.

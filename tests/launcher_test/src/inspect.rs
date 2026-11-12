@@ -129,15 +129,33 @@ fn eval_failures(pid: &str, code: &Path) {
 		run(pid, &["eval", "--spawn", "--wait", caught], 0).out.trim(),
 		"\"caught: Cannot modify null.len.\""
 	);
-	// /client in an expression is the value compiled code has for it, and a
-	// proc can be named without its /proc/
+	// Match DreamMaker's /client value and proc references: /proc/ selects the
+	// declaration; a path without it selects the last definition.
 	assert_eq!(run(pid, &["eval", "/client == client_type()"], 0).out.trim(), "1");
-	assert_eq!(
-		run(pid, &["eval", "/datum/twice/act"], 0).out,
-		run(pid, &["eval", "/datum/twice/proc/act"], 0).out
-	);
+	assert_eq!(run(pid, &["eval", "/datum/twice/proc/act"], 0).out, "/datum/twice/proc/act\n");
+	assert_eq!(run(pid, &["eval", "/datum/twice/act"], 0).out, "/datum/twice/act\n");
 	println!("ok: eval runtime error call stack");
 	println!("ok: eval carries on after a runtime error in a called proc");
+
+	// Resolve type proc references through actual type ancestry.
+	assert_eq!(run(pid, &["eval", "/datum/twice/more::act() == twice_ref()"], 0).out, "1\n");
+	assert_eq!(
+		run(pid, &["eval", "call(new /datum/twice/more, /datum/twice/more::act())()"], 0).out,
+		"\"second\"\n"
+	);
+	// Follow builtin parent types, not path prefixes: /obj inherits from /atom.
+	assert_eq!(run(pid, &["eval", "call(new /obj, /obj::atom_act())()"], 0).out, "\"atom\"\n");
+	// A same-named global proc cannot satisfy a type proc reference.
+	assert_eq!(
+		run(pid, &["eval", "call(new /datum/twice, /datum/twice/proc/act)()"], 0).out,
+		"\"first\"\n"
+	);
+	let said = fails(pid, &["eval", "/datum/twice::nope()"]);
+	assert!(said.contains("/datum/twice has no proc called nope"), "unexpected eval output: {}", said);
+	// Reject modified types that would persist in runtime tables.
+	let said = fails(pid, &["eval", "new /datum/twice{tag = \"x\"}()"]);
+	assert!(said.contains("use new and assign the vars"), "unexpected eval output: {}", said);
+	println!("ok: eval's type proc references");
 
 	// Long loops yield in the background, so synchronous eval loses the result.
 	let looped = "var/x = 0; for(var/i in 1 to 2000000) x++; return x";

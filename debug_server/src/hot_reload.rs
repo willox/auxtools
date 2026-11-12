@@ -997,6 +997,12 @@ pub(crate) fn image_type(path: &str) -> Option<u32> {
 	type_and_ancestors(id).contains(&image).then_some(id)
 }
 
+/// Return the type and its ancestors, nearest first, or `None` if unavailable.
+pub(crate) fn ancestry(path: &str) -> Option<Vec<String>> {
+	let id = find_type(path).ok()?;
+	Some(type_and_ancestors(id).into_iter().map(type_path).collect())
+}
+
 /// Format a runtime type path for diagnostics.
 fn type_path(type_id: u32) -> String {
 	runtime_tables::type_field(type_id, type_fields::PATH)

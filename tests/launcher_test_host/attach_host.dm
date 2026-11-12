@@ -136,6 +136,20 @@ var/datum/held/held = new
 	. = ..()
 	return "second"
 
+// Inherited proc reference for DreamMaker-compatible `::` resolution.
+/datum/twice/more
+
+/proc/twice_ref()
+	return /datum/twice/more::act()
+
+// A same-named global proc must not satisfy /datum/twice/proc/act.
+// /obj also inherits a proc from /atom despite its path prefix.
+/proc/act()
+	return "global"
+
+/atom/proc/atom_act()
+	return "atom"
+
 // DreamMaker inserts a .dme location between this proc's source locations.
 // Keep this proc last to reproduce it.
 /proc/last_in_file()
