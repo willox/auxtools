@@ -14,7 +14,7 @@ use std::{
 
 use auxtools_cli::{
 	local::{self, Shared, Stream},
-	server_types::{BreakpointReason, DataChange, InstructionRef, Request, Response, Stop}
+	server_types::{BreakpointReason, DataChange, InstructionRef, Request, Response, Stop, WORLD_SHUTTING_DOWN}
 };
 use dap_types::{ContinuedEvent, StoppedEvent as Reasons};
 
@@ -188,6 +188,14 @@ impl Debuggee {
 
 					match response {
 						Response::Disconnect => break "the debug server disconnected".to_owned(),
+
+						// A shutdown notification suppresses reconnect messages
+						// after disconnection.
+						Response::Notification { message } if message == WORLD_SHUTTING_DOWN => {
+							if inputs.send(Input::ShuttingDown { generation }).is_err() {
+								break "adapter event receiver closed".to_owned();
+							}
+						}
 
 						Response::Notification { message } => out.console(format!("[auxtools] {}", message)),
 

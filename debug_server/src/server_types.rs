@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 /// connections using incompatible message layouts.
 pub const PROTOCOL_VERSION: u32 = 6;
 
+/// Shutdown notification sent before disconnecting clients; not used for
+/// reboot.
+pub const WORLD_SHUTTING_DOWN: &str = "The world is shutting down";
+
 /// The local socket the world in process `pid` listens on, when it has the
 /// debug library: `auxtools-debug-v1-1234`
 #[allow(dead_code)]

@@ -76,6 +76,10 @@ pub enum Input {
 		generation: u64,
 		reason: String
 	},
+	/// The world announced shutdown rather than reboot.
+	ShuttingDown {
+		generation: u64
+	},
 	Code(code::Event),
 	/// Another client hot reloaded the world
 	CodeChanged {
@@ -318,6 +322,8 @@ pub struct Adapter {
 	generation: u64,
 	/// Termination requested; do not reconnect.
 	ending: bool,
+	/// Suppress reconnect messages after shutdown until a world responds again.
+	shutting_down: bool,
 	/// Delay world configuration until the source worker finishes.
 	waiting_for_code: bool,
 	/// Whether the client has received the initialized event.
@@ -418,6 +424,7 @@ pub fn serve(out: Output, inputs: mpsc::Sender<Input>, receiver: &mpsc::Receiver
 		debuggee: None,
 		generation: 0,
 		ending: false,
+		shutting_down: false,
 		waiting_for_code: false,
 		initialized: false,
 		last_error: Arc::new(Mutex::new(LastError::default())),
@@ -482,6 +489,11 @@ impl Adapter {
 				}
 			}
 			Input::ConnectionClosed { generation, reason } => self.connection_closed(generation, &reason),
+			Input::ShuttingDown { generation } => {
+				if self.debuggee.as_ref().is_some_and(|d| d.generation == generation) {
+					self.shutting_down = true;
+				}
+			}
 			Input::Code(event) => self.code_event(event),
 			Input::WorldOutput(lines) => self.journal_output(lines),
 			Input::Logged { message, file, line } => {
@@ -917,6 +929,9 @@ impl Adapter {
 			Ok(AuxResponse::ByondVersion { version, build }) => (version, build),
 			_ => return
 		};
+		// A responding world either recovered from failed shutdown or started
+		// anew.
+		self.shutting_down = false;
 		self.send_output();
 		self.give_macros();
 		self.follow_reloads();
@@ -1255,8 +1270,13 @@ impl Adapter {
 
 		// A world that's ending shuts its debugger down on the way
 		if self.pid.is_some() && !self.ending {
-			self.out.console(format!("Debug server disconnected ({}); waiting to reconnect", reason));
-			self.progress_start(RESTARTING, "Waiting to reconnect".to_owned());
+			// Shutdown ends the session when the process exits. Suppress
+			// reconnect messages while its socket still accepts and immediately
+			// closes connections.
+			if !self.shutting_down {
+				self.out.console(format!("Debug server disconnected ({}); waiting to reconnect", reason));
+				self.progress_start(RESTARTING, "Waiting to reconnect".to_owned());
+			}
 			self.connect();
 		}
 	}

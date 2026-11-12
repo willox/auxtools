@@ -136,6 +136,14 @@ pub fn run() {
 	a.run("quit");
 	a.event("terminated");
 	b.event("terminated");
+	// Both sessions should exit without reconnecting after shutdown.
+	for world in [&a, &b] {
+		assert!(
+			!world.output.contains("waiting to reconnect"),
+			"a session took the world's end for a lost connection:\n{}",
+			world.output
+		);
+	}
 	ok("world-exit events reach attached sessions");
 	a.end();
 	b.end();

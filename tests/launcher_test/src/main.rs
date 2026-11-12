@@ -1404,6 +1404,11 @@ fn launch_from_the_command_line(server: &str) {
 		"launch said:\n{}",
 		printed
 	);
+	assert!(
+		!printed.contains("Debug server disconnected") && !printed.contains("waiting to reconnect"),
+		"launch took the world's end for a lost connection:\n{}",
+		printed
+	);
 	std::fs::remove_file(dir.join("stop")).unwrap();
 	std::fs::write(&code, source).unwrap();
 	drop(started);
@@ -1603,6 +1608,7 @@ fn launch_from_the_command_line(server: &str) {
 	);
 	println!("ok: reboot throughout world execution");
 
+	let before = read_log().len();
 	let printed = run(&["stop"], 0);
 	assert_eq!(printed.trim(), format!("pid {}: stopped", pid));
 	assert!(!alive(pid), "world process is still running");
@@ -1612,6 +1618,13 @@ fn launch_from_the_command_line(server: &str) {
 	assert!(
 		said.contains("attach test: world/Del") && said.contains("The world exited with code 0"),
 		"the log has:\n{}",
+		said
+	);
+	// Each reboot occurs before the shutdown notification, so clients
+	// reconnect.
+	assert!(
+		!said[before..].contains("waiting to reconnect"),
+		"the launcher took the world's end for a lost connection:\n{}",
 		said
 	);
 	drop(started);

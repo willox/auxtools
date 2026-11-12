@@ -305,6 +305,9 @@ fn world_del(_: &Value, _: &Value, args: Vec<Value>) -> auxtools::DMResult {
 		let ours = Proc::find_override("/world/Del", Proc::APART);
 		auxtools::init_on_next_world_load(ours.as_ref());
 	} else if !failed {
+		if let Some(server) = unsafe { &mut *crate::DEBUG_SERVER.get() } {
+			server.world_shutting_down();
+		}
 		auxtools::shut_down_with_world();
 	}
 	// A failed Del leaves the world running and must preserve its debugger.

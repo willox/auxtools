@@ -208,6 +208,8 @@ struct Client {
 	follow: Option<Vec<JournalKind>>,
 	/// Outbound messages for the client writer (see `deliver`).
 	outbox: mpsc::SyncSender<Vec<u8>>,
+	/// Writer thread; drains queued messages before exiting.
+	writer: Option<thread::JoinHandle<()>>,
 	/// Maximum held-pause duration without a debugging client.
 	hold_max: Option<Duration>
 }
@@ -3101,13 +3103,14 @@ impl Server {
 
 			match event {
 				Event::Connected(id, connection) => {
-					let outbox = Self::writer(connection.clone());
+					let (outbox, writer) = Self::writer(connection.clone());
 					self.clients.insert(id, Client {
 						uncaught: None,
 						caught: None,
 						debugs: true,
 						follow: None,
 						outbox,
+						writer: Some(writer),
 						hold_max: None
 					});
 					if let Wait::Until(_) = wait {
@@ -3596,9 +3599,9 @@ impl Server {
 	}
 
 	/// Start a per-client writer. Drain queued messages before disconnecting.
-	fn writer(mut connection: Connection) -> mpsc::SyncSender<Vec<u8>> {
+	fn writer(mut connection: Connection) -> (mpsc::SyncSender<Vec<u8>>, thread::JoinHandle<()>) {
 		let (outbox, sent) = mpsc::sync_channel::<Vec<u8>>(OUTBOX);
-		thread::spawn(move || {
+		let writer = thread::spawn(move || {
 			while let Ok(bytes) = sent.recv() {
 				if connection.write_all(&bytes).and_then(|()| connection.flush()).is_err() {
 					return;
@@ -3606,7 +3609,24 @@ impl Server {
 			}
 			let _ = Self::send(&mut connection, &Response::Disconnect);
 		});
-		outbox
+		(outbox, writer)
+	}
+
+	/// Notify clients of shutdown, disconnect them, and briefly wait for
+	/// writers to drain before the process exits. This does not run for reboot.
+	pub fn world_shutting_down(&mut self) {
+		self.broadcast(
+			Response::Notification {
+				message: WORLD_SHUTTING_DOWN.to_owned()
+			},
+			None
+		);
+		let writers: Vec<_> = self.clients.values_mut().filter_map(|client| client.writer.take()).collect();
+		self.disconnect_all();
+		let deadline = Instant::now() + Duration::from_secs(1);
+		while writers.iter().any(|writer| !writer.is_finished()) && Instant::now() < deadline {
+			thread::sleep(Duration::from_millis(5));
+		}
 	}
 
 	/// Append a journal entry and notify matching subscribers except `from`.
