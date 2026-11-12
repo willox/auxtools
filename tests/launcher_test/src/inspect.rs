@@ -809,6 +809,16 @@ fn spawned(pid: &str, code: &Path) {
 	assert_eq!(run(pid, &["eval", "--spawn", "--wait", "slow_double(5)"], 0).out, "10\n");
 	println!("ok: spawned body variables survive sleep");
 
+	// Evaluations must report compiler warnings, as hot reload does.
+	let ran = run(pid, &["eval", "var/a = 1\nreturn pick(1; a, 0; a)"], 0);
+	assert_eq!(ran.out, "1\n", "unexpected eval output: {}", ran.out);
+	assert!(
+		ran.err.starts_with("warning: line 2: pick() ends with a zero-weight entry"),
+		"unexpected eval output: {}",
+		ran.err
+	);
+	println!("ok: an evaluation's compile warnings are said");
+
 	// Spawned evaluation continues after callee errors on either side of a
 	// sleep.
 	let ran = run(pid, &["eval", "--spawn", "--wait", "fail_in(3)"], 0);

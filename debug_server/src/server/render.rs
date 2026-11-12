@@ -11,6 +11,7 @@ impl Server {
 			// Debugger commands return text and usually do not evaluate code.
 			// Do not attach warnings left over from another evaluation.
 			Some(command) => {
+				self.eval_warnings.clear();
 				self.eval_callee_errors.clear();
 				self.eval_callee_more = 0;
 				Ok(Rendered::Text(self.handle_command(frame_id, command)))

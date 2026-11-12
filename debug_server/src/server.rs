@@ -331,10 +331,11 @@ pub struct Server {
 	next_watch: u32,
 	/// Extra names available to the next evaluation.
 	eval_given: Vec<(String, Value)>,
-	/// Evaluation code already compiled, by what its compilation depends on.
-	/// A breakpoint's condition runs at every hit, and compiling it each time
-	/// took about 0.2 ms.
-	eval_code: HashMap<EvalCodeKey, Result<(Vec<u32>, Vec<String>), String>>,
+	/// Cache bytecode, local names and warnings by compilation inputs.
+	/// Breakpoint conditions and logpoints reuse this code on every hit.
+	eval_code: HashMap<EvalCodeKey, Result<(Vec<u32>, Vec<String>, Vec<String>), String>>,
+	/// Compatibility warnings from the last evaluation.
+	eval_warnings: Vec<String>,
 	/// World is loaded and waiting for launcher configuration.
 	waiting_to_start: bool,
 	/// Object used as `src` for the next frameless evaluation.
@@ -427,6 +428,7 @@ impl Server {
 			next_watch: 0,
 			eval_given: vec![],
 			eval_code: HashMap::new(),
+			eval_warnings: vec![],
 			waiting_to_start: false,
 			eval_src: None,
 			spawning: None,
@@ -551,6 +553,11 @@ impl Server {
 
 	/// Send compiler warnings and non-fatal callee errors to the client.
 	fn send_callee_errors(&mut self) {
+		for warning in std::mem::take(&mut self.eval_warnings) {
+			self.send_or_disconnect(Response::Notification {
+				message: format!("warning: {}", warning)
+			});
+		}
 		let errors = std::mem::take(&mut self.eval_callee_errors);
 		let more = std::mem::take(&mut self.eval_callee_more);
 		for error in errors {
@@ -2310,6 +2317,7 @@ impl Server {
 		self.eval_error = None;
 		self.eval_callee_errors.clear();
 		self.eval_callee_more = 0;
+		self.eval_warnings.clear();
 		self.eval_ran = std::ptr::null_mut();
 
 		let result = self.compile_and_run_expr(frame_id, command);
@@ -2466,9 +2474,9 @@ impl Server {
 		let compiled = match self.eval_code.get(&key) {
 			Some(compiled) => compiled.clone(),
 			None => {
-				let compiled = Self::compile_eval(command, &arg_names, &scope).and_then(|(code, locals)| {
+				let compiled = Self::compile_eval(command, &arg_names, &scope).and_then(|(code, locals, warnings)| {
 					let assembly = dmasm::assembler::assemble(&code, &mut crate::assemble_env::AssembleEnv).map_err(Self::assemble_error)?;
-					Ok((assembly, locals))
+					Ok((assembly, locals, warnings))
 				});
 				if self.eval_code.len() >= EVAL_CODE_KEPT {
 					self.eval_code.clear();
@@ -2477,7 +2485,8 @@ impl Server {
 				compiled
 			}
 		};
-		let (assembly, locals) = compiled?;
+		let (assembly, locals, warnings) = compiled?;
+		self.eval_warnings = warnings;
 		// To be run by the world's loop, as its own code (see `launched`)
 		if let Some(number) = self.spawning.take() {
 			self.spawns.push_back(Spawn {
@@ -2587,15 +2596,20 @@ impl Server {
 		}
 	}
 
-	/// Compile an expression or proc body and return its local names.
-	fn compile_eval(command: &str, arg_names: &[&str], scope: &dmasm::compiler::ExprScope) -> Result<(Vec<dmasm::Node>, Vec<String>), String> {
+	/// Compile an expression or proc body and return its local names and
+	/// compatibility warnings.
+	fn compile_eval(
+		command: &str,
+		arg_names: &[&str],
+		scope: &dmasm::compiler::ExprScope
+	) -> Result<(Vec<dmasm::Node>, Vec<String>, Vec<String>), String> {
 		let byond = crate::world_byond();
 		if dmasm::compiler::is_body(command) {
 			let body = dmasm::compiler::compile_body_in(command, arg_names, Some(scope), byond).map_err(|e| e.to_string())?;
-			return Ok((body.nodes, body.locals));
+			return Ok((body.nodes, body.locals, body.warnings));
 		}
-		match dmasm::compiler::compile_expr_in(command, arg_names, Some(scope), byond) {
-			Ok(expr) => Ok((expr, vec![])),
+		match dmasm::compiler::compile_expr_warned(command, arg_names, Some(scope), byond) {
+			Ok((expr, warnings)) => Ok((expr, vec![], warnings)),
 			// For body-shaped input, retain the body parser's line diagnostics.
 			Err(_) if command.trim().contains(['\n', ';']) => {
 				let error = dmasm::compiler::compile_body_in(command, arg_names, Some(scope), byond).err();
