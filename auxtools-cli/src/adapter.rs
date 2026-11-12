@@ -70,7 +70,8 @@ pub enum Input {
 	},
 	ConnectionClosed {
 		generation: u64,
-		reason: String
+		reason: String,
+		refused: bool
 	},
 	Code(code::Event),
 	/// Another client hot reloaded the world
@@ -477,7 +478,7 @@ impl Adapter {
 					self.connected(stream);
 				}
 			}
-			Input::ConnectionClosed { generation, reason } => self.connection_closed(generation, &reason),
+			Input::ConnectionClosed { generation, reason, refused } => self.connection_closed(generation, &reason, refused),
 			Input::Code(event) => self.code_event(event),
 			Input::WorldOutput(lines) => self.journal_output(lines),
 			Input::Logged { message, file, line } => {
@@ -1186,7 +1187,7 @@ impl Adapter {
 		}
 	}
 
-	fn connection_closed(&mut self, generation: u64, reason: &str) {
+	fn connection_closed(&mut self, generation: u64, reason: &str, refused: bool) {
 		if self.debuggee.as_ref().is_none_or(|d| d.generation != generation) {
 			return;
 		}
@@ -1195,6 +1196,17 @@ impl Adapter {
 		}
 		self.waiting_for_code = false;
 		self.set.lock().unwrap().clear();
+
+		if refused {
+			self.progress_end(STARTING);
+			self.progress_end(RESTARTING);
+			if !self.ending {
+				self.out.console(
+					"The world is running without the debugger: breakpoints, stepping and hot reload are off for it. Stop ends it."
+				);
+			}
+			return;
+		}
 
 		// A world that's ending shuts its debugger down on the way
 		if self.pid.is_some() && !self.ending {

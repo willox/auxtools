@@ -418,10 +418,10 @@ mod recipes {
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
 	};
 
-	// Builds before 1687 don't check for NONE
+	// Builds before 1686 don't check for NONE
 	pub const REGISTER_TYPEPATH: Recipe = Recipe {
 		name: "register_typepath",
-		versions: VersionRange { min: 1687, max: 1688 },
+		versions: VersionRange { min: 1686, max: 1688 },
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 57 8B 7D 08 3B 3D ?? ?? ?? ?? 0F 83 ?? ?? ?? ?? 81 FF FF FF 00 00 0F 84 ?? ?? ?? ?? 56 69 F7 98 00 00 00 03 35 ?? ?? ?? ?? 0F \
@@ -706,10 +706,10 @@ mod recipes {
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
 	};
 
-	// Builds before 1687 don't check for NONE
+	// Builds before 1686 don't check for NONE
 	pub const REGISTER_TYPEPATH: Recipe = Recipe {
 		name: "register_typepath",
-		versions: VersionRange { min: 1687, max: 1688 },
+		versions: VersionRange { min: 1686, max: 1688 },
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"53 83 EC 18 8B 44 24 20 3B 05 ?? ?? ?? ?? 73 ?? 3D FF FF 00 00 74 ?? 69 D8 94 00 00 00 03 1D ?? ?? ?? ?? 74 ?? 80 BB 8C 00 00 00 00 74 \

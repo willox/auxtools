@@ -180,16 +180,27 @@ impl Debuggee {
 		std::thread::Builder::new()
 			.name("debuggee reader".to_owned())
 			.spawn(move || {
+				let mut first = true;
+				let mut refusing = false;
+				let mut refused = false;
 				let reason = loop {
 					let response = match local::receive(&mut reader) {
 						Ok(response) => response,
 						Err(e) => break format!("the connection closed: {}", e)
 					};
+					let was_first = std::mem::replace(&mut first, false);
+					let after_refusal = std::mem::replace(&mut refusing, false);
 
 					match response {
-						Response::Disconnect => break "the debug server disconnected".to_owned(),
+						Response::Disconnect => {
+							refused = after_refusal;
+							break "the debug server disconnected".to_owned();
+						}
 
-						Response::Notification { message } => out.console(format!("[auxtools] {}", message)),
+						Response::Notification { message } => {
+							refusing = was_first && message.starts_with("auxtools couldn't start");
+							out.console(format!("[auxtools] {}", message));
+						}
 
 						// A breakpoint's condition failed: said once, and the
 						// world doesn't stop for it
@@ -257,7 +268,7 @@ impl Debuggee {
 						}
 					}
 				};
-				let _ = inputs.send(Input::ConnectionClosed { generation, reason });
+				let _ = inputs.send(Input::ConnectionClosed { generation, reason, refused });
 			})
 			.map_err(|e| e.to_string())?;
 
