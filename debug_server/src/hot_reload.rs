@@ -959,6 +959,14 @@ pub(crate) fn image_type(path: &str) -> Option<u32> {
 	type_and_ancestors(id).contains(&image).then_some(id)
 }
 
+/// Format a runtime type path for diagnostics.
+fn type_path(type_id: u32) -> String {
+	runtime_tables::type_field(type_id, type_fields::PATH)
+		.ok()
+		.map(|id| String::from(unsafe { StringRef::from_id(raw_types::strings::StringId(id)) }))
+		.unwrap_or_else(|| format!("type {}", type_id))
+}
+
 /// The types `type_id` is or descends from, itself first.
 fn type_and_ancestors(type_id: u32) -> Vec<u32> {
 	let mut out = vec![type_id];
@@ -1612,7 +1620,12 @@ fn prepare_new_var(new: &NewVar, added: &mut AddedVars, type_vars: &mut TypeVars
 			let declared = type_vars.declared(sub).map_err(fail)?.clone();
 			let names: Vec<u32> = declared.chunks(2).map(|pair| type_vars.name_of(pair[0])).collect();
 			match names.binary_search(&name) {
-				Ok(_) => return Err(fail(format!("variable already exists on type {}", sub))),
+				Ok(_) => {
+					return Err(fail(format!(
+						"{} already has a var of that name (a duplicate definition)",
+						type_path(sub)
+					)))
+				}
 				Err(at) => {
 					type_vars.declared(sub).map_err(fail)?.splice(at * 2..at * 2, [id, new.flags]);
 				}
@@ -1622,7 +1635,10 @@ fn prepare_new_var(new: &NewVar, added: &mut AddedVars, type_vars: &mut TypeVars
 				let table = type_vars.table(sub).map_err(fail)?;
 				let at = table.chunks(4).position(|entry| entry[0] >= name).unwrap_or(table.len() / 4);
 				if table.get(at * 4) == Some(&name) {
-					return Err(fail(format!("variable already exists on type {}", sub)));
+					return Err(fail(format!(
+						"{} already has a var of that name (a duplicate definition)",
+						type_path(sub)
+					)));
 				}
 				table.splice(at * 4..at * 4, [name, id, value.0, value.1]);
 			}

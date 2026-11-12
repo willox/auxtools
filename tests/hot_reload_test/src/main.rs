@@ -708,6 +708,23 @@ fn main() {
 	assert_eq!(eval(&mut client, "visits()"), "12");
 	println!("ok: new static locals");
 
+	// Reject duplicate var declarations on a type and its subtype.
+	const CAT: &str = "/datum/animal/cat\n\tsound = \"meow\"\n";
+	const DUPE: &str = "/datum/animal\n\tvar/dupe = 1\n\n/datum/animal/cat\n\tsound = \"meow\"\n\tvar/dupe = 2\n";
+	let changes = source.edit("reload.dm", CAT, DUPE);
+	let result = expect_reload_result(watcher.request(reload_request(&changes)));
+	assert!(!result.applied, "a duplicate var was applied");
+	assert!(
+		result
+			.errors
+			.iter()
+			.any(|e| e.contains("/datum/animal/cat already has a var of that name")),
+		"{:?}",
+		result.errors
+	);
+	source.edit("reload.dm", DUPE, CAT);
+	println!("ok: duplicate var definition refused by type");
+
 	// More definitions of a proc on a type that has one: one more of the dog's
 	// speak(), which the puppy's ..() goes through now, and two for the cat
 	// in one reload, the second calling the first
