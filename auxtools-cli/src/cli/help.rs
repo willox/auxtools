@@ -236,6 +236,8 @@ auxtools [--pid PID] eval - [OPTIONS]",
   any frame (--src can set src), pauses at breakpoints, and records its result
   in the journal (log --spawned). In a paused world it runs after execution
   resumes. --spawn requires a world started by launch.
+  In launched worlds, auxtools_kept() stores values between evaluations
+  until reboot: auxtools_kept()[\"m\"] = m.
 
 Output:
   JSON represents numbers, text, and null directly. Lists use arrays, objects

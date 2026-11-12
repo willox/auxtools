@@ -141,7 +141,9 @@ Watches, conditions and the Debug Console accept DM expressions such as
 `health / maxHealth` or `get_dist(src, usr) < 3`. Name resolution follows the
 selected proc: locals and arguments, then `src` variables, then globals. Bare calls
 resolve to `src` procs where available. While running, evaluation has only global
-scope. `/obj/item::force` reads a type's initial value.
+scope. `/obj/item::force` reads a type's initial value. In launched worlds,
+`auxtools_kept()` stores values between evaluations until reboot. For example,
+`auxtools_kept()["m"] = m` saves a value for a later `auxtools_kept()["m"]`.
 
 Expressions can assign variables and call procs. Watch expressions run at every
 stop, so their side effects can change the world.

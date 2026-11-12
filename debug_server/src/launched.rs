@@ -68,6 +68,11 @@ const HELPER_PROCS: &str = r#"
 /proc/auxtools_spawn_done(number, result)
 	CRASH("the debugger's library isn't loaded")
 
+/proc/auxtools_kept()
+	// Keep values between evaluations: `auxtools_kept()["m"] = m`.
+	var/static/list/kept = list()
+	return kept
+
 /proc/auxtools_launched_world_del(failed)
 	CRASH("the debugger's library isn't loaded")
 

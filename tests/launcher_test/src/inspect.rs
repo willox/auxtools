@@ -242,6 +242,10 @@ fn procs(pid: &str, code: &Path) {
 		printed
 	);
 	println!("ok: procs named after startup");
+	// Keep a value for the next evaluation.
+	run(pid, &["eval", "auxtools_kept()[\"kept\"] = new /datum/twice"], 0);
+	assert_eq!(run(pid, &["eval", "auxtools_kept()[\"kept\"]:type"], 0).out, "/datum/twice\n");
+	println!("ok: values kept between evaluations");
 	// value() was hot reloaded before this
 	let printed = run(pid, &["proc", "/proc/value"], 0).out;
 	assert_eq!(
