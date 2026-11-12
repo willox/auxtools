@@ -339,6 +339,8 @@ pub struct World {
 	received: Receiver<io::Result<Response>>,
 	/// Pause and resume events received while awaiting a response.
 	events: Vec<Response>,
+	/// A reload may have moved the breakpoints installed by `wait`.
+	reloaded: bool,
 	/// Server notifications, including evaluation errors.
 	notes: Vec<String>,
 	/// Condition errors already reported, to avoid duplicate diagnostics.
@@ -371,6 +373,7 @@ impl World {
 			stream,
 			received,
 			events: vec![],
+			reloaded: false,
 			notes: vec![],
 			failed_conditions: vec![],
 			show_instruction: false,
@@ -508,7 +511,7 @@ impl World {
 			match response.map_err(|_| hung_up())? {
 				Response::Disconnect => return Err(hung_up()),
 				Response::Notification { message } => self.notes.push(message),
-				Response::CodeChanged => {}
+				Response::CodeChanged => self.reloaded = true,
 				// Report each breakpoint condition error once; failed hits are
 				// skipped.
 				Response::ConditionFailed { message } => {
@@ -1029,11 +1032,22 @@ impl World {
 
 	/// Waits for a pause, and keeps it held after we leave
 	fn await_pause(&mut self, until: Option<Instant>, hold: bool) -> Result<Option<BreakpointReason>> {
+		self.await_pause_for(until, hold, |_, _| true)
+	}
+
+	/// Wait for a pause accepted by `ours`, ignoring other clients' triggers.
+	/// Pass whether reload has changed breakpoint locations in the meantime.
+	/// Ignored pauses require another client to resume before our trigger can
+	/// fire.
+	fn await_pause_for(&mut self, until: Option<Instant>, hold: bool, ours: impl Fn(&Stop, bool) -> bool) -> Result<Option<BreakpointReason>> {
 		let reason = loop {
 			if let Some(i) = self.events.iter().position(|e| matches!(e, Response::BreakpointHit { .. })) {
 				let Response::BreakpointHit(stop) = self.events.remove(i) else {
 					unreachable!()
 				};
+				if !ours(&stop, self.reloaded) {
+					continue;
+				}
 				break stop.reason;
 			}
 			match self.next(until)? {
@@ -1145,12 +1159,17 @@ impl World {
 				.unwrap_or_default();
 		}
 		let paused = self.paused()?;
+		// Track reloads that may move the breakpoints installed below.
+		self.reloaded = false;
 		// Set requested breakpoints before installing watches.
 		// With --change, conditions apply to the watches.
 		let condition = if wait.changes.is_empty() { wait.condition.clone() } else { None };
+		let mut ours_at = vec![];
+		let mut ours_watches = vec![];
 		for place in &wait.breaks {
 			for bound in self.set_breakpoint(place, condition.clone(), None)? {
 				self.say_bound(place, &bound);
+				ours_at.push(bound.at.clone());
 			}
 		}
 		if let (Some(reason), true) = (&paused, wait.changes.is_empty()) {
@@ -1177,6 +1196,7 @@ impl World {
 			};
 			match self.request(watch)? {
 				Response::WatchSet(Ok(watch)) => {
+					ours_watches.push(watch.id);
 					let said = json!([{ "name": watch.name, "value": watch.value }]);
 					self.say_waited("watching", said, Some(&format!("watching {}, now {}", watch.name, watch.value)));
 				}
@@ -1199,7 +1219,24 @@ impl World {
 			local::send(&mut self.stream, &catch).map_err(|_| hung_up())?;
 		}
 		let until = wait.timeout.map(|t| Instant::now() + t);
-		match self.await_pause(until, wait.hold)? {
+		// With triggers, accept only matching pauses; otherwise accept any
+		// pause.
+		let triggered = !wait.breaks.is_empty() || !wait.changes.is_empty() || wait.runtimes;
+		let ours = |stop: &Stop, reloaded: bool| {
+			!triggered
+				|| match &stop.reason {
+					// Reloads do not report new breakpoint offsets. Accept a
+					// hit in any proc containing one of our breakpoints after a
+					// reload.
+					BreakpointReason::Breakpoint => ours_at.contains(&stop.at) || (reloaded && ours_at.iter().any(|at| at.proc == stop.at.proc)),
+					BreakpointReason::Data { changes } => changes.iter().any(|change| ours_watches.contains(&change.id)),
+					// The world pauses when any client's runtime filter
+					// matches.
+					BreakpointReason::Runtime { caught, message } => wait.runtimes && (wait.caught || !caught) && wait.runtime_filter.takes(message),
+					BreakpointReason::Step | BreakpointReason::Pause => false
+				}
+		};
+		match self.await_pause_for(until, wait.hold, ours)? {
 			Some(reason) => self.report(Some(&reason)),
 			None => Err(Failure(
 				TIMED_OUT,

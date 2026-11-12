@@ -347,7 +347,8 @@ Use `auxtools wait COMMAND --help` for options."
 		usage: "auxtools [--pid PID] wait pause [OPTIONS]",
 		arguments: "",
 		sections: "Behavior:
-  With no triggers, observe pauses caused by other debugger clients.
+  With no triggers, observe any pause. With breakpoints, watches or
+  --runtimes, wait for a matching trigger and ignore other pauses.
   If already paused, return immediately unless --change is specified.
   With --change on a paused world, resolve watches in the selected frame,
   resume execution, and wait for a pause.
