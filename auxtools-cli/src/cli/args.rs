@@ -197,6 +197,13 @@ pub struct Log {
 	pub world: bool,
 	#[arg(long, help = "Include results of code run by eval --spawn.")]
 	pub spawned: bool,
+	#[arg(
+		long,
+		value_name = "FILTER",
+		help = "Show only runtime errors whose messages match FILTER:\ncomma-separated substrings, any of which matches;\n! excludes one. \
+		        Case-insensitive. Implies --runtimes."
+	)]
+	pub runtime_filter: Option<String>,
 	#[arg(long, value_name = "N", value_parser = whole::<u64>, help = "Read entries with sequence numbers greater than N.")]
 	pub since: Option<u64>,
 	#[arg(long, value_name = "N", value_parser = whole::<u32>, help = "Limit initial output to the last N matching entries.")]

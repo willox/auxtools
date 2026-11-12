@@ -716,6 +716,16 @@ fn command_line_more(pid: u64, dir: &Path) {
 	);
 	run(&["continue"], 0);
 	println!("ok: CLI runtime filter");
+	// Apply the same filter to journal entries.
+	let printed = run(&["log", "--runtime-filter", "!cannot read", "--last", "3"], 0);
+	assert!(!printed.contains("cannot read from list"), "log --runtime-filter said {}", printed);
+	let printed = run(&["log", "--runtime-filter", "FROM LIST", "--last", "1"], 0);
+	assert!(
+		printed.contains("runtime error: cannot read from list") && printed.matches(" UTC (world.time ").count() == 1,
+		"log --runtime-filter said {}",
+		printed
+	);
+	println!("ok: log runtime filter");
 
 	// A wait with its own breakpoint must ignore another client's pause.
 	let waiting = std::process::Command::new(launcher_path())
