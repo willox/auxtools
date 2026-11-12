@@ -1122,12 +1122,23 @@ impl Adapter {
 		};
 		// Exclude removals for procs absent from the running world.
 		let summary = summary.text(&result.skipped);
+		// Applied removals unlink global procs from name lookup, but direct
+		// references still execute the retained code.
 		let notes: Vec<String> = notes
 			.into_iter()
-			.filter(|note| {
-				note.strip_suffix(code::RETAINED)
-					.and_then(|note| note.strip_suffix(": a definition"))
-					.is_none_or(|path| !result.skipped.iter().any(|skipped| skipped == path))
+			.filter_map(|note| {
+				let unlinked = note.strip_suffix(code::RETAINED).and_then(|note| note.strip_suffix(": a definition"));
+				let Some(path) = unlinked.filter(|_| result.applied) else {
+					return Some(note);
+				};
+				if result.skipped.iter().any(|skipped| skipped == path) {
+					return None;
+				}
+				Some(format!(
+					"{}: removed from source. Calls by name no longer find it, but direct references such as call(/proc/name)() still run the old \
+					 definition until restart",
+					path
+				))
 			})
 			.collect();
 		self.notes(&notes);
