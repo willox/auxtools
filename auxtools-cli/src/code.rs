@@ -265,7 +265,7 @@ impl Code {
 			match current.reload_file(&self.root, &file) {
 				Ok(reload) => {
 					watching.edited_since_built.insert(file);
-					return match self.reload(&reload.changes, current) {
+					return match self.reload(&reload.changes, current, current) {
 						None => false,
 						Some(true) => {
 							let current = match watching.applied.as_mut() {
@@ -302,7 +302,7 @@ impl Code {
 			watching.files.add(&self.root, &file);
 		}
 
-		match self.reload(&changes, &new) {
+		match self.reload(&changes, &new, watching.applied.as_ref().unwrap_or(&watching.built)) {
 			None => false,
 			Some(true) => {
 				self.send(Event::Changed);
@@ -358,7 +358,7 @@ impl Code {
 			}
 		};
 		let changes = diff(&watching.built, &current, Some(&watching.edited_since_built));
-		let Some(applied) = self.reload(&changes, &current) else {
+		let Some(applied) = self.reload(&changes, &current, &watching.built) else {
 			return false;
 		};
 		if !self.ready() {
@@ -410,9 +410,9 @@ impl Code {
 		})
 	}
 
-	/// Ask the adapter to apply `changes` against `snapshot`.
-	/// Returns `None` if the adapter disconnected.
-	fn reload(&self, changes: &Changes, snapshot: &Snapshot) -> Option<bool> {
+	/// Apply `changes` from `before` to `snapshot` through the adapter.
+	/// Return `None` if the adapter disconnects.
+	fn reload(&self, changes: &Changes, snapshot: &Snapshot, before: &Snapshot) -> Option<bool> {
 		if !changes.refused.is_empty() {
 			self.log("rejected; rebuild required for these changes:");
 			let refused = placed(&changes.refused, snapshot);
@@ -430,7 +430,8 @@ impl Code {
 			self.out.console(format!("    note: {}", why));
 		}
 
-		let request = reload_request(changes);
+		let mut request = reload_request(changes);
+		without_existing_statics(&mut request, before);
 		if request.is_empty() {
 			self.log("no runtime changes");
 			return self
@@ -549,6 +550,27 @@ fn proc_code(r: &dmasm::reload::ProcReload) -> HotReloadProc {
 		params: r.params.clone(),
 		settings: r.settings.clone(),
 		statics: r.statics.clone()
+	}
+}
+
+/// Exclude statics declared before the edit so their slots and values survive.
+/// Unread statics are absent from proc bytecode; sending them again would
+/// allocate duplicate slots and rerun their initializers.
+fn without_existing_statics(request: &mut HotReloadRequest, before: &Snapshot) {
+	for code in &mut request.procs {
+		if code.statics.is_empty() {
+			continue;
+		}
+		let key = ProcKey {
+			path: code.proc.path.clone(),
+			override_id: code.proc.override_id
+		};
+		// New procs have no existing statics.
+		let Ok(old) = before.compile(&key) else {
+			continue;
+		};
+		code.statics
+			.retain(|local| !old.statics.iter().any(|had| had.name == local.name && had.scope == local.scope));
 	}
 }
 

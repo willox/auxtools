@@ -2454,7 +2454,10 @@ impl dmasm::assembler::AssembleEnv for ReloadEnv<'_> {
 			let id = self.proc_globals.get(name).and_then(|ids| ids.get(n)).copied();
 			let id = id.or_else(|| self.new_statics.get(&(scope.to_owned(), name.to_vec())).copied());
 			if id.is_none() {
-				self.error = Some(format!("static local {} isn't declared in the proc", shown));
+				self.error = Some(format!(
+					"static local {}: cannot locate its storage in the running world; rebuild to use it",
+					shown
+				));
 			}
 			return id;
 		}

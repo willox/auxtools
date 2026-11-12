@@ -175,6 +175,7 @@ fn main() {
 	attach_and_reload(&server, &library);
 	launch_from_the_command_line(&server);
 	without_debug_info(&server);
+	unread_statics(&server);
 	println!("all ok");
 }
 
@@ -1661,5 +1662,62 @@ fn without_debug_info(server: &str) {
 	assert_eq!(got, 0, "stop gave {}: {}", got, printed);
 	drop(started);
 	println!("ok: line breakpoints in a world without debug info");
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Preserve unread static locals and avoid rerunning their initializers.
+fn unread_statics(server: &str) {
+	let (dir, dme) = attach_host_copy("statics");
+	let code = dir.join("attach_host.dm");
+	let mut source = std::fs::read_to_string(&code).unwrap();
+	source.push_str(
+		"\nvar/inits = 0\n\n/proc/count_init(x)\n\tinits++\n\treturn x\n\n/proc/unread_static()\n\tvar/static/kept = count_init(1)\n\treturn \
+		 1\n\n// __PROC__ needs BYOND 515.1644.\n#if DM_VERSION > 515 || DM_BUILD >= 1644\n#define STATIC_NAME __PROC__\n#else\n#define STATIC_NAME \
+		 2\n#endif\n\n/proc/unread_static_proc()\n\tvar/static/named = count_init(STATIC_NAME)\n\treturn 1\n"
+	);
+	std::fs::write(&code, &source).unwrap();
+	let res = Command::new(paths::find_dm()).with_byond_paths().arg(&dme).status().unwrap();
+	assert!(res.success(), "dreammaker build failed");
+	let dmb = dme.with_extension("dmb");
+
+	let mut started = Started::default();
+	let args = launch_args(&dmb, server, &["--detach", "--json"]);
+	let (got, printed) = launcher_command(&args.iter().map(String::as_str).collect::<Vec<_>>());
+	assert_eq!(got, 0, "unexpected launch --detach output: {}", printed);
+	let launched: serde_json::Value = serde_json::from_str(printed.lines().next().unwrap_or_default())
+		.unwrap_or_else(|_| panic!("unexpected launch --detach --json output: {}", printed));
+	let pid = launched["pid"].as_u64().unwrap();
+	started.pids.extend([pid, launched["launcher"].as_u64().unwrap()]);
+	let pid_text = pid.to_string();
+	let run = |args: &[&str], code: i32| {
+		let args: Vec<&str> = ["--pid", pid_text.as_str()].iter().chain(args).copied().collect();
+		let (got, printed) = launcher_command(&args);
+		assert_eq!(got, code, "`{}` gave {}, not {}: {}", args.join(" "), got, code, printed);
+		printed
+	};
+	assert_eq!(run(&["eval", "inits"], 0).trim(), "2");
+
+	for (n, edited) in ["1 + 1", "3"].iter().enumerate() {
+		let before = if n == 0 { "1".to_owned() } else { "1 + 1".to_owned() };
+		source = source.replace(
+			&format!("count_init(1)\n\treturn {}\n", before),
+			&format!("count_init(1)\n\treturn {}\n", edited)
+		);
+		source = source.replace(
+			&format!("count_init(STATIC_NAME)\n\treturn {}\n", before),
+			&format!("count_init(STATIC_NAME)\n\treturn {}\n", edited)
+		);
+		// Start before the edit so the wait can find a reload that already
+		// finished.
+		let since = journal::newest(pid).to_string();
+		std::fs::write(&code, &source).unwrap();
+		let printed = run(&["wait", "reload", "--since", &since, "--timeout", "60"], 0);
+		assert!(printed.contains("hot reload applied"), "the reload said {}", printed);
+		assert_eq!(run(&["eval", "inits"], 0).trim(), "2", "an initializer ran again");
+	}
+	assert_eq!(run(&["eval", "unread_static() + unread_static_proc()"], 0).trim(), "6");
+	run(&["stop", "--timeout", "10", "--kill"], 0);
+	drop(started);
+	println!("ok: reloads keep static locals the code doesn't read");
 	let _ = std::fs::remove_dir_all(&dir);
 }
