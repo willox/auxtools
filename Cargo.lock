@@ -152,7 +152,7 @@ dependencies = [
 
 [[package]]
 name = "auxtools"
-version = "3.0.2"
+version = "3.0.3-dev"
 dependencies = [
  "ahash",
  "auxtools-impl",
@@ -167,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "auxtools-cli"
-version = "3.0.2"
+version = "3.0.3-dev"
 dependencies = [
  "bincode",
  "clap",
@@ -516,7 +516,7 @@ dependencies = [
 
 [[package]]
 name = "debug_server"
-version = "3.0.2"
+version = "3.0.3-dev"
 dependencies = [
  "auxtools",
  "bincode",
