@@ -98,7 +98,7 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 	// fcopy_rsc() hands back the cache entry a file already has, and adds the
 	// file to the cache if it isn't there yet
 	fn get_resource_index(&mut self, path: &str) -> Option<u32> {
-		let res = Self::eval_with_name("fcopy_rsc(name)", path)?;
+		let res = Self::eval_with_name("fcopy_rsc(name)", path).or_else(|| Self::eval_with_name("fcopy_rsc(name)", &case_insensitive_path(path)?))?;
 
 		if res.raw.tag != raw_types::values::ValueTag::Resource {
 			return None;
@@ -106,4 +106,38 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 
 		Some(unsafe { res.raw.data.id })
 	}
+}
+
+/// Resolve resource paths case-insensitively, matching DreamMaker on Linux.
+/// Prefer exact path components, then the first sorted case-insensitive match.
+/// Return `None` if the path already exists or any component cannot be
+/// resolved.
+fn case_insensitive_path(path: &str) -> Option<String> {
+	use std::path::{Component, Path, PathBuf};
+
+	if Path::new(path).exists() {
+		return None;
+	}
+	let mut found = PathBuf::new();
+	for component in Path::new(path).components() {
+		let Component::Normal(part) = component else {
+			found.push(component);
+			continue;
+		};
+		let exact = found.join(part);
+		if exact.symlink_metadata().is_ok() {
+			found = exact;
+			continue;
+		}
+		let part = part.to_str()?;
+		let dir = if found.as_os_str().is_empty() { Path::new(".") } else { found.as_path() };
+		let mut names: Vec<String> = std::fs::read_dir(dir)
+			.ok()?
+			.filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+			.filter(|name| name.eq_ignore_ascii_case(part))
+			.collect();
+		names.sort();
+		found.push(names.into_iter().next()?);
+	}
+	found.to_str().map(|found| found.replace('\\', "/"))
 }

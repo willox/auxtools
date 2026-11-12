@@ -493,6 +493,17 @@ fn main() {
 	client.resume();
 	println!("ok: runtime error in reloaded code");
 
+	// Resolve resource paths with different filename case, matching DreamMaker.
+	std::fs::write(source.dir.join("Case_Probe.txt"), "found").unwrap();
+	let changes = source.edit(
+		"reload.dm",
+		"/proc/runtime_target()\n\tvar/list/nothing\n\treturn nothing.len",
+		"/proc/runtime_target()\n\treturn file2text('case_probe.txt')"
+	);
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "runtime_target()"), "\"found\"");
+	println!("ok: resource named in another case");
+
 	// A proc auxtools hooked never runs its bytecode
 	let changes = source.edit(
 		"main.dm",
