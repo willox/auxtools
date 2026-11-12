@@ -566,6 +566,15 @@ fn placed(errors: &[String], snapshot: &Snapshot) -> Vec<String> {
 			if let Some((_, placed)) = parse_errors.iter().find(|(text, _)| text == error) {
 				return placed.clone();
 			}
+			// Also accept diagnostics that already include a line: `parse
+			// error: file:line: message`.
+			if let Some(placed) = error.strip_prefix("parse error: ").filter(|rest| {
+				rest.split_once(": ")
+					.and_then(|(place, _)| place.rsplit_once(':'))
+					.is_some_and(|(_, line)| line.parse::<u32>().is_ok())
+			}) {
+				return placed.to_owned();
+			}
 			let file_line = error.split_once(": doesn't compile: line ").and_then(|(proc, rest)| {
 				let (line, what) = rest.split_once(": ")?;
 				let key = snapshot.procs().find(|key| key.to_string() == proc)?;
