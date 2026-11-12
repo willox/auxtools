@@ -2760,9 +2760,10 @@ impl Server {
 		self.eval_error = None;
 
 		let mut warnings = vec![];
+		let mut skipped = vec![];
 		// New types come first, so the rest can be prepared against them
 		let prepared = hot_reload::add_types(&request.new_types).and_then(|added| {
-			hot_reload::prepare(request, &mut warnings).map_err(|mut errors| {
+			hot_reload::prepare(request, &mut warnings, &mut skipped).map_err(|mut errors| {
 				if added > 0 {
 					errors.push(format!("{} new types remain allocated but unused", added));
 				}
@@ -2775,14 +2776,16 @@ impl Server {
 				HotReloadResult {
 					applied: true,
 					errors: vec![],
-					warnings
+					warnings,
+					skipped
 				}
 			}
 
 			Err(errors) => HotReloadResult {
 				applied: false,
 				errors,
-				warnings
+				warnings,
+				skipped
 			}
 		};
 
@@ -2793,6 +2796,7 @@ impl Server {
 
 		// Every client hears what changed
 		if result.applied && !request.is_empty() {
+			let skipped_count = request.removed_procs.iter().filter(|r| result.skipped.contains(&r.proc.path)).count();
 			self.broadcast(Response::CodeChanged, self.current);
 			self.notify(format!(
 				"Hot reload: new code for {} procs, new settings for {}, {} new procs, {} unlinked, {} new vars, {} new var defaults, {} new init \
@@ -2800,7 +2804,7 @@ impl Server {
 				request.procs.len(),
 				request.settings.len(),
 				request.new_procs.len(),
-				request.removed_procs.len(),
+				request.removed_procs.len() - skipped_count,
 				request.new_vars.len(),
 				request.var_defaults.len(),
 				request.init_procs.len(),

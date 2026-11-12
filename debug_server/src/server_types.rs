@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Wire protocol version. Increment for changes incompatible with older
 /// clients or servers. Including the version in endpoint names prevents
 /// connections using incompatible message layouts.
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 /// The local socket the world in process `pid` listens on, when it has the
 /// debug library: `auxtools-debug-v1-1234`
@@ -932,7 +932,17 @@ pub struct HotReloadRequest {
 	pub builtin_defaults: Vec<dmasm::reload::VarDefault>,
 	/// Types whose new instances run other code to set their vars
 	pub init_procs: Vec<HotReloadInitProc>,
-	pub line_moves: Vec<HotReloadLines>
+	pub line_moves: Vec<HotReloadLines>,
+	/// Removed type vars; the world reports whether it retains each
+	/// declaration.
+	pub removed_vars: Vec<RemovedVar>
+}
+
+/// A type var declaration removed from source.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct RemovedVar {
+	pub type_path: String,
+	pub var: String
 }
 
 impl HotReloadRequest {
@@ -1015,5 +1025,7 @@ pub struct HotReloadResult {
 	/// Whether the reload changed runtime state. Errors prevent application.
 	pub applied: bool,
 	pub errors: Vec<String>,
-	pub warnings: Vec<String>
+	pub warnings: Vec<String>,
+	/// Removed proc paths absent from the world, for which no unlink occurred.
+	pub skipped: Vec<String>
 }

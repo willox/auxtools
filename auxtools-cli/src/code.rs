@@ -13,7 +13,7 @@ use std::{
 };
 
 use auxtools_cli::server_types::{
-	HotReloadInitProc, HotReloadLines, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, Macro, ProcRef
+	HotReloadInitProc, HotReloadLines, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, Macro, ProcRef, RemovedVar
 };
 use dmasm::reload::{diff, Changes, ParseOptions, ProcKey, Snapshot};
 
@@ -45,7 +45,7 @@ pub enum Event {
 	/// warnings.
 	Reload {
 		request: Box<HotReloadRequest>,
-		summary: String,
+		summary: Summary,
 		notes: Vec<String>,
 		world: u64
 	},
@@ -426,13 +426,14 @@ impl Code {
 			};
 			return self.send(refused).then_some(false);
 		}
-		for why in &changes.warnings {
-			self.out.console(format!("    note: {}", why));
-		}
-
 		let mut request = reload_request(changes);
 		without_existing_statics(&mut request, before);
-		if request.is_empty() {
+		// The running world determines whether removed vars actually exist.
+		let notes: Vec<String> = changes.warnings.iter().filter(|note| removed_var(note).is_none()).cloned().collect();
+		if request.is_empty() && request.removed_vars.is_empty() {
+			for why in &notes {
+				self.out.console(format!("    note: {}", why));
+			}
 			self.log("no runtime changes");
 			return self
 				.send(Event::NothingChanged {
@@ -443,8 +444,8 @@ impl Code {
 
 		if !self.send(Event::Reload {
 			request: Box::new(request),
-			summary: summary(changes),
-			notes: changes.warnings.clone(),
+			summary: Summary::of(changes),
+			notes,
 			world: self.world.get()
 		}) {
 			return None;
@@ -492,47 +493,117 @@ fn placed(errors: &[String], snapshot: &Snapshot) -> Vec<String> {
 		.collect()
 }
 
-/// Summarize a reload in one line.
-fn summary(changes: &Changes) -> String {
-	let list = |names: Vec<String>, what: &str| match names.len() {
-		0 => None,
-		1..=5 => Some(names.join(", ")),
-		n => Some(format!("{} {}", n, what))
-	};
-	let parts: Vec<String> = [
-		list(changes.new_types.iter().map(|t| t.path.clone()).collect(), "types").map(|s| format!("added {}", s)),
-		list(changes.consts.iter().chain(&changes.retyped).cloned().collect(), "vars").map(|s| format!("recompiled users of {}", s)),
-		list(changes.reloads.iter().map(|r| r.proc.to_string()).collect(), "procs").map(|s| format!("reloaded {}", s)),
-		list(changes.settings.iter().map(|c| c.proc.to_string()).collect(), "procs").map(|s| format!("updated settings for {}", s)),
-		list(changes.new_procs.iter().map(|p| p.code.proc.to_string()).collect(), "procs").map(|s| format!("added {}", s)),
-		list(changes.removed_procs.iter().map(|p| p.proc.to_string()).collect(), "procs").map(|s| format!("unlinked {}", s)),
-		list(
-			changes.new_vars.iter().map(|v| format!("{}/var/{}", v.type_path, v.var)).collect(),
-			"vars"
-		)
-		.map(|s| format!("added {}", s)),
-		list(
-			changes.redeclared.iter().map(|v| format!("{}/var/{}", v.type_path, v.var)).collect(),
-			"vars"
-		)
-		.map(|s| format!("updated declarations for {}", s)),
-		list(
-			changes
-				.var_defaults
-				.iter()
-				.chain(&changes.builtin_defaults)
-				.map(|d| format!("{}/var/{}", d.types[0], d.var))
-				.collect(),
-			"vars"
-		)
-		.map(|s| format!("set the default of {}", s)),
-		list(changes.init_procs.iter().map(|i| i.type_path.clone()).collect(), "types").map(|s| format!("rebuilt the init procs of {}", s)),
-		(!changes.line_moves.is_empty()).then(|| format!("remapped lines in {} additional procs", changes.line_moves.len()))
-	]
-	.into_iter()
-	.flatten()
-	.collect();
-	parts.join("; ")
+/// Reload summary that can exclude removals skipped by the running world.
+pub struct Summary {
+	/// Actions, display names with optional removed-proc paths, and plural
+	/// labels.
+	parts: Vec<(&'static str, Vec<(String, Option<String>)>, &'static str)>,
+	line_moves: usize
+}
+
+impl Summary {
+	fn of(changes: &Changes) -> Self {
+		let named = |names: Vec<String>| names.into_iter().map(|name| (name, None)).collect();
+		let var = |type_path: &str, var: &str| format!("{}/var/{}", type_path, var);
+		let parts = vec![
+			("added", named(changes.new_types.iter().map(|t| t.path.clone()).collect()), "types"),
+			(
+				"recompiled users of",
+				named(changes.consts.iter().chain(&changes.retyped).cloned().collect()),
+				"vars"
+			),
+			("reloaded", named(changes.reloads.iter().map(|r| r.proc.to_string()).collect()), "procs"),
+			(
+				"updated settings for",
+				named(changes.settings.iter().map(|c| c.proc.to_string()).collect()),
+				"procs"
+			),
+			(
+				"added",
+				named(changes.new_procs.iter().map(|p| p.code.proc.to_string()).collect()),
+				"procs"
+			),
+			(
+				"unlinked",
+				changes
+					.removed_procs
+					.iter()
+					.map(|p| (p.proc.to_string(), Some(p.proc.path.clone())))
+					.collect(),
+				"procs"
+			),
+			(
+				"added",
+				named(changes.new_vars.iter().map(|v| var(&v.type_path, &v.var)).collect()),
+				"vars"
+			),
+			(
+				"updated declarations for",
+				named(changes.redeclared.iter().map(|v| var(&v.type_path, &v.var)).collect()),
+				"vars"
+			),
+			(
+				"set the default of",
+				named(
+					changes
+						.var_defaults
+						.iter()
+						.chain(&changes.builtin_defaults)
+						.map(|d| var(&d.types[0], &d.var))
+						.collect()
+				),
+				"vars"
+			),
+			(
+				"rebuilt the init procs of",
+				named(changes.init_procs.iter().map(|i| i.type_path.clone()).collect()),
+				"types"
+			),
+		];
+		Summary {
+			parts,
+			line_moves: changes.line_moves.len()
+		}
+	}
+
+	/// Format the summary, excluding removed procs listed in `skipped`.
+	pub fn text(&self, skipped: &[String]) -> String {
+		let mut said: Vec<String> = self
+			.parts
+			.iter()
+			.filter_map(|(done, names, what)| {
+				let names: Vec<&str> = names
+					.iter()
+					.filter(|(_, path)| path.as_ref().is_none_or(|path| !skipped.contains(path)))
+					.map(|(name, _)| name.as_str())
+					.collect();
+				match names.len() {
+					0 => None,
+					1..=5 => Some(format!("{} {}", done, names.join(", "))),
+					n => Some(format!("{} {} {}", done, n, what))
+				}
+			})
+			.collect();
+		if self.line_moves > 0 {
+			said.push(format!("remapped lines in {} additional procs", self.line_moves));
+		}
+		if said.is_empty() {
+			return "no runtime changes".to_owned();
+		}
+		said.join("; ")
+	}
+}
+
+/// Suffix used by dmasm's retained-definition diagnostics.
+pub const RETAINED: &str = " was removed from source but retained in the running world";
+
+/// Extract a removed type var for verification by the running world.
+fn removed_var(note: &str) -> Option<RemovedVar> {
+	let (type_path, var) = note.strip_suffix(RETAINED)?.split_once(": var ")?;
+	type_path.starts_with('/').then(|| RemovedVar {
+		type_path: type_path.to_owned(),
+		var: var.to_owned()
+	})
 }
 
 fn proc_ref(key: &ProcKey) -> ProcRef {
@@ -619,7 +690,8 @@ pub fn reload_request(changes: &Changes) -> HotReloadRequest {
 				proc: proc_ref(&m.proc),
 				lines: m.lines.clone()
 			})
-			.collect()
+			.collect(),
+		removed_vars: changes.warnings.iter().filter_map(|note| removed_var(note)).collect()
 	}
 }
 

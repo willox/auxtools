@@ -1361,17 +1361,32 @@ fn launch_from_the_command_line(server: &str) {
 	}
 	println!("ok: missing .dmb launch error");
 
-	// In the foreground: the world's output, its hot reloads, and its end
+	// Check foreground output, reloads and shutdown. The source baseline
+	// includes a proc and var absent from the .dmb.
+	let source = std::fs::read_to_string(&code).unwrap();
+	let unbuilt = "\n/datum/held/var/unbuilt = 1\n\n/datum/held/proc/unbuilt_proc()\n\treturn src\n";
+	std::fs::write(&code, format!("{}{}", source, unbuilt)).unwrap();
 	let mut started = Started::default();
 	let output = launch_here(&dmb, server, &mut started);
 	let read = || output.lock().unwrap().clone();
 	wait_for_text("launch", "Hot reload: watching", read);
 	wait_for_text("launch", "attach test: 1", read);
 	started.pids.push(started_pid(&read()));
-	let source = std::fs::read_to_string(&code).unwrap();
 	std::fs::write(&code, source.replace("\treturn 1", "\treturn 2")).unwrap();
 	wait_for_text("launch", "Hot reload: reloaded /value", read);
 	wait_for_text("launch", "attach test: 2", read);
+	// Removing these definitions must not claim runtime removals.
+	wait_for_text("launch", "var unbuilt was removed from source and isn't in the running world", read);
+	let printed = read();
+	assert!(
+		printed.contains("Hot reload: reloaded /value in ")
+			&& !printed.contains("unlinked /")
+			&& printed.contains("unbuilt_proc: not found in the running world; skipping removal")
+			&& !printed.contains("retained in the running world"),
+		"launch said:\n{}",
+		printed
+	);
+	println!("ok: removing code the world never had");
 	std::fs::write(dir.join("stop"), "yes").unwrap();
 	let exit = launcher_exit(&mut started, &output);
 	let printed = read();

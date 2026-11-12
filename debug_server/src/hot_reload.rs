@@ -30,7 +30,7 @@ use dmasm::{
 use crate::{
 	assemble_env::AssembleEnv,
 	instruction_hooking::{hook_instruction, hooked_offsets, original_bytecode, unhook_instruction},
-	server_types::{HotReloadInitProc, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, ProcRef, Reloaded}
+	server_types::{HotReloadInitProc, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, ProcRef, Reloaded, RemovedVar}
 };
 
 /// A reload, checked and assembled, ready to apply.
@@ -426,7 +426,8 @@ fn strip_path(path: &str) -> String {
 }
 
 /// Validate and assemble a reload. Errors prevent application.
-pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>) -> Result<Prepared, Vec<String>> {
+/// Add removed proc paths absent from the world to `skipped`.
+pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: &mut Vec<String>) -> Result<Prepared, Vec<String>> {
 	let HotReloadRequest {
 		new_types: _,
 		procs,
@@ -438,9 +439,25 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>) -> Result
 		var_defaults,
 		builtin_defaults,
 		init_procs,
-		line_moves
+		line_moves,
+		removed_vars
 	} = request;
 	runtime_tables::available().map_err(|e| vec![format!("hot reloading isn't available on this build of BYOND: {}", e)])?;
+
+	// Check removed vars before this reload changes the tables.
+	for var in removed_vars {
+		warnings.push(if world_lacks(var) {
+			format!(
+				"{}: var {} was removed from source and isn't in the running world",
+				var.type_path, var.var
+			)
+		} else {
+			format!(
+				"{}: var {} was removed from source but retained in the running world",
+				var.type_path, var.var
+			)
+		});
+	}
 
 	let mut prepared = Prepared::default();
 	let mut errors = vec![];
@@ -476,6 +493,9 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>) -> Result
 		// An already removed proc must not block subsequent reloads.
 		if Proc::overrides(removed.proc.path.as_str()).is_empty() {
 			warnings.push(format!("{}: not found in the running world; skipping removal", removed.proc.path));
+			if !skipped.contains(&removed.proc.path) {
+				skipped.push(removed.proc.path.clone());
+			}
 			continue;
 		}
 		match prepare_removal(removed, &mut staged) {
@@ -940,6 +960,23 @@ fn params_table(
 		words.extend([param.input, in_list, id, param.input_extra]);
 	}
 	runtime_tables::intern_misc(&words).map(Some)
+}
+
+/// Whether the type is absent or its readable declarations lack this var.
+/// Unreadable declarations cannot confirm absence.
+fn world_lacks(var: &RemovedVar) -> bool {
+	let Ok(type_id) = find_type(&var.type_path) else {
+		return true;
+	};
+	let Ok(name) = StringRef::new(&var.var) else {
+		return false;
+	};
+	let name = name.get_id().0;
+	let mut type_vars = TypeVars::default();
+	match type_vars.declared(type_id).cloned() {
+		Ok(declared) => !declared.chunks(2).any(|pair| type_vars.name_of(pair[0]) == name),
+		Err(_) => false
+	}
 }
 
 /// The type whose path is `path`.

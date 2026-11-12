@@ -190,7 +190,8 @@ fn reload_request(changes: &Changes) -> Request {
 				proc: proc_ref(&m.proc),
 				lines: m.lines.clone()
 			})
-			.collect()
+			.collect(),
+		removed_vars: vec![]
 	})
 }
 
@@ -1120,6 +1121,41 @@ fn main() {
 	);
 	assert_eq!(eval(&mut client, "answer()"), "4");
 	println!("ok: rejected reload preserves existing code");
+
+	// Removing definitions absent from the built world must not claim to remove
+	// runtime code.
+	let request = Request::HotReload(HotReloadRequest {
+		removed_procs: vec![dmasm::reload::RemovedProc {
+			proc: dmasm::reload::ProcKey {
+				path: "/datum/declared/never_built".to_owned(),
+				override_id: 0
+			},
+			type_path: "/datum/declared".to_owned(),
+			name: "never_built".to_owned(),
+			verb: false
+		}],
+		removed_vars: [
+			("/datum/declared", "count"),
+			("/datum/declared", "never_built"),
+			("/datum/never_built", "count")
+		]
+		.map(|(type_path, var)| RemovedVar {
+			type_path: type_path.to_owned(),
+			var: var.to_owned()
+		})
+		.to_vec(),
+		..Default::default()
+	});
+	let result = expect_reload_result(client.request(request));
+	assert!(result.applied, "{:?}", result.errors);
+	assert_eq!(result.skipped, ["/datum/declared/never_built"]);
+	assert_eq!(result.warnings, [
+		"/datum/declared: var count was removed from source but retained in the running world",
+		"/datum/declared: var never_built was removed from source and isn't in the running world",
+		"/datum/never_built: var count was removed from source and isn't in the running world",
+		"/datum/declared/never_built: not found in the running world; skipping removal"
+	]);
+	println!("ok: removals the world never had");
 
 	// A definition among a type's others goes where the source has it in the
 	// `..()` chain, and the world numbers them again as the source does

@@ -1026,7 +1026,7 @@ impl Adapter {
 				// new baseline.
 				let applied = if self.debuggee.as_ref().is_some_and(|d| d.generation != world) {
 					self.out
-						.console(format!("Hot reload skipped: prepared before the world restarted: {}", summary));
+						.console(format!("Hot reload skipped: prepared before the world restarted: {}", summary.text(&[])));
 					false
 				} else {
 					self.reload_seen = Some(std::time::SystemTime::now());
@@ -1054,24 +1054,37 @@ impl Adapter {
 
 	/// Apply a reload and journal the result, including `notes`.
 	/// Returns whether it succeeded.
-	fn reload(&mut self, request: aux::HotReloadRequest, summary: &str, notes: Vec<String>) -> bool {
+	fn reload(&mut self, request: aux::HotReloadRequest, summary: &code::Summary, notes: Vec<String>) -> bool {
 		self.reload_started = Some(Instant::now());
 		let result = match self.request(&AuxRequest::HotReload(request)) {
 			Ok(AuxResponse::HotReload(result)) => result,
 			Ok(other) => {
 				let why = unexpected(other);
+				self.notes(&notes);
 				self.out.console(format!("Hot reload failed: {}", why));
 				self.journal_reload(false, "reload failed".to_owned(), vec![why], notes);
 				return false;
 			}
 			Err(e) => {
+				self.notes(&notes);
 				self.out.console(format!("Hot reload failed: {}", e));
 				self.journal_reload(false, "reload failed".to_owned(), vec![e], notes);
 				return false;
 			}
 		};
+		// Exclude removals for procs absent from the running world.
+		let summary = summary.text(&result.skipped);
+		let notes: Vec<String> = notes
+			.into_iter()
+			.filter(|note| {
+				note.strip_suffix(code::RETAINED)
+					.and_then(|note| note.strip_suffix(": a definition"))
+					.is_none_or(|path| !result.skipped.iter().any(|skipped| skipped == path))
+			})
+			.collect();
+		self.notes(&notes);
 		let summary_of_outcome = if result.applied {
-			summary.to_owned()
+			summary.clone()
 		} else {
 			format!("reload failed ({})", summary)
 		};
@@ -1095,6 +1108,13 @@ impl Adapter {
 			self.out.console(format!("    warning: {}", w));
 		}
 		result.applied
+	}
+
+	/// Print source-worker reload notes.
+	fn notes(&self, notes: &[String]) {
+		for why in notes {
+			self.out.console(format!("    note: {}", why));
+		}
 	}
 
 	/// The world has the code it should: give it the breakpoints and let it run
