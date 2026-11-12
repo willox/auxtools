@@ -1718,10 +1718,8 @@ fn prepare_redeclared(
 	}
 
 	let type_id = find_type(&var.type_path).map_err(fail)?;
-	let name = StringRef::new(&var.var)
-		.map_err(|_| fail("couldn't make its name".to_owned()))?
-		.get_id()
-		.0;
+	// Keep the name alive while the type var table references it.
+	let name = leaked_string(&var.var).map_err(fail)?;
 	let declared = type_vars.declared(type_id).map_err(fail)?.clone();
 	let id = declared
 		.chunks(2)
