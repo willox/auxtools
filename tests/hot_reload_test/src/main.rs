@@ -752,6 +752,23 @@ fn main() {
 	source.edit("reload.dm", DUPE, CAT);
 	println!("ok: duplicate var definition refused by type");
 
+	// Re-adding a retained var reuses its declaration and applies the new
+	// default.
+	let changes = source.edit("reload.dm", "\tvar/spare = 1\n", "");
+	reload(&mut watcher, &changes);
+	let changes = source.edit("reload.dm", "/datum/animal\n", "/datum/animal\n\tvar/spare = 3\n");
+	let result = reload(&mut watcher, &changes);
+	assert!(
+		result
+			.warnings
+			.iter()
+			.any(|w| w.contains("var spare reuses the declaration retained by the running world")),
+		"{:?}",
+		result.warnings
+	);
+	assert_eq!(eval(&mut client, "var/datum/animal/a = new /datum/animal\nreturn a.spare"), "3");
+	println!("ok: a var removed and declared again");
+
 	// More definitions of a proc on a type that has one: one more of the dog's
 	// speak(), which the puppy's ..() goes through now, and two for the cat
 	// in one reload, the second calling the first

@@ -478,7 +478,7 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		instances: StagedInstances::default()
 	};
 	for new in new_vars {
-		if let Err(e) = prepare_new_var(new, &mut added, &mut type_vars, &mut pending) {
+		if let Err(e) = prepare_new_var(new, &mut added, &mut type_vars, &mut pending, warnings) {
 			errors.push(e);
 		}
 	}
@@ -1639,9 +1639,38 @@ fn leaked_string(text: &str) -> Result<u32, String> {
 	Ok(id)
 }
 
-fn prepare_new_var(new: &NewVar, added: &mut AddedVars, type_vars: &mut TypeVars, pending: &mut Pending) -> Result<(), String> {
+fn prepare_new_var(
+	new: &NewVar,
+	added: &mut AddedVars,
+	type_vars: &mut TypeVars,
+	pending: &mut Pending,
+	warnings: &mut Vec<String>
+) -> Result<(), String> {
 	const STATIC: u32 = 1;
 	let fail = |e: String| format!("{}/var/{}: {}", new.type_path, new.var, e);
+
+	// Removed vars remain in the world. Reuse a matching declaration;
+	// any new default is applied separately.
+	if !new.type_path.is_empty() {
+		let type_id = find_type(&new.type_path).map_err(fail)?;
+		let name = leaked_string(&new.var).map_err(fail)?;
+		let declared = type_vars.declared(type_id).map_err(fail)?.clone();
+		if let Some(pair) = declared.chunks(2).find(|pair| type_vars.name_of(pair[0]) == name) {
+			if pair[1] != new.flags {
+				return Err(fail(
+					"the running world retained this var with different static, const or tmp flags; rebuild to change them".to_owned()
+				));
+			}
+			if new.flags & STATIC != 0 {
+				pending.globals.insert((new.type_path.clone(), new.var.as_bytes().to_vec()), pair[0]);
+			}
+			warnings.push(format!(
+				"{}: var {} reuses the declaration retained by the running world; existing static values are unchanged",
+				new.type_path, new.var
+			));
+			return Ok(());
+		}
+	}
 
 	let id = added.next_id();
 	let value = const_value(&new.value).map_err(fail)?;
