@@ -424,6 +424,38 @@ pub fn run() {
 	world.resume_through("fresh");
 	ok("stepping into an added proc");
 
+	// A reload must resolve a breakpoint in a previously unused, unchanged
+	// file.
+	let added = dir.join("added.dm");
+	std::fs::write(&added, "/proc/sc_added()\n\tvar/a = 1\n\treturn a + 1\n").unwrap();
+	std::fs::File::options()
+		.write(true)
+		.open(&added)
+		.unwrap()
+		.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600))
+		.unwrap();
+	let set = world.set_breakpoints(&added, json!([{ "line": 3 }]));
+	assert_eq!(set[0]["verified"], false, "{}", set[0]);
+	world.drop_events("breakpoint");
+	edit(
+		&mut world,
+		"dap_test_host.dme",
+		"#include \"main.dm\"\n",
+		"#include \"main.dm\"\n#include \"added.dm\"\n"
+	);
+	let told = world.event("breakpoint")["body"]["breakpoint"].clone();
+	assert_eq!(
+		(&told["id"], &told["verified"], &told["line"]),
+		(&set[0]["id"], &json!(true), &json!(3)),
+		"{}",
+		told
+	);
+	world.run("added");
+	world.launcher.stop_at("breakpoint", "/sc_added", 3);
+	world.set_breakpoints(&added, json!([]));
+	world.resume_through("added");
+	ok("breakpoint in a file a reload adds");
+
 	// The world counts a breakpoint's hits from when it's set: a reload of
 	// another file leaves it be
 	let (file, line) = world.marks.place("recurse_leaf");

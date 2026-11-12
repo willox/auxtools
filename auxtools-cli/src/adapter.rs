@@ -53,6 +53,8 @@ const HELPER_FILE: &str = "auxtools_launcher.dm";
 /// Diagnostic for line breakpoints in a world built without debug information.
 pub const NO_LINES: &str =
 	"the world was compiled without debug information, so it has no line numbers: add #define DEBUG to the .dme and rebuild, or break on a proc";
+/// Diagnostic for a line with no executable code.
+const NO_CODE: &str = "no executable code at or after this line";
 /// Storage key for function breakpoints.
 const FUNCTION_BREAKPOINTS: &str = "<functions>";
 /// Progress operations indexed by their client-visible IDs.
@@ -1249,16 +1251,23 @@ impl Adapter {
 					}
 				}
 			}
-			// Preserve breakpoints and hit counts for unchanged files, unless
-			// they were deferred until this version of the source was loaded.
-			if then == now && had.as_ref() == Some(&now) && !self.waiting.contains(&file) {
+			// Preserve unchanged files' breakpoints and hit counts unless they
+			// were deferred or lack code that this reload may have added. Other
+			// failures, such as invalid hit conditions, do not require
+			// resetting the file.
+			let wants_code = self.breakpoints[&file].iter().any(|(id, _)| match self.told.get(id) {
+				Some((verified, _, message)) => !*verified && matches!(message.as_deref(), Some(NO_CODE | NO_LINES)),
+				None => true
+			});
+			let changed = then != now || had.as_ref() != Some(&now) || self.waiting.contains(&file);
+			if !changed && !wants_code {
 				continue;
 			}
 			self.waiting.remove(&file);
 			self.breakpoint_texts.insert(file.clone(), now);
 
 			let breakpoints = self.apply_breakpoints(&file);
-			self.tell(breakpoints, true);
+			self.tell(breakpoints, changed);
 		}
 		self.retry_function_breakpoints();
 
@@ -1608,11 +1617,7 @@ impl Adapter {
 				line: line as u32
 			}) {
 				Ok(AuxResponse::Locate { instructions }) if instructions.is_empty() => {
-					breakpoints.push(unverified(if self.world_has_lines() {
-						"no executable code at or after this line"
-					} else {
-						NO_LINES
-					}));
+					breakpoints.push(unverified(if self.world_has_lines() { NO_CODE } else { NO_LINES }));
 					continue;
 				}
 				Ok(AuxResponse::Locate { instructions }) => instructions,
