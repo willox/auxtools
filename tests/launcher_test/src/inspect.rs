@@ -233,6 +233,15 @@ fn from_files(pid: &str, dir: &Path) {
 
 /// Where a proc is, and its bytecode
 fn procs(pid: &str, code: &Path) {
+	// Resolve init procs named by BYOND after startup.
+	run(pid, &["eval", "new /datum/inits"], 0);
+	let printed = run(pid, &["proc", "/datum/inits/(init)"], 0).out;
+	assert!(
+		printed.starts_with("/datum/inits/(init)") && printed.contains("definitions: 1"),
+		"proc said {}",
+		printed
+	);
+	println!("ok: procs named after startup");
 	// value() was hot reloaded before this
 	let printed = run(pid, &["proc", "/proc/value"], 0).out;
 	assert_eq!(

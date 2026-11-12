@@ -96,6 +96,10 @@ var/datum/held/held = new
 /obj/macro_named
 	name = "\improper AI Chamber"
 
+// BYOND assigns the var initializer path /datum/inits/proc/(init) after startup.
+/datum/inits
+	var/list/given = list(1)
+
 // For the command line's eval: a runtime error two procs down from it, and
 // one a proc catches itself
 /proc/fail_in(n)
