@@ -1818,6 +1818,16 @@ fn unread_statics(server: &str) {
 		assert_eq!(run(&["eval", "inits"], 0).trim(), "2", "an initializer ran again");
 	}
 	assert_eq!(run(&["eval", "unread_static() + unread_static_proc()"], 0).trim(), "6");
+
+	// Resolve a newly read static through its original initializer and preserve
+	// its value.
+	source = source.replace("count_init(1)\n\treturn 3\n", "count_init(1)\n\treturn kept + 10\n");
+	let since = journal::newest(pid).to_string();
+	std::fs::write(&code, &source).unwrap();
+	let printed = run(&["wait", "reload", "--since", &since, "--timeout", "60"], 0);
+	assert!(printed.contains("hot reload applied"), "the reload said {}", printed);
+	assert_eq!(run(&["eval", "unread_static()"], 0).trim(), "11");
+	assert_eq!(run(&["eval", "inits"], 0).trim(), "2", "an initializer ran again");
 	run(&["stop", "--timeout", "10", "--kill"], 0);
 	drop(started);
 	println!("ok: reloads keep static locals the code doesn't read");

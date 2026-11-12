@@ -683,6 +683,7 @@ fn assemble(
 		pending,
 		new_statics,
 		instances: &mut added.instances,
+		place: code_place(original),
 		error: None
 	};
 	let bytecode = match dmasm::assembler::assemble(&nodes, &mut env) {
@@ -2483,12 +2484,61 @@ fn globals_in(bytecode: &[u32]) -> HashMap<Vec<u8>, Vec<u32>> {
 	out
 }
 
+/// First source file and source line range in the proc bytecode.
+fn code_place(bytecode: &[u32]) -> Option<(Vec<u8>, u32, u32)> {
+	let (nodes, _) = dmasm::disassembler::disassemble(bytecode, &mut LenientDisassembleEnv);
+	let mut file = None;
+	let mut lines: Option<(u32, u32)> = None;
+	for node in &nodes {
+		match node {
+			Node::Instruction(dmasm::Instruction::DbgFile(name), _) if file.is_none() => file = Some(name.0.clone()),
+			Node::Instruction(dmasm::Instruction::DbgLine(line), _) => {
+				lines = Some(lines.map_or((*line, *line), |(a, b)| (a.min(*line), b.max(*line))));
+			}
+			_ => {}
+		}
+	}
+	let (first, last) = lines?;
+	Some((file?, first, last))
+}
+
 /// Index global variable users by disassembling all procs.
 /// Build lazily, only when a name is ambiguous.
 #[derive(Default)]
-struct WorldGlobals(Option<HashMap<Vec<u8>, Vec<(u32, String)>>>);
+struct WorldGlobals(Option<HashMap<Vec<u8>, Vec<(u32, String)>>>, Option<Vec<(Vec<u8>, Vec<u8>, u32, u32)>>);
 
 impl WorldGlobals {
+	/// Globals referenced by the global init proc, with file, name, line and
+	/// ID.
+	fn initialized(&mut self) -> &[(Vec<u8>, Vec<u8>, u32, u32)] {
+		self.1.get_or_insert_with(|| {
+			let Some(proc) = crate::unnamed::find(crate::unnamed::GLOBAL_INIT, 0) else {
+				return vec![];
+			};
+			let bytecode = original_bytecode(&proc);
+			let (nodes, _) = dmasm::disassembler::disassemble(&bytecode, &mut LenientDisassembleEnv);
+			let (mut file, mut line) = (vec![], 0);
+			let mut set = vec![];
+			for node in &nodes {
+				let Node::Instruction(ins, _) = node else { continue };
+				match ins {
+					dmasm::Instruction::DbgFile(name) => file = name.0.clone(),
+					dmasm::Instruction::DbgLine(at) => line = *at,
+					_ => {
+						for var in ins.variables() {
+							for global in var.globals() {
+								if let Some(id) = global.id {
+									set.push((file.clone(), global.name.0.clone(), line, id));
+								}
+							}
+						}
+					}
+				}
+			}
+			set
+		})
+	}
+
 	fn users(&mut self, name: &[u8]) -> &[(u32, String)] {
 		let map = self.0.get_or_insert_with(|| {
 			let mut map: HashMap<Vec<u8>, Vec<(u32, String)>> = HashMap::new();
@@ -2516,6 +2566,8 @@ struct ReloadEnv<'a> {
 	/// and name
 	new_statics: HashMap<(String, Vec<u8>), u32>,
 	instances: &'a mut StagedInstances,
+	/// Source file and line range of the proc.
+	place: Option<(Vec<u8>, u32, u32)>,
 	/// Lookup failure details more specific than the assembler error.
 	error: Option<String>
 }
@@ -2571,6 +2623,27 @@ impl dmasm::assembler::AssembleEnv for ReloadEnv<'_> {
 			let n = static_number(scope);
 			let id = self.proc_globals.get(name).and_then(|ids| ids.get(n)).copied();
 			let id = id.or_else(|| self.new_statics.get(&(scope.to_owned(), name.to_vec())).copied());
+			// For unread statics, find a matching initializer within the proc's
+			// source range, or fall back to a unique global of that name.
+			let id = id.or_else(|| {
+				let (file, first, last) = self.place.as_ref()?;
+				let set: Vec<u32> = self
+					.world_globals
+					.initialized()
+					.iter()
+					.filter(|(at, global, ..)| at == file && global == name)
+					.filter(|(.., line, _)| (*first..=*last).contains(line))
+					.map(|(.., id)| *id)
+					.collect();
+				match set[..] {
+					[id] => Some(id),
+					[] => match variable_ids(name)[..] {
+						[id] => Some(id),
+						_ => None
+					},
+					_ => None
+				}
+			});
 			if id.is_none() {
 				self.error = Some(format!(
 					"static local {}: cannot locate its storage in the running world; rebuild to use it",
