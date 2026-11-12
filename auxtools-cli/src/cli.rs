@@ -1279,7 +1279,12 @@ impl World {
 			Response::LinesWithCode { lines } => lines,
 			other => return Err(unexpected(&other))
 		};
+		let mut lines_known = || match self.request(Request::Files) {
+			Ok(Response::Files { files }) => files.iter().any(|name| name != "auxtools_launcher.dm"),
+			_ => true
+		};
 		Ok(match lines.last() {
+			None if !lines_known() => format!("cannot set a breakpoint at {}:{}: {}.", file, line, crate::adapter::NO_LINES),
 			None => format!(
 				"cannot set a breakpoint at {}:{}: the world has no code from a file named {}.",
 				file, line, file

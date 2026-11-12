@@ -49,6 +49,10 @@ const EXIT_GRACE: Duration = Duration::from_secs(5);
 const TERMINATE_GRACE: Duration = Duration::from_secs(5);
 /// Source file used for debugger helper procs.
 const HELPER_FILE: &str = "auxtools_launcher.dm";
+
+/// Diagnostic for line breakpoints in a world built without debug information.
+pub const NO_LINES: &str =
+	"the world was compiled without debug information, so it has no line numbers: add #define DEBUG to the .dme and rebuild, or break on a proc";
 /// Storage key for function breakpoints.
 const FUNCTION_BREAKPOINTS: &str = "<functions>";
 /// Progress operations indexed by their client-visible IDs.
@@ -1519,7 +1523,11 @@ impl Adapter {
 				line: line as u32
 			}) {
 				Ok(AuxResponse::Locate { instructions }) if instructions.is_empty() => {
-					breakpoints.push(unverified("no executable code at or after this line"));
+					breakpoints.push(unverified(if self.world_has_lines() {
+						"no executable code at or after this line"
+					} else {
+						NO_LINES
+					}));
 					continue;
 				}
 				Ok(AuxResponse::Locate { instructions }) => instructions,
@@ -2266,6 +2274,17 @@ impl Adapter {
 				Ok(serde_json::json!({ "breakpoints": breakpoints }))
 			}
 			other => Err(unexpected(other))
+		}
+	}
+
+	/// Whether the world has source files in its debug info, beyond the
+	/// launcher helpers.
+	fn world_has_lines(&mut self) -> bool {
+		match self.request(&AuxRequest::Files) {
+			Ok(AuxResponse::Files { files }) => files.iter().any(|file| file != HELPER_FILE),
+			// Keep the usual diagnostic if the request fails; missing debug
+			// info is unconfirmed.
+			_ => true
 		}
 	}
 

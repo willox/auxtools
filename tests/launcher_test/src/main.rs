@@ -174,6 +174,7 @@ fn main() {
 
 	attach_and_reload(&server, &library);
 	launch_from_the_command_line(&server);
+	without_debug_info(&server);
 	println!("all ok");
 }
 
@@ -1626,5 +1627,39 @@ fn launch_from_the_command_line(server: &str) {
 
 	// (the directory can outlast this on Windows, while its files are open)
 	let _ = std::fs::remove_file(dir.join("refuse_del"));
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Line breakpoints should explain missing debug info in non-DEBUG worlds.
+fn without_debug_info(server: &str) {
+	let (dir, dme) = attach_host_copy("nolines");
+	let text = std::fs::read_to_string(&dme).unwrap().replace("#define DEBUG\n", "");
+	std::fs::write(&dme, text).unwrap();
+	let res = Command::new(paths::find_dm()).with_byond_paths().arg(&dme).status().unwrap();
+	assert!(res.success(), "dreammaker build failed");
+	let dmb = dme.with_extension("dmb");
+
+	let mut started = Started::default();
+	let args = launch_args(&dmb, server, &["--detach", "--no-hot-reload", "--json"]);
+	let (got, printed) = launcher_command(&args.iter().map(String::as_str).collect::<Vec<_>>());
+	assert_eq!(got, 0, "unexpected launch --detach output: {}", printed);
+	let launched: serde_json::Value = serde_json::from_str(printed.lines().next().unwrap_or_default())
+		.unwrap_or_else(|_| panic!("unexpected launch --detach --json output: {}", printed));
+	let pid = launched["pid"].as_u64().unwrap();
+	started.pids.extend([pid, launched["launcher"].as_u64().unwrap()]);
+	let pid_text = pid.to_string();
+	let line = line_of(&dir.join("attach_host.dm"), "\ttick(1)").to_string();
+	let place = format!("attach_host.dm:{}", line);
+	let (got, printed) = launcher_command(&["--pid", &pid_text, "wait", "pause", "--break", &place, "--timeout", "5"]);
+	assert_eq!(got, 1, "a line breakpoint without debug info gave {}: {}", got, printed);
+	assert!(
+		printed.contains("the world was compiled without debug information"),
+		"a line breakpoint without debug info said {}",
+		printed
+	);
+	let (got, printed) = launcher_command(&["--pid", &pid_text, "stop", "--timeout", "10", "--kill"]);
+	assert_eq!(got, 0, "stop gave {}: {}", got, printed);
+	drop(started);
+	println!("ok: line breakpoints in a world without debug info");
 	let _ = std::fs::remove_dir_all(&dir);
 }
