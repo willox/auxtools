@@ -950,6 +950,15 @@ fn find_type(path: &str) -> Result<u32, String> {
 		.ok_or_else(|| format!("there's no type {} in the running world", path))
 }
 
+/// Resolve `/image` and its subtypes directly from the type table.
+/// text2path("/image") can return null before a rebooted world starts
+/// executing.
+pub(crate) fn image_type(path: &str) -> Option<u32> {
+	let id = find_type(path).ok()?;
+	let image = find_type("/image").ok()?;
+	type_and_ancestors(id).contains(&image).then_some(id)
+}
+
 /// The types `type_id` is or descends from, itself first.
 fn type_and_ancestors(type_id: u32) -> Vec<u32> {
 	let mut out = vec![type_id];

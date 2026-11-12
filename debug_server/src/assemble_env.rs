@@ -89,6 +89,9 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 		if let Some(res) = Self::eval_with_name("text2path(name)", path) {
 			return Some((res.raw.tag as u8, unsafe { res.raw.data.id }));
 		}
+		if let Some(id) = crate::hot_reload::image_type(path) {
+			return Some((raw_types::values::ValueTag::ImageTypepath as u8, id));
+		}
 
 		// A reference to a proc written without `/proc/`, like /obj/foo/bar,
 		// is one text2path() doesn't know
