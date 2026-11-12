@@ -340,8 +340,17 @@ unsafe fn thrown(ctx: *mut raw_types::procs::ExecutionContext) -> String {
 		return "an exception".to_owned();
 	}
 	let value = unsafe { Value::from_raw(*(*(*ctx).stack()).add(size - 1)) };
-	if let Ok(name) = value.get_string(byond_string!("name")) {
-		return name;
+	if let Ok(name) = value.get(byond_string!("name")) {
+		if let Ok(text) = name.as_string() {
+			return text;
+		}
+		// EXCEPTION(object) uses the object as its name; report that instead of
+		// "/exception".
+		if name != Value::NULL {
+			if let Ok(text) = name.to_string() {
+				return text;
+			}
+		}
 	}
 	match value.as_string() {
 		Ok(text) => text,

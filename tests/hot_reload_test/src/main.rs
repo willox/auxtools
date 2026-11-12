@@ -493,11 +493,25 @@ fn main() {
 	client.resume();
 	println!("ok: runtime error in reloaded code");
 
+	// Report the object used to name an exception.
+	let changes = source.edit(
+		"reload.dm",
+		"\tvar/list/nothing\n\treturn nothing.len",
+		"\tthrow EXCEPTION(new /datum/animal/cat)"
+	);
+	reload(&mut watcher, &changes);
+	eval(&mut client, "arm_runtime()");
+	match client.expect_pause() {
+		BreakpointReason::Runtime { message, .. } => assert_eq!(message, "/datum/animal/cat"),
+		other => panic!("expected a runtime, got {:?}", other)
+	}
+	client.resume();
+	println!("ok: exception named with an object");
 	// Resolve resource paths with different filename case, matching DreamMaker.
 	std::fs::write(source.dir.join("Case_Probe.txt"), "found").unwrap();
 	let changes = source.edit(
 		"reload.dm",
-		"/proc/runtime_target()\n\tvar/list/nothing\n\treturn nothing.len",
+		"/proc/runtime_target()\n\tthrow EXCEPTION(new /datum/animal/cat)",
 		"/proc/runtime_target()\n\treturn file2text('case_probe.txt')"
 	);
 	reload(&mut watcher, &changes);
