@@ -196,12 +196,14 @@ Reloads are restored after reboot.
 
 Supported changes include proc bodies, new procs and verbs, removals, new types
 (including mobs), new variables and static locals, variable types and defaults,
-parameters, `in` lists, prefabs and `set` statements. Type proc definitions can be
-inserted or removed between existing overrides.
+changes to `static`, `const` and `tmp` variable declarations,
+parameters (including `as` input types), `in` lists, prefabs and `set` statements.
+Proc, verb, world proc and global proc definitions can be inserted or removed
+between existing overrides.
 
-Changes requiring a rebuild include parent types; declaration flags such as
-`static`, `tmp`, `const` and `as`; non-terminal additions or removals of verb and
-global proc definitions; and unsupported built-in defaults such as `ckey`.
+Changes requiring a rebuild include parent types; proc declaration changes,
+such as switching between proc and verb or adding `final`; and unsupported
+built-in defaults such as `ckey`.
 
 Active calls finish on their original code. Existing instances retain their verbs
 and built-in values. Computed defaults apply to new instances. New computed
