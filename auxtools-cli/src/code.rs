@@ -29,6 +29,8 @@ const STAMP_LAG: Duration = Duration::from_millis(50);
 
 pub struct Options {
 	pub dme: PathBuf,
+	/// The running .dmb; rebuilds establish a new source baseline.
+	pub dmb: PathBuf,
 	/// DreamMaker's command line defines, as `(name, value)`
 	pub defines: Vec<(String, Option<String>)>,
 	pub hot_reload: bool
@@ -214,7 +216,7 @@ impl Code {
 	}
 
 	fn dmb_modified(&self) -> Option<SystemTime> {
-		std::fs::metadata(self.options.dme.with_extension("dmb")).and_then(|m| m.modified()).ok()
+		std::fs::metadata(&self.options.dmb).and_then(|m| m.modified()).ok()
 	}
 
 	fn watch(&self, watching: &mut Watching) {

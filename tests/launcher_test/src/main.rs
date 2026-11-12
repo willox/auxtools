@@ -177,6 +177,7 @@ fn main() {
 	without_debug_info(&server);
 	unread_statics(&server);
 	errored_baseline(&server);
+	dmb_elsewhere(&server);
 	println!("all ok");
 }
 
@@ -1391,6 +1392,43 @@ fn errored_baseline(server: &str) {
 	drop(started);
 	let _ = std::fs::remove_dir_all(&dir);
 	println!("ok: repaired baseline errors do not duplicate definitions");
+}
+
+/// Detect rebuilds of a .dmb outside the source directory and avoid reapplying
+/// changes already included in it.
+fn dmb_elsewhere(server: &str) {
+	let (dir, dme) = attach_host_copy("elsewhere");
+	let built = dme.with_extension("dmb");
+	let dmb = dir.join("build").join("attach_host.dmb");
+	std::fs::create_dir_all(dmb.parent().unwrap()).unwrap();
+	std::fs::rename(&built, &dmb).unwrap();
+	let mut started = Started::default();
+	let args = launch_args(&dmb, server, &["--detach", "--json", "--dme", dme.to_str().unwrap()]);
+	let (got, printed) = launcher_command(&args.iter().map(String::as_str).collect::<Vec<_>>());
+	assert_eq!(got, 0, "unexpected launch --detach output: {}", printed);
+	let up: serde_json::Value = serde_json::from_str(&printed).unwrap_or_else(|_| panic!("unexpected launch --detach --json output: {}", printed));
+	let (pid, launcher) = (up["pid"].as_u64().unwrap(), up["launcher"].as_u64().unwrap());
+	started.pids.extend([pid, launcher]);
+	let pid = pid.to_string();
+	let run = |args: &[&str]| {
+		let args: Vec<&str> = ["--pid", pid.as_str()].iter().chain(args).copied().collect();
+		launcher_command(&args).1
+	};
+
+	let code = dir.join("attach_host.dm");
+	let source = std::fs::read_to_string(&code).unwrap();
+	std::fs::write(&code, format!("{}\n/proc/added_here()\n\treturn 99\n", source)).unwrap();
+	wait_for_text("the world", "99", || run(&["eval", "added_here()"]));
+	let res = Command::new(paths::find_dm()).with_byond_paths().arg(&dme).status().unwrap();
+	assert!(res.success(), "dreammaker build failed");
+	std::fs::rename(&built, &dmb).unwrap();
+	assert_eq!(run(&["reboot", "--timeout", "60"]).trim(), format!("pid {}: rebooted", pid));
+	let printed = run(&["proc", "/added_here"]);
+	assert!(printed.contains("definitions: 1\n"), "proc said {}", printed);
+	assert_eq!(run(&["stop"]).trim(), format!("pid {}: stopped", pid));
+	drop(started);
+	println!("ok: a rebuilt .dmb that isn't beside its .dme");
+	let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// `auxtools launch`, `stop` and `reboot`: worlds the command line starts and

@@ -1003,13 +1003,12 @@ impl Adapter {
 	/// Resolve and parse the project source for hot reload.
 	/// The world supplies proc locations independently.
 	fn start_code(&mut self, settings: CodeSettings) {
-		let dme = settings.dme.or_else(|| {
-			// The world's command line says which .dmb it runs
-			let AuxResponse::WorldInfo { args, cwd } = self.request(&AuxRequest::WorldInfo).ok()? else {
-				return None;
-			};
-			Some(local::world_dmb(&args, &cwd)?.with_extension("dme"))
-		});
+		// The world's command line says which .dmb it runs
+		let dmb = match self.request(&AuxRequest::WorldInfo) {
+			Ok(AuxResponse::WorldInfo { args, cwd }) => local::world_dmb(&args, &cwd),
+			_ => None
+		};
+		let dme = settings.dme.or_else(|| Some(dmb.as_ref()?.with_extension("dme")));
 		*self.files.lock().unwrap() = files::WorldFiles::new(dme.as_ref().and_then(|dme| std::path::absolute(dme).ok()));
 		self.hot_reload = settings.hot_reload;
 		if !settings.hot_reload {
@@ -1023,6 +1022,9 @@ impl Adapter {
 		};
 
 		let options = code::Options {
+			// Prefer the world's actual .dmb when available locally. Remote
+			// worlds may report paths that do not exist on this machine.
+			dmb: dmb.filter(|dmb| dmb.exists()).unwrap_or_else(|| dme.with_extension("dmb")),
 			dme,
 			defines: settings.defines.iter().map(|define| code::parse_define(define)).collect(),
 			hot_reload: settings.hot_reload
