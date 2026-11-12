@@ -157,8 +157,10 @@ for (var/mob/M in world)
 n
 ```
 
-The result is the returned value, or the final expression. Bodies can modify frame
-variables. Evaluation is aborted if it sleeps or calls a sleeping proc.
+The result is the returned value or final expression. A body ending with a
+statement, including an assignment or increment, returns `.`, as a proc does.
+Bodies can modify frame variables. Compiler warnings accompany the result.
+Evaluation is aborted if it sleeps or calls a sleeping proc.
 
 Source `#define`s are available in evaluations and logpoints when the launcher has
 parsed the project for hot reload. Definitions update on reload; undefined macros
@@ -206,6 +208,12 @@ between existing overrides.
 Changes requiring a rebuild include parent types; proc declaration changes,
 such as switching between proc and verb or adding `final`; and unsupported
 built-in defaults such as `ckey`.
+
+Reloaded and evaluated code preserves DreamMaker's field caching: after
+`a.b.f()`, a later `a.b.x` in the same flow can use the old object even if
+`f()` replaced `a.b`. This common pattern does not warn. Read the field into
+a local when a call may replace it. Other compatibility differences and
+copied quirks are reported as warnings.
 
 Active calls finish on their original code. Existing instances retain their verbs
 and built-in values. Computed defaults apply to new instances. New computed

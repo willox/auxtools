@@ -224,7 +224,8 @@ auxtools [--pid PID] eval - [OPTIONS]",
   In a paused world, expressions can access frame variables and src.
   In a running world, expressions can access globals and call procs.
   Several statements form a proc body: separate them with newlines or ';'.
-  A proc body yields its return value, or the value of a final expression.
+  A proc body yields its return value or final expression. A final statement,
+  including an assignment or increment, leaves `.` as the result.
   Expressions can use the project's #define macros when the world was started
   by launch with hot reload enabled.
   Evaluation can change world state through assignments and proc calls.
