@@ -246,6 +246,21 @@ fn procs(pid: &str, code: &Path) {
 	run(pid, &["eval", "auxtools_kept()[\"kept\"] = new /datum/twice"], 0);
 	assert_eq!(run(pid, &["eval", "auxtools_kept()[\"kept\"]:type"], 0).out, "/datum/twice\n");
 	println!("ok: values kept between evaluations");
+	// Expose only the active slot for duplicate local names in separate loops.
+	for (marker, value) in [("\t\ttotal += i // first loop", "1"), ("\t\ttotal += i // second loop", "10")] {
+		let place = format!("attach_host.dm:{}", line_of(code, marker));
+		let waiting = crate::journal::Background::start(pid.parse().unwrap(), &["wait", "pause", "--break", &place, "--timeout", "60"]);
+		std::thread::sleep(std::time::Duration::from_secs(1));
+		run(pid, &["eval", "--spawn", "two_loops()"], 0);
+		let (exit, printed) = waiting.finish();
+		assert_eq!(exit, 0, "unexpected wait output: {}", printed);
+		let vars = run(pid, &["vars"], 0).out;
+		assert_eq!(vars.matches("  i = ").count(), 1, "vars said {}", vars);
+		assert!(vars.contains(&format!("  i = {}\n", value)), "vars said {}", vars);
+		assert_eq!(run(pid, &["eval", "i"], 0).out.trim(), value);
+		run(pid, &["continue"], 0);
+	}
+	println!("ok: a local's name means the one in use");
 	// value() was hot reloaded before this
 	let printed = run(pid, &["proc", "/proc/value"], 0).out;
 	assert_eq!(

@@ -99,6 +99,14 @@ var/datum/held/held = new
 // BYOND assigns the var initializer path /datum/inits/proc/(init) after startup.
 /datum/inits
 	var/list/given = list(1)
+// Two loops with separate local slots named i.
+/proc/two_loops()
+	var/total = 0
+	for(var/i = 1, i <= 3, i++)
+		total += i // first loop
+	for(var/i in list(10, 20))
+		total += i // second loop
+	return total
 
 // For the command line's eval: a runtime error two procs down from it, and
 // one a proc catches itself

@@ -639,6 +639,45 @@ impl Server {
 		place
 	}
 
+	/// Resolve duplicate local names using each slot's first and last bytecode
+	/// use; BYOND stores no lexical scopes. Prefer an active slot, then the
+	/// latest first use (the inner slot in nested blocks). If none is active,
+	/// use the most recently started slot; before any use, expose none. Unique
+	/// names remain visible throughout. Return `None` for hidden slots.
+	pub(crate) fn visible_locals(frame: &debug::StackFrame) -> Vec<Option<String>> {
+		let names: Vec<String> = frame.locals.iter().map(|(name, _)| String::from(name)).collect();
+		let shared = |name: &String| names.iter().filter(|other| *other == name).count() > 1;
+		if !names.iter().any(shared) {
+			return names.into_iter().map(Some).collect();
+		}
+		let code = Self::old_code_of(frame).unwrap_or_else(|| original_bytecode(&frame.proc));
+		let used = local_uses(&code);
+		let at = frame.offset as u32;
+		// Rank started slots by active use, then latest first use.
+		let rank = |slot: usize| {
+			used.get(&(slot as u32))
+				.filter(|(first, _)| *first <= at)
+				.map(|(first, last)| (at <= *last, *first))
+		};
+		names
+			.iter()
+			.enumerate()
+			.map(|(slot, name)| {
+				if !shared(name) {
+					return Some(name.clone());
+				}
+				let mine = rank(slot)?;
+				let meant = names
+					.iter()
+					.enumerate()
+					.filter(|(other, other_name)| *other != slot && *other_name == name)
+					.filter_map(|(other, _)| rank(other))
+					.all(|theirs| theirs < mine);
+				meant.then(|| name.clone())
+			})
+			.collect()
+	}
+
 	/// Find a frame's pre-reload bytecode. Return `None` if it matches current
 	/// code or differs only in line numbers, which can use current mappings.
 	fn old_code_of(frame: &debug::StackFrame) -> Option<Vec<u32>> {
@@ -1578,13 +1617,12 @@ impl Server {
 		};
 		let mut vars = vec![self.value_to_variable(".".to_owned(), &frame.dot, Some(".".to_owned()))];
 
-		for (name, local) in &frame.locals {
-			// Two of one name (each in a block of its own) can't both be
-			// meant by it
-			let name = String::from(name);
-			let alone = frame.locals.iter().filter(|(other, _)| String::from(other) == name).count() == 1;
-			let expr = alone.then(|| name.clone());
-			vars.push(self.value_to_variable(name, local, expr));
+		// Only expose the local selected by the bytecode-use heuristic for each
+		// name.
+		for (name, (_, local)) in Self::visible_locals(&frame).into_iter().zip(&frame.locals) {
+			if let Some(name) = name {
+				vars.push(self.value_to_variable(name.clone(), local, Some(name)));
+			}
 		}
 
 		vars
@@ -2004,7 +2042,7 @@ impl Server {
 							.filter_map(|(name, _)| name.as_ref())
 							.map(|name| (String::from(name), false))
 					);
-					found.extend(frame.locals.iter().map(|(name, _)| (String::from(name), false)));
+					found.extend(Self::visible_locals(&frame).into_iter().flatten().map(|name| (name, false)));
 					src = Some(frame.src.clone()).filter(|src| *src != Value::NULL);
 				}
 				if let Some(src) = &src {
@@ -2068,7 +2106,8 @@ impl Server {
 					unsafe { put((*frame.context).dot_mut(), value) };
 					return Ok(());
 				}
-				let mut named = frame.locals.iter().enumerate().filter(|(_, (local, _))| String::from(local) == name);
+				let visible = Self::visible_locals(&frame);
+				let mut named = visible.iter().enumerate().filter(|(_, local)| local.as_deref() == Some(name));
 				match (named.next(), named.next()) {
 					(Some((index, _)), None) => {
 						unsafe { put((*(*frame.context).locals()).add(index), value) };
@@ -2376,8 +2415,11 @@ impl Server {
 					}
 				}
 
-				for (idx, local) in frame.locals.iter().enumerate() {
-					args.push(((&local.0).into(), local.1.clone(), ArgType::Local(idx as u32)));
+				// Exclude hidden duplicate locals from evaluation names.
+				for (idx, (local, name)) in frame.locals.iter().zip(Self::visible_locals(&frame)).enumerate() {
+					if let Some(name) = name {
+						args.push((name, local.1.clone(), ArgType::Local(idx as u32)));
+					}
 				}
 
 				(frame.context, frame.instance, args)
@@ -3722,6 +3764,55 @@ impl ServerThread {
 		let _ = self.events.send(Event::Disconnected(id));
 		waker::event_sent();
 	}
+}
+
+/// Cache each local slot's first and last bytecode uses by code content.
+/// Breakpoint conditions need this lookup on every hit.
+fn local_uses(code: &[u32]) -> std::sync::Arc<HashMap<u32, (u32, u32)>> {
+	use std::hash::{Hash, Hasher};
+	type Uses = std::sync::Arc<HashMap<u32, (u32, u32)>>;
+	static USES: std::sync::LazyLock<Mutex<HashMap<(u64, usize), Uses>>> = std::sync::LazyLock::new(Default::default);
+	const KEEP: usize = 1024;
+
+	fn locals_in(var: &dmasm::Variable, found: &mut Vec<u32>) {
+		match var {
+			dmasm::Variable::Local(slot) => found.push(*slot),
+			dmasm::Variable::SetCache(a, b) => {
+				locals_in(a, found);
+				locals_in(b, found);
+			}
+			dmasm::Variable::Initial(inner) | dmasm::Variable::IsSaved(inner) => locals_in(inner, found),
+			_ => {}
+		}
+	}
+	let key = {
+		let mut hasher = std::collections::hash_map::DefaultHasher::new();
+		code.hash(&mut hasher);
+		(hasher.finish(), code.len())
+	};
+	if let Some(uses) = USES.lock().unwrap().get(&key) {
+		return uses.clone();
+	}
+	let (nodes, _) = dmasm::disassembler::disassemble(code, &mut disassemble_env::DisassembleEnv);
+	let mut uses: HashMap<u32, (u32, u32)> = HashMap::new();
+	for node in &nodes {
+		let dmasm::Node::Instruction(ins, debug) = node else { continue };
+		let mut found = vec![];
+		for var in ins.variables() {
+			locals_in(var, &mut found);
+		}
+		for slot in found {
+			let at = debug.offset as u32;
+			uses.entry(slot).and_modify(|(_, last)| *last = at).or_insert((at, at));
+		}
+	}
+	let uses = std::sync::Arc::new(uses);
+	let mut kept = USES.lock().unwrap();
+	if kept.len() >= KEEP {
+		kept.clear();
+	}
+	kept.insert(key, uses.clone());
+	uses
 }
 
 #[cfg(test)]

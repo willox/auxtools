@@ -56,7 +56,12 @@ impl Server {
 			Variables::Locals { frame } => {
 				let frame = self.get_stack_frame(frame).ok_or_else(gone)?;
 				let mut values = vec![(".".to_owned(), frame.dot.clone())];
-				values.extend(frame.locals.iter().map(|(name, value)| (String::from(name), value.clone())));
+				values.extend(
+					Self::visible_locals(&frame)
+						.into_iter()
+						.zip(&frame.locals)
+						.filter_map(|(name, (_, value))| Some((name?, value.clone())))
+				);
 				Ok(values)
 			}
 			Variables::Globals | Variables::Builtins => {

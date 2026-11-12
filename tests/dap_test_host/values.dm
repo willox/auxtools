@@ -57,10 +57,10 @@
 	// Two locals of one name, each in a block of its own
 	if (whole)
 		var/twin = 1
-		whole += twin - 1
+		whole += twin - 1 // @twin_1
 	if (fraction)
 		var/twin = 2
-		whole += twin - 2
+		whole += twin - 2 // @twin_2
 	. = "dot"
 	whole += length(args) // @values_stop
 	fdel("dap_test.sav")

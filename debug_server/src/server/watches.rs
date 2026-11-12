@@ -296,7 +296,8 @@ impl Server {
 		if name == "." {
 			return Ok(Some(Slot::Dot));
 		}
-		let mut locals = frame.locals.iter().enumerate().filter(|(_, (local, _))| String::from(local) == name);
+		let visible = Self::visible_locals(frame);
+		let mut locals = visible.iter().enumerate().filter(|(_, local)| local.as_deref() == Some(name));
 		match (locals.next(), locals.next()) {
 			(Some((index, _)), None) => return Ok(Some(Slot::Local(index))),
 			(Some(_), Some(_)) => return Err(format!("the proc has more than one local called {}", name)),
