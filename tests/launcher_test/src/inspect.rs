@@ -345,6 +345,29 @@ fn where_breakpoints_bound(pid: &str, code: &Path) {
 	);
 	println!("ok: resolved wait breakpoint locations");
 
+	// Global init has no path and runs before clients can attach.
+	let info = run(pid, &["proc", "(global init)"], 0).out;
+	assert!(
+		info.starts_with("(global init)  attach_host.dm:") && info.ends_with("\ndefinitions: 1\nreloaded: no\n"),
+		"unexpected proc output: {}",
+		info
+	);
+	let cached = line_of(code, "\tvar/static/list/cache = list()");
+	let ran = run(
+		pid,
+		&["wait", "pause", "--break", &format!("attach_host.dm:{}", cached), "--timeout", "1"],
+		2
+	);
+	assert_eq!(
+		ran.err,
+		format!(
+			"breakpoint set at (global init)  attach_host.dm:{}: this line initializes globals or static vars only at world startup\nerror: timed \
+			 out after 1 second waiting for the world to pause.\n",
+			cached
+		)
+	);
+	println!("ok: initializer proc names");
+
 	let last = line_of(code, "\treturn \"last [rounds]\"");
 	let nowhere = [
 		(

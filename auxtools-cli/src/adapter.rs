@@ -1615,11 +1615,13 @@ impl Adapter {
 			};
 
 			let mut result = None;
+			let mut at_start = false;
 			for instruction in instructions {
 				let mut at = None;
 				match self.set_breakpoint(&instruction, condition.clone(), hit, log.clone()) {
 					Ok(Some((set_line, set_at))) => {
 						result.get_or_insert(Ok(set_line));
+						at_start |= set_at.proc.path == GLOBAL_INIT;
 						at = Some(set_at);
 					}
 					Ok(None) => {}
@@ -1639,6 +1641,7 @@ impl Adapter {
 					id: Some(number),
 					verified: true,
 					line: Some(set_line.unwrap_or(line as u32).into()),
+					message: at_start.then(|| "This line initializes globals or static vars only at world startup.".to_owned()),
 					..Default::default()
 				},
 				Some(Err(e)) => unverified(&e),
@@ -2611,6 +2614,9 @@ fn instruction_window(
 		})
 		.collect()
 }
+
+/// Server name for the global and static initializer proc.
+const GLOBAL_INIT: &str = "(global init)";
 
 /// Parse a function breakpoint path and optional zero-based `#N` override.
 fn named_proc(name: &str) -> ProcRef {

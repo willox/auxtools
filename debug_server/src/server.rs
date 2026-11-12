@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{
 	connection::{self, Connection},
-	hot_reload, journal, mem_profiler, waker
+	hot_reload, journal, mem_profiler, unnamed, waker
 };
 
 mod render;
@@ -626,8 +626,7 @@ impl Server {
 	fn context_place(ctx: *mut raw_types::procs::ExecutionContext) -> String {
 		let proc = Proc::from_id(unsafe { (**(*ctx).proc_instance()).proc });
 		let mut place = match &proc {
-			Some(proc) if proc.override_id() > 0 => format!("{}#{}", proc.path, proc.override_id()),
-			Some(proc) => proc.path.clone(),
+			Some(proc) => unnamed::proc_name(proc),
 			None => "a proc the world doesn't have".to_owned()
 		};
 		// The world keeps the line it's on when it has its code's lines
@@ -741,10 +740,7 @@ impl Server {
 		}
 
 		Ok(Disassembly {
-			proc: ProcRef {
-				path: proc.path.clone(),
-				override_id: proc.override_id()
-			},
+			proc: unnamed::proc_ref(&proc),
 			file: Self::file_of(&proc),
 			instructions,
 			error: error.map(|error| format!("{:?}", error))
@@ -754,8 +750,8 @@ impl Server {
 	/// Where a proc is, how many definitions its path has, and what hot
 	/// reloads did to it (`Request::ProcInfo`)
 	fn proc_info(wanted: &ProcRef) -> Result<ProcInfo, String> {
-		let definitions = (0..).take_while(|&n| Proc::find_override(wanted.path.as_str(), n).is_some()).count() as u32;
-		let proc = match Proc::find_override(wanted.path.as_str(), wanted.override_id) {
+		let definitions = (0..).take_while(|&n| unnamed::find(&wanted.path, n).is_some()).count() as u32;
+		let proc = match unnamed::find(&wanted.path, wanted.override_id) {
 			Some(proc) => proc,
 			None if definitions == 0 => return Err(format!("the world has no proc {}", wanted.path)),
 			None if definitions == 1 => return Err(format!("{} has one definition, #0: there's no #{}", wanted.path, wanted.override_id)),
@@ -770,10 +766,7 @@ impl Server {
 			}
 		};
 		Ok(ProcInfo {
-			proc: ProcRef {
-				path: proc.path.clone(),
-				override_id: proc.override_id()
-			},
+			proc: unnamed::proc_ref(&proc),
 			code: CodeRef { proc: proc.id.0, old: 0 },
 			file: Self::file_of(&proc),
 			line: Self::lines_of(&proc).into_iter().next(),
@@ -808,10 +801,7 @@ impl Server {
 		StackFrame {
 			id,
 			instruction: InstructionRef {
-				proc: ProcRef {
-					path: frame.proc.path.to_owned(),
-					override_id: frame.proc.override_id()
-				},
+				proc: unnamed::proc_ref(&frame.proc),
 				offset: frame.offset as u32
 			},
 			line,
@@ -916,10 +906,7 @@ impl Server {
 			.filter_map(|id| Proc::from_id(raw_types::procs::ProcId(id)))
 			.map(|proc| {
 				let lines = Self::lines_in(&proc, &files);
-				let proc = ProcRef {
-					path: proc.path.clone(),
-					override_id: proc.override_id()
-				};
+				let proc = unnamed::proc_ref(&proc);
 				(proc, lines)
 			})
 			.collect();
@@ -1117,7 +1104,7 @@ impl Server {
 	/// (`normalized`) when they're given, as a proc can have code of several
 	/// (see `place_in`)
 	fn offset_of(&self, proc: ProcRef, line: u32, files: Option<&[String]>) -> Option<u32> {
-		let proc = auxtools::Proc::find_override(proc.path, proc.override_id)?;
+		let proc = unnamed::find(&proc.path, proc.override_id)?;
 		let mut offset = None;
 		let mut at_offset = false;
 		let mut other_file = false;
@@ -1643,10 +1630,7 @@ impl Server {
 		log: Option<Vec<LogPart>>,
 		exactly: bool
 	) {
-		let (Some(proc), Some(client)) = (
-			auxtools::Proc::find_override(instruction.proc.path.clone(), instruction.proc.override_id),
-			self.current
-		) else {
+		let (Some(proc), Some(client)) = (unnamed::find(&instruction.proc.path, instruction.proc.override_id), self.current) else {
 			self.send_or_disconnect(Response::BreakpointSet {
 				result: BreakpointSetResult::Failed
 			});
@@ -1703,10 +1687,7 @@ impl Server {
 					.retain(|&(id, from, who), &mut at| id != proc.id || who != (client, placed) || (at != offset && from != offset));
 
 				// As the proc itself names it, whatever the client called it
-				instruction.proc = ProcRef {
-					path: proc.path.clone(),
-					override_id: proc.override_id()
-				};
+				instruction.proc = unnamed::proc_ref(&proc);
 				self.send_or_disconnect(Response::BreakpointSet {
 					result: BreakpointSetResult::Success { line, at: instruction, file }
 				});
@@ -1756,10 +1737,7 @@ impl Server {
 	}
 
 	fn handle_breakpoint_unset(&mut self, instruction: InstructionRef, exactly: bool) {
-		let (Some(proc), Some(client)) = (
-			auxtools::Proc::find_override(instruction.proc.path, instruction.proc.override_id),
-			self.current
-		) else {
+		let (Some(proc), Some(client)) = (unnamed::find(&instruction.proc.path, instruction.proc.override_id), self.current) else {
 			self.send_or_disconnect(Response::BreakpointUnset { success: false, skipped: 0 });
 			return;
 		};
@@ -1818,7 +1796,7 @@ impl Server {
 						let (file, line) = self.frame_place(&stack[0], position != 0);
 						Stack {
 							id: self.thread_of(stack),
-							name: stack[0].proc.path.clone(),
+							name: unnamed::proc_name(&stack[0].proc),
 							file,
 							line,
 							sleeping: position != 0
@@ -2224,9 +2202,8 @@ impl Server {
 							self.handle_disassemble(proc, id)
 						} else if let Some(frame_id) = frame_id {
 							if let Some(frame) = self.get_stack_frame(frame_id) {
-								let proc = frame.proc.path.clone();
-								let id = frame.proc.override_id();
-								self.handle_disassemble(&proc, id)
+								let proc = unnamed::proc_ref(&frame.proc);
+								self.handle_disassemble(&proc.path, proc.override_id)
 							} else {
 								"couldn't find stack frame (is execution not paused?)".to_owned()
 							}
@@ -2889,7 +2866,7 @@ impl Server {
 	}
 
 	fn handle_disassemble(&mut self, path: &str, id: u32) -> String {
-		match auxtools::Proc::find_override(path, id) {
+		match unnamed::find(path, id) {
 			Some(proc) => {
 				// The live bytecode has our breakpoints patched into it, which
 				// nobody wants to read
@@ -3225,10 +3202,7 @@ impl Server {
 				.and_then(|state| state.active().get(1))
 				.map(|frame| self.frame_info(frame, 1, false));
 			let logged = Proc::from_id(proc).map(|proc| {
-				let place = ProcRef {
-					path: proc.path.clone(),
-					override_id: proc.override_id()
-				};
+				let place = unnamed::proc_ref(&proc);
 				let (file, line) = Self::place_of(&proc, offset as u32);
 				Response::Log {
 					message,
@@ -3259,7 +3233,7 @@ impl Server {
 		let place = match Proc::from_id(key.0) {
 			Some(proc) => match Self::place_of(&proc, key.1 as u32) {
 				(Some(file), Some(line)) => format!(" at {}:{}", file, line),
-				_ => format!(" in {}", proc.path)
+				_ => format!(" in {}", unnamed::proc_name(&proc))
 			},
 			None => String::new()
 		};
@@ -3332,10 +3306,10 @@ impl Server {
 		let at = unsafe {
 			let proc = Proc::from_id((*(*(*_ctx).proc_instance())).proc);
 			InstructionRef {
-				proc: ProcRef {
-					path: proc.as_ref().map(|proc| proc.path.clone()).unwrap_or_default(),
-					override_id: proc.as_ref().map_or(0, Proc::override_id)
-				},
+				proc: proc.as_ref().map(unnamed::proc_ref).unwrap_or(ProcRef {
+					path: String::new(),
+					override_id: 0
+				}),
 				offset: u32::from(*(*_ctx).bytecode_offset())
 			}
 		};
@@ -3652,10 +3626,7 @@ impl Server {
 			.map(|frame| {
 				let (file, line) = self.frame_place(frame, false);
 				JournalFrame {
-					proc: match frame.proc.override_id() {
-						0 => frame.proc.path.clone(),
-						n => format!("{}#{}", frame.proc.path, n)
-					},
+					proc: unnamed::proc_name(&frame.proc),
 					file,
 					line
 				}

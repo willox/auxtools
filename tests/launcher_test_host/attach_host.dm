@@ -14,6 +14,10 @@ var/datum/held/held = new
 /datum/held
 	var/count = 3
 
+// A static initializer evaluated once at world startup.
+/datum/cached
+	var/static/list/cache = list()
+
 /datum/held/proc/double(n)
 	return n * 2
 

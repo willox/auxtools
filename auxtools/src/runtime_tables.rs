@@ -1163,6 +1163,19 @@ pub fn in_list_count() -> Result<u32, String> {
 	Ok(unsafe { *functions()?.in_list_count })
 }
 
+/// The procs that return parameters' `in` lists, by index.
+pub fn in_list_procs() -> Result<Vec<u32>, String> {
+	let functions = functions()?;
+	unsafe {
+		let count = *functions.in_list_count as usize;
+		let table = *functions.in_list_procs;
+		if table.is_null() {
+			return Ok(vec![]);
+		}
+		Ok(std::slice::from_raw_parts(table, count).to_vec())
+	}
+}
+
 /// Adds a proc that returns a parameter's `in` list, and returns the index
 /// the parameter's word (`(index << 8) | 0x40`) gives it.
 pub fn add_in_list(proc: ProcId) -> Result<u32, String> {

@@ -261,6 +261,8 @@ Exit codes:
 		summary: "Show a proc's source location, definition count, and hot reload status.",
 		usage: "auxtools [--pid PID] proc /PATH[#N] [--json]",
 		arguments: "/PATH  Proc path, with or without /proc/: /mob/proc/attack or /mob/attack.
+       Procs without a path go by the names stacks show: (global init),
+       (in list) and (var initializer).
 #N     Zero-based definition index. [default: 0]",
 		sections: "Output:
   JSON contains proc, file, line, definitions, and reloaded.
@@ -271,7 +273,8 @@ Exit codes:
 		brief: "Show a proc's current bytecode",
 		summary: "Disassemble a proc's current bytecode.",
 		usage: "auxtools [--pid PID] disassemble /PATH[#N] [--json]",
-		arguments: "/PATH  Proc path, with or without /proc/.
+		arguments: "/PATH  Proc path, with or without /proc/, or a name stacks show for
+       a proc without a path, such as (global init).
 #N     Zero-based definition index. [default: 0]",
 		sections: "Output:
   Instructions include bytecode offsets, instruction text, and source lines.

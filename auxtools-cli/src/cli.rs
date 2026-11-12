@@ -262,9 +262,10 @@ fn expression(words: &[String], file: Option<&std::path::Path>, stdin: impl FnOn
 	Ok(expression)
 }
 
-/// Parse `/path` or `/path#N`, where N is the zero-based override index.
+/// Parse `/path` or `/path#N`, where N is the zero-based override index, or
+/// the name of a proc without a path, such as `(global init)`.
 fn proc_ref(text: &str) -> Result<ProcRef> {
-	if !text.starts_with('/') {
+	if !text.starts_with(['/', '(']) {
 		return Err(format!("invalid proc path '{}': expected /PATH[#N].", text).into());
 	}
 	let (path, override_id) = match text.split_once('#') {
@@ -1312,7 +1313,7 @@ impl World {
 	/// resolve to multiple procs. Reject targets without executable code.
 	/// With `log`, hits emit `Response::Log` without pausing.
 	fn set_breakpoint(&mut self, place: &str, condition: Option<String>, log: Option<Vec<LogPart>>) -> Result<Vec<Bound>> {
-		let (instructions, asked_line) = if place.starts_with('/') {
+		let (instructions, asked_line) = if place.starts_with(['/', '(']) {
 			// Asked first, for what's wrong with it if it isn't there
 			let proc = self
 				.find_proc(&proc_ref(place)?)
@@ -1395,6 +1396,9 @@ impl World {
 	}
 }
 
+/// Server name for the global and static initializer proc.
+const GLOBAL_INIT: &str = "(global init)";
+
 /// A breakpoint that was set
 struct Bound {
 	/// The place it was asked for, as it was given
@@ -1422,6 +1426,9 @@ impl Bound {
 			if asked != line {
 				text += &format!(" (line {} has no code; this is the next line that has)", asked);
 			}
+		}
+		if self.at.proc.path == GLOBAL_INIT {
+			text += ": this line initializes globals or static vars only at world startup";
 		}
 		text
 	}
@@ -1545,6 +1552,8 @@ mod tests {
 		assert_eq!((proc.path.as_str(), proc.override_id), ("/mob/proc/attack", 2));
 		let proc = proc_ref("/value").ok().unwrap();
 		assert_eq!((proc.path.as_str(), proc.override_id), ("/value", 0));
+		let proc = proc_ref("(in list)#3").ok().unwrap();
+		assert_eq!((proc.path.as_str(), proc.override_id), ("(in list)", 3));
 		for wrong in ["value", "/value#", "/value#two", "#1"] {
 			assert!(proc_ref(wrong).is_err(), "{}", wrong);
 		}
