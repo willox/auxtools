@@ -289,6 +289,22 @@ static ACCEPTOR: Mutex<Option<Acceptor>> = Mutex::new(None);
 // a macro change can legitimately produce large requests.
 const MAX_REQUEST_LEN: u32 = 256 * 1024 * 1024;
 
+/// Maximum number of cached compiled evaluations.
+const EVAL_CODE_KEPT: usize = 256;
+
+/// Inputs that determine compiled evaluation code.
+#[derive(PartialEq, Eq, Hash)]
+struct EvalCodeKey {
+	/// Code and macro generation at compilation.
+	generation: u32,
+	/// Code after macro expansion.
+	command: String,
+	/// Available names, including frame variables.
+	names: Vec<String>,
+	/// Type of src, used to resolve bare var and proc names.
+	src_type: Option<String>
+}
+
 pub struct Server {
 	events: mpsc::Receiver<Event>,
 	clients: BTreeMap<ClientId, Client>,
@@ -307,6 +323,10 @@ pub struct Server {
 	next_watch: u32,
 	/// Extra names available to the next evaluation.
 	eval_given: Vec<(String, Value)>,
+	/// Evaluation code already compiled, by what its compilation depends on.
+	/// A breakpoint's condition runs at every hit, and compiling it each time
+	/// took about 0.2 ms.
+	eval_code: HashMap<EvalCodeKey, Result<(Vec<u32>, Vec<String>), String>>,
 	/// World is loaded and waiting for launcher configuration.
 	waiting_to_start: bool,
 	/// Object used as `src` for the next frameless evaluation.
@@ -395,6 +415,7 @@ impl Server {
 			watches: vec![],
 			next_watch: 0,
 			eval_given: vec![],
+			eval_code: HashMap::new(),
 			waiting_to_start: false,
 			eval_src: None,
 			spawning: None,
@@ -2314,8 +2335,29 @@ impl Server {
 			},
 			globals: GLOBALS
 		};
-		let (code, locals) = Self::compile_eval(command, &arg_names, &scope)?;
-		let assembly = dmasm::assembler::assemble(&code, &mut crate::assemble_env::AssembleEnv).map_err(Self::assemble_error)?;
+		// Include src's type in the cache key because it affects bare-name
+		// resolution.
+		let key = EvalCodeKey {
+			generation: hot_reload::code_generation(),
+			command: command.to_owned(),
+			names: arg_names.iter().map(|name| (*name).to_owned()).collect(),
+			src_type: src.as_ref().and_then(Self::kind)
+		};
+		let compiled = match self.eval_code.get(&key) {
+			Some(compiled) => compiled.clone(),
+			None => {
+				let compiled = Self::compile_eval(command, &arg_names, &scope).and_then(|(code, locals)| {
+					let assembly = dmasm::assembler::assemble(&code, &mut crate::assemble_env::AssembleEnv).map_err(Self::assemble_error)?;
+					Ok((assembly, locals))
+				});
+				if self.eval_code.len() >= EVAL_CODE_KEPT {
+					self.eval_code.clear();
+				}
+				self.eval_code.insert(key, compiled.clone());
+				compiled
+			}
+		};
+		let (assembly, locals) = compiled?;
 		// To be run by the world's loop, as its own code (see `launched`)
 		if let Some(number) = self.spawning.take() {
 			self.spawns.push_back(Spawn {
@@ -2897,7 +2939,10 @@ impl Server {
 			Request::Render { frame_id, expression, depth } => self.handle_render(frame_id, &expression, depth),
 			Request::RenderVariables { vars, depth } => self.handle_render_variables(vars, depth),
 			Request::EvalOn { object, expression, depth } => self.handle_eval_on(&object, &expression, depth),
-			Request::Defines(macros) => crate::macros::set(macros),
+			Request::Defines(macros) => {
+				crate::macros::set(macros);
+				hot_reload::code_changed();
+			}
 			Request::Spawn { expression, object } => self.handle_spawn(&expression, object.as_deref()),
 
 			// The following requests are special cases and handled outside of

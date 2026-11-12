@@ -1383,6 +1383,7 @@ pub fn add_types(new_types: &[NewType]) -> Result<usize, Vec<String>> {
 		return Ok(0);
 	}
 	runtime_tables::available().map_err(|e| vec![format!("hot reloading isn't available on this build of BYOND: {}", e)])?;
+	code_changed();
 
 	let mut added = 0;
 	for new in new_types {
@@ -1723,6 +1724,7 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 	moved_breakpoints: &mut MovedBreakpoints<K>,
 	warnings: &mut Vec<String>
 ) {
+	code_changed();
 	// The id each new var really got, if it got one
 	let mut got = HashMap::new();
 	for new in &prepared.new_vars {
@@ -2050,6 +2052,19 @@ fn adapt_debug_info(nodes: &[Node], original: &[u32]) -> Vec<Node> {
 // Changes to the world's proc names waiting for them to be built (see
 // `edit_world_names`)
 static WAITING_WORLD_EDITS: Mutex<Vec<WorldEdit>> = Mutex::new(Vec::new());
+
+/// Generation for code and macro changes that invalidate compiled evaluations.
+static CODE_GENERATION: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Invalidate compiled evaluation caches after code or macro changes.
+pub fn code_changed() {
+	CODE_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Current code and macro generation.
+pub fn code_generation() -> u32 {
+	CODE_GENERATION.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 /// The global vars that reloads have added to this world, by name, with
 /// their var ids

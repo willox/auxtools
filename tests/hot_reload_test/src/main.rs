@@ -503,6 +503,59 @@ fn main() {
 	reload(&mut watcher, &changes);
 	assert_eq!(eval(&mut client, "runtime_target()"), "\"found\"");
 	println!("ok: resource named in another case");
+	// Cache logpoint expressions, invalidating for src type and newly added
+	// globals.
+	let changes = source.edit(
+		"reload.dm",
+		"/proc/runtime_target()\n",
+		"/datum/cache_probe/proc/probe()\n\treturn 1\n\n/datum/cache_probe/sub\n\tvar/extra = 5\n\n/proc/runtime_target()\n"
+	);
+	reload(&mut watcher, &changes);
+	let line = source.line_of("reload.dm", "/datum/cache_probe/proc/probe()") + 1;
+	let instruction = InstructionRef {
+		proc: ProcRef {
+			path: "/datum/cache_probe/probe".to_owned(),
+			override_id: 0
+		},
+		offset: offset_of(&mut client, "/datum/cache_probe/probe", line)
+	};
+	let response = client.request(Request::BreakpointSet {
+		instruction,
+		condition: None,
+		hit: None,
+		log: Some(vec![
+			LogPart::Text("extra ".to_owned()),
+			LogPart::Expr("extra".to_owned()),
+			LogPart::Text(", global ".to_owned()),
+			LogPart::Expr("cache_global".to_owned()),
+		])
+	});
+	assert!(
+		matches!(response, Response::BreakpointSet {
+			result: BreakpointSetResult::Success { .. }
+		}),
+		"{:?}",
+		response
+	);
+	let mut logged = |client: &mut Client, object: &str| {
+		eval(client, &format!("spawn(0) (new {}).probe(); 1", object));
+		match client.recv() {
+			Response::Log { message, .. } => message,
+			other => panic!("expected a log message, got {:?}", other)
+		}
+	};
+	let sub = logged(&mut client, "/datum/cache_probe/sub");
+	assert!(sub.starts_with("extra 5, global {cache_global: "), "{}", sub);
+	let base = logged(&mut client, "/datum/cache_probe");
+	assert!(base.starts_with("extra {extra: "), "{}", base);
+	let changes = source.edit(
+		"reload.dm",
+		"/datum/cache_probe/sub\n",
+		"var/cache_global = 7\n\n/datum/cache_probe/sub\n"
+	);
+	reload(&mut watcher, &changes);
+	assert_eq!(logged(&mut client, "/datum/cache_probe/sub"), "extra 5, global 7");
+	println!("ok: logpoint expressions compiled once, for each type of src and reload");
 
 	// A proc auxtools hooked never runs its bytecode
 	let changes = source.edit(
