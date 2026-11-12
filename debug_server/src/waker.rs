@@ -120,16 +120,22 @@ fn watch() {
 	}
 }
 
-/// Whether BYOND has kept the wake connection open.
+/// Check whether BYOND closed the wake connection, draining any preceding data.
+/// Peeking would keep seeing unread data and miss the close.
 fn open(connection: &TcpStream) -> bool {
-	let mut byte = [0u8; 1];
+	use std::io::{ErrorKind, Read};
+
 	if connection.set_nonblocking(true).is_err() {
 		return false;
 	}
-	let open = match connection.peek(&mut byte) {
-		Ok(0) => false,
-		Ok(_) => true,
-		Err(e) => e.kind() == std::io::ErrorKind::WouldBlock
+	let mut buffer = [0u8; 256];
+	let open = loop {
+		match (&mut &*connection).read(&mut buffer) {
+			Ok(0) => break false,
+			Ok(_) => continue,
+			Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+			Err(e) => break e.kind() == ErrorKind::WouldBlock
+		}
 	};
 	let _ = connection.set_nonblocking(false);
 	open
