@@ -176,6 +176,7 @@ fn main() {
 	launch_from_the_command_line(&server);
 	without_debug_info(&server);
 	unread_statics(&server);
+	errored_baseline(&server);
 	println!("all ok");
 }
 
@@ -1356,6 +1357,40 @@ fn started_pid(output: &str) -> u64 {
 		.lines()
 		.find_map(|line| line.strip_prefix("Started ")?.rsplit_once("(process ")?.1.strip_suffix(')')?.parse().ok())
 		.unwrap_or_else(|| panic!("launch output missing process ID:\n{}", output))
+}
+
+/// Repairing a parse error in the initial baseline must not duplicate
+/// definitions already present in the built world.
+fn errored_baseline(server: &str) {
+	let (dir, dme) = attach_host_copy("errored");
+	let code = dir.join("attach_host.dm");
+	let source = std::fs::read_to_string(&code).unwrap();
+	// An unclosed parenthesis hides the remaining definitions.
+	std::fs::write(&code, source.replace("\treturn 1", "\treturn (1")).unwrap();
+	let mut started = Started::default();
+	let output = launch_here(&dme.with_extension("dmb"), server, &mut started);
+	let read = || output.lock().unwrap().clone();
+	wait_for_text("launch", "Hot reload: watching", read);
+	started.pids.push(started_pid(&read()));
+	assert!(
+		read().contains("Hot reload: source baseline has parse errors"),
+		"launch didn't say the code has errors:\n{}",
+		read()
+	);
+	std::fs::write(&code, &source).unwrap();
+	wait_for_text("launch", "fixed parse error", read);
+	let printed = read();
+	assert!(
+		printed.contains("Hot reload: rejected") && !printed.contains("Hot reload: added"),
+		"launch said:\n{}",
+		printed
+	);
+	std::fs::write(dir.join("stop"), "yes").unwrap();
+	let exit = launcher_exit(&mut started, &output);
+	assert_eq!(exit, 0, "launch exited with {}:\n{}", exit, read());
+	drop(started);
+	let _ = std::fs::remove_dir_all(&dir);
+	println!("ok: repaired baseline errors do not duplicate definitions");
 }
 
 /// `auxtools launch`, `stop` and `reboot`: worlds the command line starts and

@@ -187,6 +187,7 @@ impl Code {
 			return;
 		}
 
+		self.warn_of_errors(&built);
 		let files = files(&built, &self.options.dme);
 		let mut watching = Watching {
 			files: Watched::new(&self.root, &files, self.parse_started.get()),
@@ -301,7 +302,9 @@ impl Code {
 				return self.not_reloaded(e);
 			}
 		};
-		let changes = diff(watching.applied.as_ref().unwrap_or(&watching.built), &new, Some(&changed));
+		let current = watching.applied.as_ref().unwrap_or(&watching.built);
+		let mut changes = diff(current, &new, Some(&changed));
+		refuse_hidden(current, &new, &mut changes);
 		watching.edited_since_built.extend(changed);
 
 		// A file the new parse includes for the first time
@@ -337,6 +340,7 @@ impl Code {
 			watching.files.changed(&self.root);
 			match self.parse() {
 				Ok(built) => {
+					self.warn_of_errors(&built);
 					for file in files(&built, &self.options.dme) {
 						watching.files.add(&self.root, &file, self.parse_started.get());
 					}
@@ -364,7 +368,8 @@ impl Code {
 				return self.not_reloaded(e) && self.ready();
 			}
 		};
-		let changes = diff(&watching.built, &current, Some(&watching.edited_since_built));
+		let mut changes = diff(&watching.built, &current, Some(&watching.edited_since_built));
+		refuse_hidden(&watching.built, &current, &mut changes);
 		let Some(applied) = self.reload(&changes, &current, &watching.built) else {
 			return false;
 		};
@@ -378,6 +383,21 @@ impl Code {
 		watching.built.clear_patches();
 		// Send evaluation macros after releasing the world.
 		self.give_macros()
+	}
+
+	/// Warn that parse errors make the source baseline incomplete.
+	fn warn_of_errors(&self, built: &Snapshot) {
+		let errors = errors(built);
+		if errors.is_empty() {
+			return;
+		}
+		self.log("source baseline has parse errors; definitions hidden by them require a rebuild:");
+		for error in placed(&errors, built).iter().take(5) {
+			self.out.console(format!("    {}", error));
+		}
+		if errors.len() > 5 {
+			self.out.console(format!("    and {} more", errors.len() - 5));
+		}
 	}
 
 	/// Release the world unless a newer connection needs synchronization first.
@@ -469,20 +489,43 @@ impl Code {
 	}
 }
 
+/// Format unresolved snapshot errors without lines for comparison.
+/// Recovered const initializers are excluded by dmasm.
+fn errors(snapshot: &Snapshot) -> Vec<String> {
+	snapshot
+		.parse_errors()
+		.into_iter()
+		.map(|(error, _)| format!("parse error: {}", error))
+		.collect()
+}
+
+/// Reject additions exposed by a repaired parse error: they may already exist
+/// in the built world. Re-adding them could create unintended proc overrides.
+fn refuse_hidden(old: &Snapshot, new: &Snapshot, changes: &mut Changes) {
+	if changes.new_types.is_empty() && changes.new_procs.is_empty() && changes.new_vars.is_empty() {
+		return;
+	}
+	let mut fixed = errors(old);
+	for error in errors(new) {
+		if let Some(at) = fixed.iter().position(|e| *e == error) {
+			fixed.remove(at);
+		}
+	}
+	for error in fixed {
+		let error = error.strip_prefix("parse error: ").unwrap_or(&error);
+		changes.refused.push(format!(
+			"{}: newly visible definitions may have been hidden by this fixed parse error. Rebuild, then reboot before reloading",
+			error
+		));
+	}
+}
+
 /// Attach source locations to diagnostics as `file:line: message`.
 fn placed(errors: &[String], snapshot: &Snapshot) -> Vec<String> {
-	let ctx = snapshot.context();
-	let parse_errors: Vec<(String, String)> = ctx
-		.errors()
-		.iter()
-		.filter(|e| e.severity() == dreammaker::Severity::Error)
-		.map(|e| {
-			let file = ctx.file_path(e.location().file).to_string_lossy().replace('\\', "/");
-			(
-				format!("parse error: {}: {}", file, e.description()),
-				format!("{}:{}: {}", file, e.location().line, e.description())
-			)
-		})
+	let parse_errors: Vec<(String, String)> = snapshot
+		.parse_errors()
+		.into_iter()
+		.map(|(error, placed)| (format!("parse error: {}", error), placed))
 		.collect();
 	errors
 		.iter()
