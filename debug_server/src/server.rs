@@ -313,6 +313,10 @@ pub struct Server {
 	state: Option<State>,
 	in_eval: bool,
 	eval_error: Option<String>,
+	/// Non-fatal callee runtime errors and the number omitted from full
+	/// reporting.
+	eval_callee_errors: Vec<String>,
+	eval_callee_more: usize,
 	/// Last executing evaluation frame; identifies the frame if it sleeps.
 	eval_ran: *mut raw_types::procs::ExecutionContext,
 	breakpoints: Breakpoints,
@@ -408,6 +412,8 @@ impl Server {
 			state: None,
 			in_eval: false,
 			eval_error: None,
+			eval_callee_errors: vec![],
+			eval_callee_more: 0,
 			eval_ran: std::ptr::null_mut(),
 			breakpoints: HashMap::new(),
 			moved_breakpoints: HashMap::new(),
@@ -509,10 +515,49 @@ impl Server {
 		self.eval_ran = ctx;
 	}
 
-	/// Evaluation runtime error and stack between the failing proc and
-	/// the expression stub.
+	/// Record a runtime error and stack. Only an error in the expression frame
+	/// fails evaluation; callee errors end that proc and let evaluation
+	/// continue.
 	pub fn set_eval_error(&mut self, message: &str, ctx: *mut raw_types::procs::ExecutionContext) {
-		self.eval_error = Some(Self::error_with_stack(message, ctx));
+		if !Self::called_by_expression(ctx) {
+			self.eval_error = Some(Self::error_with_stack(message, ctx));
+		} else if self.eval_callee_errors.len() < MAX_CALLEE_ERRORS {
+			let error = Self::error_with_stack(message, ctx);
+			self.eval_callee_errors.push(error);
+		} else {
+			self.eval_callee_more += 1;
+		}
+	}
+
+	/// Whether `ctx` is a callee of the current debugger evaluation.
+	fn called_by_expression(ctx: *mut raw_types::procs::ExecutionContext) -> bool {
+		if ctx.is_null() || is_expression_frame(ctx) {
+			return false;
+		}
+		let mut at = unsafe { *(*ctx).parent_context() };
+		while !at.is_null() {
+			if is_expression_frame(at) {
+				return true;
+			}
+			at = unsafe { *(*at).parent_context() };
+		}
+		false
+	}
+
+	/// Send compiler warnings and non-fatal callee errors to the client.
+	fn send_callee_errors(&mut self) {
+		let errors = std::mem::take(&mut self.eval_callee_errors);
+		let more = std::mem::take(&mut self.eval_callee_more);
+		for error in errors {
+			self.send_or_disconnect(Response::Notification {
+				message: format!("runtime error in a called proc (the evaluation carried on): {}", error)
+			});
+		}
+		if more > 0 {
+			self.send_or_disconnect(Response::Notification {
+				message: format!("and {} more runtime errors in called procs", more)
+			});
+		}
 	}
 
 	/// Format an evaluation runtime error with its call stack.
@@ -537,7 +582,9 @@ impl Server {
 		error
 	}
 
-	/// Record the first uncaught runtime error in a spawned evaluation.
+	/// Record the first uncaught runtime error in a spawned evaluation's own
+	/// code. One in a proc it called ends only that proc, as in DM; the world
+	/// reports it as any other.
 	pub fn spawn_runtime(&mut self, message: &str, ctx: *mut raw_types::procs::ExecutionContext) {
 		if self.spawned.is_empty() {
 			return;
@@ -551,6 +598,9 @@ impl Server {
 		while !at.is_null() {
 			let id = proc_of(at);
 			if id == stub.id {
+				if at != ctx {
+					return;
+				}
 				in_stub = true;
 			} else if in_stub && id == spawned.id {
 				// Its number is its first argument
@@ -2193,6 +2243,8 @@ impl Server {
 		// of this one, and a runtime would pause inside the pause we're in.
 		self.in_eval = true;
 		self.eval_error = None;
+		self.eval_callee_errors.clear();
+		self.eval_callee_more = 0;
 		self.eval_ran = std::ptr::null_mut();
 
 		let result = self.compile_and_run_expr(frame_id, command);
@@ -2543,6 +2595,7 @@ impl Server {
 			kind: Self::kind(&result),
 			entries: Self::entries(&result)
 		});
+		self.send_callee_errors();
 		self.send_or_disconnect(Response::Eval(response));
 	}
 
@@ -2563,6 +2616,7 @@ impl Server {
 				entries: Self::entries(&result)
 			}))
 		};
+		self.send_callee_errors();
 		self.send_or_disconnect(response);
 	}
 
@@ -3547,6 +3601,9 @@ impl Drop for Server {
 		}
 	}
 }
+
+/// Maximum callee runtime errors reported in full per evaluation.
+const MAX_CALLEE_ERRORS: usize = 5;
 
 /// Whether the frame runs debugger evaluation or spawned code.
 pub(crate) fn is_expression_frame(ctx: *mut raw_types::procs::ExecutionContext) -> bool {

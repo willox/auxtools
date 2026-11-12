@@ -888,7 +888,7 @@ impl World {
 		}
 
 		let until = timeout.map(|timeout| Instant::now() + timeout);
-		let mut follower = log::Follower::new(newest, vec![JournalKind::Spawned, JournalKind::World]);
+		let mut follower = log::Follower::new(newest, vec![JournalKind::Spawned, JournalKind::World, JournalKind::Runtime]);
 		loop {
 			let Some(entry) = follower.next(self, until)? else {
 				return Err(Failure(
@@ -910,6 +910,15 @@ impl World {
 					return Ok(());
 				}
 				JournalEvent::Loaded { .. } => return Err(Failure(HUNG_UP, format!("the world rebooted before spawn {} finished.", number))),
+				// Report non-fatal callee errors. The journal cannot identify
+				// which spawn caused them.
+				JournalEvent::Runtime {
+					message,
+					caught: false,
+					stack
+				} if stack.len() > 1 && stack.last().is_some_and(|frame| frame.proc == "/auxtools_spawn_stub") => {
+					eprintln!("{}", log::callee_runtime(&message, &stack));
+				}
 				_ => {}
 			}
 		}

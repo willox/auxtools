@@ -323,6 +323,16 @@ pub fn describe(event: &JournalEvent) -> (String, Vec<String>) {
 	}
 }
 
+/// Report a spawned evaluation's callee error using the same format as
+/// synchronous eval.
+pub fn callee_runtime(message: &str, stack: &[JournalFrame]) -> String {
+	let mut said = format!("runtime error in a called proc (the evaluation carried on): {}", message);
+	for (i, at) in stack[..stack.len() - 1].iter().enumerate() {
+		said += &format!("\n  {} {}", if i == 0 { "in" } else { "called by" }, frame(at));
+	}
+	said + "\n  called by the expression"
+}
+
 fn frame(frame: &JournalFrame) -> String {
 	match (&frame.file, frame.line) {
 		(Some(file), Some(line)) => format!("{}  {}:{}", frame.proc, file, line),

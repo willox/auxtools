@@ -94,17 +94,21 @@ pub fn run() {
 	world.resume_through("fail_twice");
 	ok("consecutive runtime errors");
 
-	// An expression's own runtime error is the expression's
+	// Callee errors end only the failing proc. Evaluation continues and reports
+	// the error.
 	world.run_to("middle", "/leaf", "leaf_1");
 	let frame = world.frame_id();
-	let why = world.refused("evaluate", json!({ "expression": "fail_null()", "frameId": frame, "context": "watch" }));
-	assert_eq!(
-		why,
-		format!(
-			"runtime error: cannot read from list\n  in /fail_null  errors.dm:{}\n  called by the expression",
-			world.marks.line("fail_null")
-		)
-	);
+	let got = world.request("evaluate", json!({ "expression": "fail_null()", "frameId": frame, "context": "watch" }));
+	assert_eq!(got["result"], "null", "evaluate gave {}", got);
+	let line = world.marks.line("fail_null");
+	world.wait_output(&format!(
+		"runtime error in a called proc (the evaluation carried on): cannot read from list\n  in /fail_null  errors.dm:{}\n  called by the \
+		 expression",
+		line
+	));
+	// An error in the expression frame fails evaluation.
+	let why = world.refused("evaluate", json!({ "expression": "list()[1]", "frameId": frame, "context": "watch" }));
+	assert_eq!(why, "runtime error: list index out of bounds");
 	assert!(!world.has_event("stopped"), "an expression's runtime error stopped the world again");
 	assert_eq!(world.eval("x"), "3");
 	world.resume_through("middle");

@@ -99,13 +99,15 @@ pub fn command_line_inspect(pid: u64, dir: &Path, code: &Path) {
 	steps_that_end_elsewhere(pid, dir);
 }
 
-/// `eval` fails on stderr with exit code 1, whatever went wrong, and a
-/// runtime error says where it happened
+/// Evaluation failures use stderr and exit code 1. Callee runtime errors are
+/// reported with locations but let the expression continue, as in DM.
 fn eval_failures(pid: &str, code: &Path) {
-	let said = fails(pid, &["eval", "fail_in(3)"]);
+	let ran = run(pid, &["eval", "fail_in(3)"], 0);
+	assert_eq!(ran.out, "null\n", "unexpected eval output: {}", ran.out);
+	let said = ran.err;
 	let lines: Vec<&str> = said.lines().collect();
 	assert!(
-		lines.len() == 4 && lines[0].starts_with("runtime error: "),
+		lines.len() == 4 && lines[0].starts_with("runtime error in a called proc (the evaluation carried on): "),
 		"unexpected eval output: {}",
 		said
 	);
@@ -127,6 +129,7 @@ fn eval_failures(pid: &str, code: &Path) {
 		run(pid, &["eval", "/datum/twice/proc/act"], 0).out
 	);
 	println!("ok: eval runtime error call stack");
+	println!("ok: eval carries on after a runtime error in a called proc");
 
 	// Long loops yield in the background, so synchronous eval loses the result.
 	let looped = "var/x = 0; for(var/i in 1 to 2000000) x++; return x";
@@ -148,11 +151,12 @@ fn eval_failures(pid: &str, code: &Path) {
 
 	// Paused, the same
 	run(pid, &["pause"], 0);
-	let said = fails(pid, &["eval", "fail_in(3)"]);
+	let ran = run(pid, &["eval", "fail_in(3)"], 0);
 	assert!(
-		said.contains("\n  in /fail_deeper  ") && said.ends_with("\n  called by the expression"),
-		"unexpected eval output: {}",
-		said
+		ran.out == "null\n" && ran.err.contains("\n  in /fail_deeper  ") && ran.err.ends_with("\n  called by the expression\n"),
+		"unexpected eval output: {}{}",
+		ran.out,
+		ran.err
 	);
 	for (args, said) in [
 		(&["eval", "1 +"][..], "parser error: "),
@@ -746,17 +750,23 @@ fn spawned(pid: &str, code: &Path) {
 	assert_eq!(run(pid, &["eval", "--spawn", "--wait", "slow_double(5)"], 0).out, "10\n");
 	println!("ok: spawned body variables survive sleep");
 
-	// A runtime error, before a sleep and after one
-	let said = fails(pid, &["eval", "--spawn", "--wait", "fail_in(3)"]);
+	// Spawned evaluation continues after callee errors on either side of a
+	// sleep.
+	let ran = run(pid, &["eval", "--spawn", "--wait", "fail_in(3)"], 0);
+	assert_eq!(ran.out, "null\n", "unexpected eval output: {}", ran.out);
 	assert!(
-		said.starts_with("runtime error: ") && said.contains("\n  in /fail_deeper  ") && said.ends_with("\n  called by the expression"),
+		ran.err.starts_with("runtime error in a called proc (the evaluation carried on): ")
+			&& ran.err.contains("\n  in /fail_deeper  ")
+			&& ran.err.ends_with("\n  called by the expression\n"),
 		"unexpected eval output: {}",
-		said
+		ran.err
 	);
-	let said = fails(pid, &["eval", "--spawn", "--wait", "slow_fail()"]);
+	let ran = run(pid, &["eval", "--spawn", "--wait", "slow_fail()"], 0);
+	assert_eq!(ran.out, "null\n", "unexpected eval output: {}", ran.out);
+	let said = ran.err;
 	let lines: Vec<&str> = said.lines().collect();
 	assert!(
-		lines.len() == 4 && lines[0].starts_with("runtime error: "),
+		lines.len() == 4 && lines[0].starts_with("runtime error in a called proc (the evaluation carried on): "),
 		"unexpected eval output: {}",
 		said
 	);
@@ -766,11 +776,7 @@ fn spawned(pid: &str, code: &Path) {
 		format!("  called by /slow_fail  attach_host.dm:{}", line_of(code, "\treturn fail_deeper(5)"))
 	);
 	let printed = run(pid, &["log", "--spawned", "--last", "1"], 0).out;
-	assert!(
-		printed.contains(": slow_fail() failed: runtime error: ") && printed.contains("\n  in /fail_deeper  "),
-		"log said {}",
-		printed
-	);
+	assert!(printed.contains(": slow_fail() returned null"), "log said {}", printed);
 	// Runtime journal stacks exclude the debugger's outer helper frames.
 	let printed = run(pid, &["log", "--runtimes", "--last", "1"], 0).out;
 	let frames: Vec<&str> = printed.lines().skip(1).collect();
@@ -781,6 +787,11 @@ fn spawned(pid: &str, code: &Path) {
 			&& frames[2].starts_with("  /auxtools_spawn_stub  "),
 		"log said {}",
 		printed
+	);
+	// An error in the spawned expression itself fails the result.
+	assert_eq!(
+		fails(pid, &["eval", "--spawn", "--wait", "sleep(1)\nvar/n = 0\nreturn 1/n"]),
+		"runtime error: Division by zero"
 	);
 	println!("ok: spawned runtime error stacks");
 

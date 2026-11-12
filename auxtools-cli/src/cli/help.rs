@@ -227,7 +227,9 @@ auxtools [--pid PID] eval - [OPTIONS]",
   by launch with hot reload enabled.
   Evaluation can change world state through assignments and proc calls.
   Evaluation errors exit with code 1; runtime diagnostics include locations
-  and the call stack when available.
+  and the call stack when available. A callee runtime error ends only that
+  proc and returns null to the caller, as in DM. It is reported on stderr
+  without failing the evaluation.
   Evaluated code cannot sleep unless --spawn is set. Spawned code runs outside
   any frame (--src can set src), pauses at breakpoints, and records its result
   in the journal (log --spawned). In a paused world it runs after execution

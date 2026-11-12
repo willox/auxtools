@@ -491,7 +491,6 @@ pub fn run() {
 		("src.other.name", "runtime error: Cannot read null.name"),
 		("1 / 0", "runtime error: Division by zero"),
 		("local_list[9]", "runtime error: list index out of bounds"),
-		("fail_null()", "runtime error: cannot read from list"),
 		("src.shared.len", "runtime error: Cannot read 9.len"),
 		// (a statement, which is a body)
 		("CRASH(\"no\")", "runtime error: no"),
