@@ -204,6 +204,8 @@ Output:
   Requires a paused world.
 
 Output:
+  Text shows the first 200 characters of a long value and its length; use
+  --json or eval for the whole value.
   JSON contains arguments, locals, and optionally globals, using the same
   value encoding as eval. Each variable consumes one expansion level, so the
   default expands lists but does not expand object variables."

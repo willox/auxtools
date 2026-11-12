@@ -635,7 +635,7 @@ impl World {
 			BreakpointReason::Data { changes } => {
 				let changes: Vec<String> = changes
 					.iter()
-					.map(|change| format!("{} changed from {} to {}", change.name, change.old, change.new))
+					.map(|change| format!("{} changed from {} to {}", change.name, short(&change.old), short(&change.new)))
 					.collect();
 				format!("after a change: {}", changes.join("; "))
 			}
@@ -785,7 +785,7 @@ impl World {
 				return Err(format!("the world did not list the {}.", name).into());
 			};
 			for var in vars {
-				say!("  {} = {}", var.name, var.value);
+				say!("  {} = {}", var.name, short(&var.value));
 			}
 		}
 		Ok(())
@@ -1207,7 +1207,7 @@ impl World {
 				Response::WatchSet(Ok(watch)) => {
 					ours_watches.push(watch.id);
 					let said = json!([{ "name": watch.name, "value": watch.value }]);
-					self.say_waited("watching", said, Some(&format!("watching {}, now {}", watch.name, watch.value)));
+					self.say_waited("watching", said, Some(&format!("watching {}, now {}", watch.name, short(&watch.value))));
 				}
 				Response::WatchSet(Err(why)) => return Err(format!("cannot watch {}: {}", expression, why).into()),
 				other => return Err(unexpected(&other))
@@ -1407,9 +1407,32 @@ fn unexpected(response: &Response) -> Failure {
 	Failure(1, format!("unexpected response from the world: {:?}", response))
 }
 
+/// Maximum value length shown in summary lines.
+const SHORT_VALUE: usize = 200;
+
+/// Truncate long summary values and include their full length. JSON and eval
+/// remain complete.
+fn short(value: &str) -> std::borrow::Cow<'_, str> {
+	let length = value.chars().count();
+	if length <= SHORT_VALUE + 50 {
+		return value.into();
+	}
+	let start: String = value.chars().take(SHORT_VALUE).collect();
+	format!("{}... ({} characters)", start, length).into()
+}
+
 #[cfg(test)]
 mod tests {
 	use std::time::Duration;
+
+	#[test]
+	fn long_values_are_cut_short() {
+		assert_eq!(super::short("\"short\""), "\"short\"");
+		let long = format!("\"{}\"", "0123456789".repeat(100));
+		let shown = super::short(&long);
+		assert!(shown.starts_with("\"0123456789") && shown.ends_with("... (1002 characters)"), "{}", shown);
+		assert_eq!(shown.chars().count(), 200 + "... (1002 characters)".len());
+	}
 
 	use super::{expression, given_text, proc_ref, seconds_text, Failure};
 
