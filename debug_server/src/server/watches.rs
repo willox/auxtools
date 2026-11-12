@@ -407,16 +407,15 @@ impl Server {
 						};
 						pointed(pointer, within(&holder, name.clone()))
 					}
-					Variables::ListPair { key, of, list, .. } => {
+					Variables::ListPair { key, of, entry, .. } => {
 						if name != "value" {
 							return Err("list keys cannot be watched for value changes".to_owned());
 						}
-						let shown = list.zip(Self::literal(&key)).map(|(list, key)| format!("{}[{}]", list, key));
 						let pointer = self.pointer_to(None, &format!("{}[{}]", HOLDER, KEY), vec![
 							(HOLDER.to_owned(), of),
 							(KEY.to_owned(), key),
 						])?;
-						pointed(pointer, shown.unwrap_or_else(|| name.clone()))
+						pointed(pointer, entry.unwrap_or_else(|| name.clone()))
 					}
 					// What a pointer names is the place itself
 					Variables::Pointee(pointer, holder) => pointed(pointer, within(&holder, String::new()).trim_start_matches('*').to_owned())

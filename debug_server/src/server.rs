@@ -59,13 +59,13 @@ enum Variables {
 	Builtins,
 	ObjectVars(Value, Option<String>),
 	ListContents(Value, Option<String>),
-	/// An entry of the list `of` that has a value for its key. `list` is
-	/// the expression the list is reached by.
+	/// Associative list entry, accessed through expression `entry` in list
+	/// `of`.
 	ListPair {
 		key: Value,
 		value: Value,
 		of: Value,
-		list: Option<String>
+		entry: Option<String>
 	},
 	/// What a pointer names, and the expression the pointer is reached by
 	Pointee(Value, Option<String>)
@@ -1253,11 +1253,50 @@ impl Server {
 	fn literal(value: &Value) -> Option<String> {
 		use ValueTag as Tag;
 		match value.raw.tag {
-			Tag::String | Tag::Number | Tag::MobTypepath | Tag::ObjTypepath | Tag::TurfTypepath | Tag::AreaTypepath | Tag::DatumTypepath => {
+			Tag::String => Self::text_literal(StringRef::from_value(value.clone())?.data()),
+			Tag::Number | Tag::MobTypepath | Tag::ObjTypepath | Tag::TurfTypepath | Tag::AreaTypepath | Tag::DatumTypepath => {
 				Some(Self::stringify(value))
 			}
 			_ => None
 		}
+	}
+
+	/// Encode text as an exact DM string literal. Macros and control characters
+	/// cannot be represented this way.
+	fn text_literal(bytes: &[u8]) -> Option<String> {
+		let mut literal = String::with_capacity(bytes.len() + 2);
+		literal.push('"');
+		for c in std::str::from_utf8(bytes).ok()?.chars() {
+			match c {
+				'\\' | '"' | '[' | ']' => {
+					literal.push('\\');
+					literal.push(c);
+				}
+				'\n' => literal.push_str("\\n"),
+				'\t' => literal.push_str("\\t"),
+				_ if c.is_control() => return None,
+				_ => literal.push(c)
+			}
+		}
+		literal.push('"');
+		Some(literal)
+	}
+
+	/// Build a list-entry expression using a literal key, object ref, or
+	/// one-based position. Positional lookup is unavailable for alists.
+	fn entry_expr(list: &str, key: &Value, position: Option<u32>) -> Option<String> {
+		use ValueTag as Tag;
+		if let Some(key) = Self::literal(key) {
+			return Some(format!("{}[{}]", list, key));
+		}
+		let locatable = matches!(
+			key.raw.tag,
+			Tag::Turf | Tag::Obj | Tag::Mob | Tag::Area | Tag::Client | Tag::Image | Tag::Datum | Tag::List | Tag::Alist
+		);
+		if locatable {
+			return Some(format!("{}[locate(\"\\{}\")]", list, Self::reference(key)));
+		}
+		position.map(|i| format!("{}[{}[{}]]", list, list, i))
 	}
 
 	/// Build a variable descriptor with an optional access expression.
@@ -1304,25 +1343,30 @@ impl Server {
 		let first = start.unwrap_or(0).min(len);
 		let last = count.map_or(len, |count| first.saturating_add(count).min(len));
 
-		// An entry with a value for its key: `key = value`, to open for the
-		// two, and reached as `list[key]`
-		let pair = |i: u32, key: Value, value: Value| Variable {
-			name: format!("[{}]", i),
-			value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
-			kind: Self::kind(&value),
-			entries: None,
-			expr: expr.zip(Self::literal(&key)).map(|(list, key)| format!("{}[{}]", list, key)),
-			variables: Some(state.get_ref(Variables::ListPair {
-				key,
-				value,
-				of: Value::from(&list),
-				list: expr.map(str::to_owned)
-			}))
+		// Expose `key = value` as an expandable pair accessed through
+		// `list[key]`. Alist numbers are keys, so entries cannot be accessed by
+		// position.
+		let alist = list.is_alist();
+		let pair = |i: u32, key: Value, value: Value| {
+			let entry = expr.and_then(|list| Self::entry_expr(list, &key, (!alist).then_some(i)));
+			Variable {
+				name: format!("[{}]", i),
+				value: format!("{} = {}", Self::stringify(&key), Self::stringify(&value)),
+				kind: Self::kind(&value),
+				entries: None,
+				expr: entry.clone(),
+				variables: Some(state.get_ref(Variables::ListPair {
+					key,
+					value,
+					of: Value::from(&list),
+					entry
+				}))
+			}
 		};
 
 		// numbers are keys in an alist, so the position walk below would read
 		// the wrong entries
-		if list.is_alist() {
+		if alist {
 			return Ok(list
 				.alist_pairs()?
 				.into_iter()
@@ -1868,13 +1912,10 @@ impl Server {
 			Variables::Builtins => self.globals_to_variables(true),
 			Variables::ObjectVars(value, expr) => self.object_to_variables(&value, expr.as_deref()),
 			Variables::ListContents(value, expr) => self.list_to_variables(&value, expr.as_deref(), start, count),
-			Variables::ListPair { key, value, list, .. } => {
-				let entry = list.zip(Self::literal(&key)).map(|(list, key)| format!("{}[{}]", list, key));
-				Ok(vec![
-					self.value_to_variable("key".to_owned(), &key, None),
-					self.value_to_variable("value".to_owned(), &value, entry),
-				])
-			}
+			Variables::ListPair { key, value, entry, .. } => Ok(vec![
+				self.value_to_variable("key".to_owned(), &key, None),
+				self.value_to_variable("value".to_owned(), &value, entry),
+			]),
 			Variables::Pointee(pointer, expr) => Ok(match auxtools::pointer::read(&pointer) {
 				Some(named) => vec![self.value_to_variable("*".to_owned(), &named, expr.map(|pointer| format!("*{}", pointer)))],
 				None => vec![]
@@ -2148,9 +2189,8 @@ impl Server {
 		written?;
 
 		// Refresh the cached entry value after assignment.
-		if let Variables::ListPair { key, list, .. } = &container {
-			let entry = list.clone().zip(Self::literal(key)).map(|(list, key)| format!("{}[{}]", list, key));
-			return Ok(self.value_to_variable(name.to_owned(), &value, entry));
+		if let Variables::ListPair { entry, .. } = &container {
+			return Ok(self.value_to_variable(name.to_owned(), &value, entry.clone()));
 		}
 
 		// As the world has it now, which isn't always what it was given

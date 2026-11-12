@@ -78,6 +78,26 @@ fn kinds_and_expressions(world: &mut World, locals: &[Value], version: u64) {
 	assert_eq!(world.evaluate_in(&frame, "nested[2][\"x\"][1]", "watch")["result"], "3");
 	ok("nested access expressions");
 
+	// Reach entries with escaped literals, object refs or positional lookup.
+	let inside = world.variables(&of("keyed")["variablesReference"].clone());
+	let expressions: Vec<&str> = inside.iter().map(|v| v["evaluateName"].as_str().unwrap()).collect();
+	assert_eq!(expressions[..3], ["keyed[\"a\\[b\\]\"]", "keyed[keyed[2]]", "keyed[keyed[3]]"]);
+	assert!(expressions[3].starts_with("keyed[locate(\"\\[0x"), "{}", expressions[3]);
+	for (entry, value) in inside.iter().zip(["1", "2", "3", "4"]) {
+		let expression = entry["evaluateName"].as_str().unwrap();
+		assert_eq!(world.evaluate_in(&frame, expression, "watch")["result"], value, "{}", expression);
+		let pair = world.variables(&entry["variablesReference"].clone());
+		assert_eq!(pair[1]["evaluateName"], expression);
+	}
+	if version >= 516 {
+		let inside = world.variables(&of("keyed_pairs")["variablesReference"].clone());
+		// Alist entries cannot be accessed by position.
+		assert!(inside[0]["evaluateName"].is_null(), "{}", inside[0]);
+		let expression = inside[1]["evaluateName"].as_str().unwrap();
+		assert_eq!(world.evaluate_in(&frame, expression, "watch")["result"], "2", "{}", expression);
+	}
+	ok("access expressions for awkward keys");
+
 	let arguments = world.scope(&frame, "Arguments");
 	let arguments = world.variables(&arguments);
 	let expressions: Vec<&str> = arguments.iter().map(|v| v["evaluateName"].as_str().unwrap()).collect();

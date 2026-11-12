@@ -21,6 +21,9 @@
 	var/list/assoc = list("a" = 1, "b" = named, "c" = null)
 	var/list/nested = list(list(1, 2), list("x" = list(3)))
 	var/list/dupes = list("a", "a", 1, 1)
+	// Keys requiring escaping, positional lookup or object refs.
+	var/list/keyed = list("a\[b\]" = 1, "[]" = 2, "\improper x" = 3)
+	keyed[named] = 4
 	var/list/big = new(3000)
 	var/file = 'values.dm'
 	var/turf/T = locate(1, 1, 1)
@@ -45,6 +48,8 @@
 	var/exception/error = new("boom", "file.dm", 3)
 #if DM_VERSION >= 516
 	var/alist/pairs = alist("a" = 1, 7 = "seven")
+	var/alist/keyed_pairs = alist("\improper x" = 1)
+	keyed_pairs[named] = 2
 	var/vec = vector(1, 2, 3)
 	var/pix = pixloc(1, 1, 1)
 	var/callee/this_proc = callee
