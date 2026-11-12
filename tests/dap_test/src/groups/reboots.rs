@@ -100,6 +100,8 @@ pub fn run() {
 	a.event("continued");
 	b.event("continued");
 	rebooted(&mut a, 3);
+	// The paused frame resumes in the old world after debugger shutdown.
+	assert_eq!(a.count("bad instruction"), 0, "a breakpoint was left in the old world's code");
 	a.run("middle");
 	a.stop_on("breakpoint", "/leaf", "leaf_1");
 	b.stop_on("breakpoint", "/leaf", "leaf_1");

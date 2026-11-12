@@ -17,13 +17,12 @@ const OPCODE_THROW: u32 = 0x12D;
 const OPCODE_DEBUG_BREAK: u32 = 0x1337;
 const OPCODE_DEBUG_OPERAND: u32 = 0x1338;
 
+// Restore breakpoint instructions on debugger shutdown. Code can still run
+// after world/Del, including its caller and paused frames; an unhandled
+// OPCODE_DEBUG_BREAK would end the proc with a bad-instruction error.
 #[shutdown]
 fn instruction_hooking_shutdown() {
-	unsafe {
-		CURRENT_ACTION = DebuggerAction::None;
-		*DEFERRED_INSTRUCTION_REPLACE.get() = None;
-		*ORIGINAL_BYTECODE.lock().unwrap() = HashMap::new();
-	}
+	unhook_all();
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
