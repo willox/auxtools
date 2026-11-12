@@ -645,22 +645,36 @@ pub enum LogPart {
 
 #[allow(dead_code)]
 impl LogPart {
-	/// Parse text with `{expression}` interpolation. Respect nested braces
-	/// and strings; an unmatched opening brace remains literal text.
+	/// Parse `{expression}` interpolation, respecting nested braces and
+	/// strings. Outside expressions, `{{` and `}}` escape braces. An unmatched
+	/// opening brace remains literal text.
 	pub fn parse(message: &str) -> Vec<Self> {
 		let mut parts = vec![];
 		let mut text = String::new();
 		let mut rest = message;
-		while let Some(open) = rest.find('{') {
-			let Some(length) = Self::expression_length(&rest[open + 1..]) else {
+		while let Some(at) = rest.find(['{', '}']) {
+			text.push_str(&rest[..at]);
+			let brace = &rest[at..at + 1];
+			if rest[at + 1..].starts_with(brace) {
+				text.push_str(brace);
+				rest = &rest[at + 2..];
+				continue;
+			}
+			if brace == "}" {
+				text.push('}');
+				rest = &rest[at + 1..];
+				continue;
+			}
+			let Some(length) = Self::expression_length(&rest[at + 1..]) else {
+				text.push_str(&rest[at..]);
+				rest = "";
 				break;
 			};
-			text.push_str(&rest[..open]);
 			if !text.is_empty() {
 				parts.push(Self::Text(std::mem::take(&mut text)));
 			}
-			parts.push(Self::Expr(rest[open + 1..open + 1 + length].trim().to_owned()));
-			rest = &rest[open + 1 + length + 1..];
+			parts.push(Self::Expr(rest[at + 1..at + 1 + length].trim().to_owned()));
+			rest = &rest[at + 1 + length + 1..];
 		}
 		text.push_str(rest);
 		if !text.is_empty() {

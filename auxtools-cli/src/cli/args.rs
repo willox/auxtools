@@ -429,7 +429,11 @@ pub struct WaitReboot {
 pub struct Trace {
 	#[arg(value_name = "LOCATION", required = true)]
 	pub locations: Vec<String>,
-	#[arg(long, value_name = "MESSAGE", help = "Format each hit using MESSAGE with {DM expression} values.")]
+	#[arg(
+		long,
+		value_name = "MESSAGE",
+		help = "Format each hit using MESSAGE with {DM expression} values.\n{{ and }} are literal braces."
+	)]
 	pub log: Option<String>,
 	#[arg(long = "if", value_name = "CONDITION", help = "Record only hits where the DM condition is true.")]
 	pub condition: Option<String>,

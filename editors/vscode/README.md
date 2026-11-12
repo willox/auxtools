@@ -71,6 +71,7 @@ path: `/mob/proc/Login`, or `/mob/Login#1` for its second definition.
   restarts. Function breakpoint counts survive hot reload.
 - **Logpoints** print instead of pausing. Use `{expression}` interpolation, such as
   `health is {health} for {src}`. Failed expressions display their errors in place.
+  Write `{{` and `}}` for literal braces.
   Logpoints can also have conditions and hit counts.
 
 With hot reload enabled, breakpoints added to unsaved text remain unverified

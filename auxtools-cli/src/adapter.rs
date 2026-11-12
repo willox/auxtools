@@ -2756,6 +2756,17 @@ mod tests {
 	}
 
 	#[test]
+	fn doubled_braces_are_literal() {
+		let text = |text: &str| LogPart::Text(text.to_owned());
+		let expr = |text: &str| LogPart::Expr(text.to_owned());
+		assert_eq!(LogPart::parse("{{x}}"), [text("{x}")]);
+		assert_eq!(LogPart::parse("{{\"a\": {a}}}"), [text("{\"a\": "), expr("a"), text("}")]);
+		assert_eq!(LogPart::parse("{list(1) ~= list(1)}}}"), [expr("list(1) ~= list(1)"), text("}")]);
+		// Braces inside expressions are not interpolation escapes.
+		assert_eq!(LogPart::parse("{a {{b}} c}"), [expr("a {{b}} c")]);
+	}
+
+	#[test]
 	fn a_brace_that_is_never_closed_is_text() {
 		let text = |text: &str| LogPart::Text(text.to_owned());
 		let expr = |text: &str| LogPart::Expr(text.to_owned());
