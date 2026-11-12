@@ -8,10 +8,17 @@ impl Server {
 	/// What an expression gives, written out
 	pub(super) fn handle_render(&mut self, frame_id: Option<u32>, expression: &str, depth: u32) {
 		let rendered = match expression.strip_prefix('#') {
-			// The debug server's own commands answer in text
-			Some(command) => Ok(Rendered::Text(self.handle_command(frame_id, command))),
+			// Debugger commands return text and usually do not evaluate code.
+			// Do not attach warnings left over from another evaluation.
+			Some(command) => {
+				self.eval_warnings.clear();
+				self.eval_callee_errors.clear();
+				self.eval_callee_more = 0;
+				Ok(Rendered::Text(self.handle_command(frame_id, command)))
+			}
 			None => self.eval_expr(frame_id, expression).map(|value| Self::render(&value, depth))
 		};
+		self.send_callee_errors();
 		self.send_or_disconnect(Response::Render(rendered));
 	}
 
@@ -50,7 +57,12 @@ impl Server {
 			Variables::Locals { frame } => {
 				let frame = self.get_stack_frame(frame).ok_or_else(gone)?;
 				let mut values = vec![(".".to_owned(), frame.dot.clone())];
-				values.extend(frame.locals.iter().map(|(name, value)| (String::from(name), value.clone())));
+				values.extend(
+					Self::visible_locals(&frame)
+						.into_iter()
+						.zip(&frame.locals)
+						.filter_map(|(name, (_, value))| Some((name?, value.clone())))
+				);
 				Ok(values)
 			}
 			Variables::Globals | Variables::Builtins => {
@@ -169,7 +181,7 @@ impl Server {
 	}
 
 	/// What `ref()` gives for a value: its kind and id, in hex
-	fn reference(value: &Value) -> String {
+	pub(super) fn reference(value: &Value) -> String {
 		let id = unsafe { value.raw.data.id };
 		format!("[0x{:x}]", (value.raw.tag as u32) << 24 | id)
 	}

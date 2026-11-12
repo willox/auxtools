@@ -30,7 +30,7 @@ use dmasm::{
 use crate::{
 	assemble_env::AssembleEnv,
 	instruction_hooking::{hook_instruction, hooked_offsets, original_bytecode, unhook_instruction},
-	server_types::{HotReloadInitProc, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, ProcRef, Reloaded}
+	server_types::{HotReloadInitProc, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, ProcRef, Reloaded, RemovedVar}
 };
 
 /// A reload, checked and assembled, ready to apply.
@@ -426,7 +426,8 @@ fn strip_path(path: &str) -> String {
 }
 
 /// Validate and assemble a reload. Errors prevent application.
-pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>) -> Result<Prepared, Vec<String>> {
+/// Add removed proc paths absent from the world to `skipped`.
+pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: &mut Vec<String>) -> Result<Prepared, Vec<String>> {
 	let HotReloadRequest {
 		new_types: _,
 		procs,
@@ -438,9 +439,25 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>) -> Result
 		var_defaults,
 		builtin_defaults,
 		init_procs,
-		line_moves
+		line_moves,
+		removed_vars
 	} = request;
 	runtime_tables::available().map_err(|e| vec![format!("hot reloading isn't available on this build of BYOND: {}", e)])?;
+
+	// Check removed vars before this reload changes the tables.
+	for var in removed_vars {
+		warnings.push(if world_lacks(var) {
+			format!(
+				"{}: var {} was removed from source and isn't in the running world",
+				var.type_path, var.var
+			)
+		} else {
+			format!(
+				"{}: var {} was removed from source but retained in the running world",
+				var.type_path, var.var
+			)
+		});
+	}
 
 	let mut prepared = Prepared::default();
 	let mut errors = vec![];
@@ -461,7 +478,7 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>) -> Result
 		instances: StagedInstances::default()
 	};
 	for new in new_vars {
-		if let Err(e) = prepare_new_var(new, &mut added, &mut type_vars, &mut pending) {
+		if let Err(e) = prepare_new_var(new, &mut added, &mut type_vars, &mut pending, warnings) {
 			errors.push(e);
 		}
 	}
@@ -476,6 +493,9 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>) -> Result
 		// An already removed proc must not block subsequent reloads.
 		if Proc::overrides(removed.proc.path.as_str()).is_empty() {
 			warnings.push(format!("{}: not found in the running world; skipping removal", removed.proc.path));
+			if !skipped.contains(&removed.proc.path) {
+				skipped.push(removed.proc.path.clone());
+			}
 			continue;
 		}
 		match prepare_removal(removed, &mut staged) {
@@ -663,6 +683,7 @@ fn assemble(
 		pending,
 		new_statics,
 		instances: &mut added.instances,
+		place: code_place(original),
 		error: None
 	};
 	let bytecode = match dmasm::assembler::assemble(&nodes, &mut env) {
@@ -942,12 +963,52 @@ fn params_table(
 	runtime_tables::intern_misc(&words).map(Some)
 }
 
+/// Whether the type is absent or its readable declarations lack this var.
+/// Unreadable declarations cannot confirm absence.
+fn world_lacks(var: &RemovedVar) -> bool {
+	let Ok(type_id) = find_type(&var.type_path) else {
+		return true;
+	};
+	let Ok(name) = StringRef::new(&var.var) else {
+		return false;
+	};
+	let name = name.get_id().0;
+	let mut type_vars = TypeVars::default();
+	match type_vars.declared(type_id).cloned() {
+		Ok(declared) => !declared.chunks(2).any(|pair| type_vars.name_of(pair[0]) == name),
+		Err(_) => false
+	}
+}
+
 /// The type whose path is `path`.
 fn find_type(path: &str) -> Result<u32, String> {
 	let id = StringRef::new(path).map_err(|_| format!("couldn't make the string {}", path))?.get_id().0;
 	(0..runtime_tables::type_count()?)
 		.find(|&t| runtime_tables::type_field(t, type_fields::PATH) == Ok(id))
 		.ok_or_else(|| format!("there's no type {} in the running world", path))
+}
+
+/// Resolve `/image` and its subtypes directly from the type table.
+/// text2path("/image") can return null before a rebooted world starts
+/// executing.
+pub(crate) fn image_type(path: &str) -> Option<u32> {
+	let id = find_type(path).ok()?;
+	let image = find_type("/image").ok()?;
+	type_and_ancestors(id).contains(&image).then_some(id)
+}
+
+/// Return the type and its ancestors, nearest first, or `None` if unavailable.
+pub(crate) fn ancestry(path: &str) -> Option<Vec<String>> {
+	let id = find_type(path).ok()?;
+	Some(type_and_ancestors(id).into_iter().map(type_path).collect())
+}
+
+/// Format a runtime type path for diagnostics.
+fn type_path(type_id: u32) -> String {
+	runtime_tables::type_field(type_id, type_fields::PATH)
+		.ok()
+		.map(|id| String::from(unsafe { StringRef::from_id(raw_types::strings::StringId(id)) }))
+		.unwrap_or_else(|| format!("type {}", type_id))
 }
 
 /// The types `type_id` is or descends from, itself first.
@@ -1383,6 +1444,7 @@ pub fn add_types(new_types: &[NewType]) -> Result<usize, Vec<String>> {
 		return Ok(0);
 	}
 	runtime_tables::available().map_err(|e| vec![format!("hot reloading isn't available on this build of BYOND: {}", e)])?;
+	code_changed();
 
 	let mut added = 0;
 	for new in new_types {
@@ -1584,9 +1646,38 @@ fn leaked_string(text: &str) -> Result<u32, String> {
 	Ok(id)
 }
 
-fn prepare_new_var(new: &NewVar, added: &mut AddedVars, type_vars: &mut TypeVars, pending: &mut Pending) -> Result<(), String> {
+fn prepare_new_var(
+	new: &NewVar,
+	added: &mut AddedVars,
+	type_vars: &mut TypeVars,
+	pending: &mut Pending,
+	warnings: &mut Vec<String>
+) -> Result<(), String> {
 	const STATIC: u32 = 1;
 	let fail = |e: String| format!("{}/var/{}: {}", new.type_path, new.var, e);
+
+	// Removed vars remain in the world. Reuse a matching declaration;
+	// any new default is applied separately.
+	if !new.type_path.is_empty() {
+		let type_id = find_type(&new.type_path).map_err(fail)?;
+		let name = leaked_string(&new.var).map_err(fail)?;
+		let declared = type_vars.declared(type_id).map_err(fail)?.clone();
+		if let Some(pair) = declared.chunks(2).find(|pair| type_vars.name_of(pair[0]) == name) {
+			if pair[1] != new.flags {
+				return Err(fail(
+					"the running world retained this var with different static, const or tmp flags; rebuild to change them".to_owned()
+				));
+			}
+			if new.flags & STATIC != 0 {
+				pending.globals.insert((new.type_path.clone(), new.var.as_bytes().to_vec()), pair[0]);
+			}
+			warnings.push(format!(
+				"{}: var {} reuses the declaration retained by the running world; existing static values are unchanged",
+				new.type_path, new.var
+			));
+			return Ok(());
+		}
+	}
 
 	let id = added.next_id();
 	let value = const_value(&new.value).map_err(fail)?;
@@ -1602,7 +1693,12 @@ fn prepare_new_var(new: &NewVar, added: &mut AddedVars, type_vars: &mut TypeVars
 			let declared = type_vars.declared(sub).map_err(fail)?.clone();
 			let names: Vec<u32> = declared.chunks(2).map(|pair| type_vars.name_of(pair[0])).collect();
 			match names.binary_search(&name) {
-				Ok(_) => return Err(fail(format!("variable already exists on type {}", sub))),
+				Ok(_) => {
+					return Err(fail(format!(
+						"{} already has a var of that name (a duplicate definition)",
+						type_path(sub)
+					)))
+				}
 				Err(at) => {
 					type_vars.declared(sub).map_err(fail)?.splice(at * 2..at * 2, [id, new.flags]);
 				}
@@ -1612,7 +1708,10 @@ fn prepare_new_var(new: &NewVar, added: &mut AddedVars, type_vars: &mut TypeVars
 				let table = type_vars.table(sub).map_err(fail)?;
 				let at = table.chunks(4).position(|entry| entry[0] >= name).unwrap_or(table.len() / 4);
 				if table.get(at * 4) == Some(&name) {
-					return Err(fail(format!("variable already exists on type {}", sub)));
+					return Err(fail(format!(
+						"{} already has a var of that name (a duplicate definition)",
+						type_path(sub)
+					)));
 				}
 				table.splice(at * 4..at * 4, [name, id, value.0, value.1]);
 			}
@@ -1655,10 +1754,8 @@ fn prepare_redeclared(
 	}
 
 	let type_id = find_type(&var.type_path).map_err(fail)?;
-	let name = StringRef::new(&var.var)
-		.map_err(|_| fail("couldn't make its name".to_owned()))?
-		.get_id()
-		.0;
+	// Keep the name alive while the type var table references it.
+	let name = leaked_string(&var.var).map_err(fail)?;
 	let declared = type_vars.declared(type_id).map_err(fail)?.clone();
 	let id = declared
 		.chunks(2)
@@ -1723,6 +1820,7 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 	moved_breakpoints: &mut MovedBreakpoints<K>,
 	warnings: &mut Vec<String>
 ) {
+	code_changed();
 	// The id each new var really got, if it got one
 	let mut got = HashMap::new();
 	for new in &prepared.new_vars {
@@ -1993,7 +2091,19 @@ fn apply_code<K: Ord + std::hash::Hash + Copy, T>(
 			}
 		}
 
-		let Some(offset) = offset_of_line(&p.bytecode, line) else {
+		// Preserve breakpoint offsets relative to the proc's first line when it
+		// moves files.
+		let moved = match (first_line(&old_bytecode), first_line(&p.bytecode)) {
+			(Some(old_first), Some(new_first)) if debug_file(&old_bytecode) != debug_file(&p.bytecode) && line >= old_first => {
+				Some(line - old_first + new_first)
+			}
+			_ => None
+		};
+		// Absolute line numbers are unrelated in the destination file.
+		let Some((line, offset)) = (match moved {
+			Some(moved) => offset_of_line(&p.bytecode, moved).map(|offset| (moved, offset)),
+			None => offset_of_line(&p.bytecode, line).map(|offset| (line, offset))
+		}) else {
 			warnings.push(format!(
 				"{}: removed breakpoint on line {}: no executable code after reload",
 				p.name, line
@@ -2050,6 +2160,19 @@ fn adapt_debug_info(nodes: &[Node], original: &[u32]) -> Vec<Node> {
 // Changes to the world's proc names waiting for them to be built (see
 // `edit_world_names`)
 static WAITING_WORLD_EDITS: Mutex<Vec<WorldEdit>> = Mutex::new(Vec::new());
+
+/// Generation for code and macro changes that invalidate compiled evaluations.
+static CODE_GENERATION: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Invalidate compiled evaluation caches after code or macro changes.
+pub fn code_changed() {
+	CODE_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Current code and macro generation.
+pub fn code_generation() -> u32 {
+	CODE_GENERATION.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 /// The global vars that reloads have added to this world, by name, with
 /// their var ids
@@ -2289,6 +2412,23 @@ fn line_at(bytecode: &[u32], offset: u32) -> Option<u32> {
 	line
 }
 
+/// First DbgFile string ID in the proc bytecode.
+fn debug_file(bytecode: &[u32]) -> Option<u32> {
+	(bytecode.first() == Some(&Opcode::DbgFile.word()))
+		.then(|| bytecode.get(1).copied())
+		.flatten()
+}
+
+/// First source line in the proc bytecode.
+fn first_line(bytecode: &[u32]) -> Option<u32> {
+	dmasm::scan(bytecode)
+		.ok()?
+		.instructions
+		.iter()
+		.find(|ins| ins.opcode == Opcode::DbgLine)
+		.and_then(|ins| ins.bytecode.get(1).copied())
+}
+
 /// Resolve a line breakpoint to the instruction after its DbgLine,
 /// matching the server's `Offset` request.
 fn offset_of_line(bytecode: &[u32], line: u32) -> Option<u32> {
@@ -2350,12 +2490,61 @@ fn globals_in(bytecode: &[u32]) -> HashMap<Vec<u8>, Vec<u32>> {
 	out
 }
 
+/// First source file and source line range in the proc bytecode.
+fn code_place(bytecode: &[u32]) -> Option<(Vec<u8>, u32, u32)> {
+	let (nodes, _) = dmasm::disassembler::disassemble(bytecode, &mut LenientDisassembleEnv);
+	let mut file = None;
+	let mut lines: Option<(u32, u32)> = None;
+	for node in &nodes {
+		match node {
+			Node::Instruction(dmasm::Instruction::DbgFile(name), _) if file.is_none() => file = Some(name.0.clone()),
+			Node::Instruction(dmasm::Instruction::DbgLine(line), _) => {
+				lines = Some(lines.map_or((*line, *line), |(a, b)| (a.min(*line), b.max(*line))));
+			}
+			_ => {}
+		}
+	}
+	let (first, last) = lines?;
+	Some((file?, first, last))
+}
+
 /// Index global variable users by disassembling all procs.
 /// Build lazily, only when a name is ambiguous.
 #[derive(Default)]
-struct WorldGlobals(Option<HashMap<Vec<u8>, Vec<(u32, String)>>>);
+struct WorldGlobals(Option<HashMap<Vec<u8>, Vec<(u32, String)>>>, Option<Vec<(Vec<u8>, Vec<u8>, u32, u32)>>);
 
 impl WorldGlobals {
+	/// Globals referenced by the global init proc, with file, name, line and
+	/// ID.
+	fn initialized(&mut self) -> &[(Vec<u8>, Vec<u8>, u32, u32)] {
+		self.1.get_or_insert_with(|| {
+			let Some(proc) = crate::unnamed::find(crate::server_types::GLOBAL_INIT, 0) else {
+				return vec![];
+			};
+			let bytecode = original_bytecode(&proc);
+			let (nodes, _) = dmasm::disassembler::disassemble(&bytecode, &mut LenientDisassembleEnv);
+			let (mut file, mut line) = (vec![], 0);
+			let mut set = vec![];
+			for node in &nodes {
+				let Node::Instruction(ins, _) = node else { continue };
+				match ins {
+					dmasm::Instruction::DbgFile(name) => file = name.0.clone(),
+					dmasm::Instruction::DbgLine(at) => line = *at,
+					_ => {
+						for var in ins.variables() {
+							for global in var.globals() {
+								if let Some(id) = global.id {
+									set.push((file.clone(), global.name.0.clone(), line, id));
+								}
+							}
+						}
+					}
+				}
+			}
+			set
+		})
+	}
+
 	fn users(&mut self, name: &[u8]) -> &[(u32, String)] {
 		let map = self.0.get_or_insert_with(|| {
 			let mut map: HashMap<Vec<u8>, Vec<(u32, String)>> = HashMap::new();
@@ -2383,6 +2572,8 @@ struct ReloadEnv<'a> {
 	/// and name
 	new_statics: HashMap<(String, Vec<u8>), u32>,
 	instances: &'a mut StagedInstances,
+	/// Source file and line range of the proc.
+	place: Option<(Vec<u8>, u32, u32)>,
 	/// Lookup failure details more specific than the assembler error.
 	error: Option<String>
 }
@@ -2438,8 +2629,32 @@ impl dmasm::assembler::AssembleEnv for ReloadEnv<'_> {
 			let n = static_number(scope);
 			let id = self.proc_globals.get(name).and_then(|ids| ids.get(n)).copied();
 			let id = id.or_else(|| self.new_statics.get(&(scope.to_owned(), name.to_vec())).copied());
+			// For unread statics, find a matching initializer within the proc's
+			// source range, or fall back to a unique global of that name.
+			let id = id.or_else(|| {
+				let (file, first, last) = self.place.as_ref()?;
+				let set: Vec<u32> = self
+					.world_globals
+					.initialized()
+					.iter()
+					.filter(|(at, global, ..)| at == file && global == name)
+					.filter(|(.., line, _)| (*first..=*last).contains(line))
+					.map(|(.., id)| *id)
+					.collect();
+				match set[..] {
+					[id] => Some(id),
+					[] => match variable_ids(name)[..] {
+						[id] => Some(id),
+						_ => None
+					},
+					_ => None
+				}
+			});
 			if id.is_none() {
-				self.error = Some(format!("static local {} isn't declared in the proc", shown));
+				self.error = Some(format!(
+					"static local {}: cannot locate its storage in the running world; rebuild to use it",
+					shown
+				));
 			}
 			return id;
 		}

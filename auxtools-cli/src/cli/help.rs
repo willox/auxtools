@@ -118,14 +118,17 @@ Exit codes:
 		arguments: "",
 		sections: "Behavior:
   Calls world.Del(). A world started by launch also shuts down its launcher.
-  world.Del() shuts down the debugger even if custom shutdown code leaves the
-  process running. Include --kill in the initial request for a forced fallback.
-  With --kill, reaching the graceful deadline starts forced termination.
+  If world.Del() returns without ending the world, the debugger still shuts
+  down. In launched worlds, a runtime error in world.Del() instead leaves
+  the debugger available, and stop reports the failure.
+  Include --kill in the initial request for a forced fallback.
+  With --kill, forced termination starts when the graceful deadline passes,
+  or at once when world.Del() fails.
   Success depends on the process exiting within the additional kill timeout.
 
 Output:
   JSON contains pid, stopped, and killed. killed is true when the process was
-  terminated after the graceful deadline.
+  terminated.
 
 Exit codes:
   0  Process exited.
@@ -201,6 +204,8 @@ Output:
   Requires a paused world.
 
 Output:
+  Text shows the first 200 characters of a long value and its length; use
+  --json or eval for the whole value.
   JSON contains arguments, locals, and optionally globals, using the same
   value encoding as eval. Each variable consumes one expansion level, so the
   default expands lists but does not expand object variables."
@@ -219,16 +224,21 @@ auxtools [--pid PID] eval - [OPTIONS]",
   In a paused world, expressions can access frame variables and src.
   In a running world, expressions can access globals and call procs.
   Several statements form a proc body: separate them with newlines or ';'.
-  A proc body yields its return value, or the value of a final expression.
+  A proc body yields its return value or final expression. A final statement,
+  including an assignment or increment, leaves `.` as the result.
   Expressions can use the project's #define macros when the world was started
   by launch with hot reload enabled.
   Evaluation can change world state through assignments and proc calls.
   Evaluation errors exit with code 1; runtime diagnostics include locations
-  and the call stack when available.
+  and the call stack when available. A callee runtime error ends only that
+  proc and returns null to the caller, as in DM. It is reported on stderr
+  without failing the evaluation.
   Evaluated code cannot sleep unless --spawn is set. Spawned code runs outside
   any frame (--src can set src), pauses at breakpoints, and records its result
   in the journal (log --spawned). In a paused world it runs after execution
   resumes. --spawn requires a world started by launch.
+  In launched worlds, auxtools_kept() stores values between evaluations
+  until reboot: auxtools_kept()[\"m\"] = m.
 
 Output:
   JSON represents numbers, text, and null directly. Lists use arrays, objects
@@ -254,6 +264,8 @@ Exit codes:
 		summary: "Show a proc's source location, definition count, and hot reload status.",
 		usage: "auxtools [--pid PID] proc /PATH[#N] [--json]",
 		arguments: "/PATH  Proc path, with or without /proc/: /mob/proc/attack or /mob/attack.
+       Procs without a path go by the names stacks show: (global init),
+       (in list) and (var initializer).
 #N     Zero-based definition index. [default: 0]",
 		sections: "Output:
   JSON contains proc, file, line, definitions, and reloaded.
@@ -264,7 +276,8 @@ Exit codes:
 		brief: "Show a proc's current bytecode",
 		summary: "Disassemble a proc's current bytecode.",
 		usage: "auxtools [--pid PID] disassemble /PATH[#N] [--json]",
-		arguments: "/PATH  Proc path, with or without /proc/.
+		arguments: "/PATH  Proc path, with or without /proc/, or a name stacks show for
+       a proc without a path, such as (global init).
 #N     Zero-based definition index. [default: 0]",
 		sections: "Output:
   Instructions include bytecode offsets, instruction text, and source lines.
@@ -347,7 +360,8 @@ Use `auxtools wait COMMAND --help` for options."
 		usage: "auxtools [--pid PID] wait pause [OPTIONS]",
 		arguments: "",
 		sections: "Behavior:
-  With no triggers, observe pauses caused by other debugger clients.
+  With no triggers, observe any pause. With breakpoints, watches or
+  --runtimes, wait for a matching trigger and ignore other pauses.
   If already paused, return immediately unless --change is specified.
   With --change on a paused world, resolve watches in the selected frame,
   resume execution, and wait for a pause.
@@ -358,7 +372,9 @@ Use `auxtools wait COMMAND --help` for options."
   By default, the resulting pause persists after exit. --no-hold does not
   request a retained pause; an existing hold or another debugger can still
   keep the world paused.
-  --if does not filter runtime errors or pauses caused by other clients.
+  --if does not filter runtime errors or pauses caused by other clients;
+  --runtime-filter selects errors by message: 'bounds, null' matches either
+  substring; '!libdreamluau' excludes messages containing libdreamluau.
 
 Input:
   For EXPR and CONDITION, @FILE reads text from a file.
@@ -379,7 +395,8 @@ Exit codes:
 Examples:
   auxtools --pid 1234 wait pause --break code/combat.dm:42 --timeout 30 --json
   auxtools --pid 1234 wait pause --change src.health --if \"value < old\" --json
-  auxtools --pid 1234 wait pause --runtimes --hold-max 60 --json"
+  auxtools --pid 1234 wait pause --runtimes --hold-max 60 --json
+  auxtools --pid 1234 wait pause --runtime-filter '!libdreamluau' --json"
 	},
 	Page {
 		path: &["wait", "reload"],

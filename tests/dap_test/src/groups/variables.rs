@@ -39,10 +39,6 @@ fn kinds_and_expressions(world: &mut World, locals: &[Value], version: u64) {
 	let frame = world.frame_id();
 	for local in locals {
 		let (name, value) = (local["name"].as_str().unwrap(), local["value"].as_str().unwrap());
-		if name.starts_with("twin") {
-			assert!(local["evaluateName"].is_null(), "two locals share a name, and {} has one to itself", name);
-			continue;
-		}
 		assert_eq!(local["evaluateName"], name);
 		assert_eq!(world.evaluate_in(&frame, name, "watch")["result"], value, "{}", name);
 	}
@@ -77,6 +73,26 @@ fn kinds_and_expressions(world: &mut World, locals: &[Value], version: u64) {
 	assert_eq!(last[0]["evaluateName"], "nested[2][\"x\"][1]");
 	assert_eq!(world.evaluate_in(&frame, "nested[2][\"x\"][1]", "watch")["result"], "3");
 	ok("nested access expressions");
+
+	// Reach entries with escaped literals, object refs or positional lookup.
+	let inside = world.variables(&of("keyed")["variablesReference"].clone());
+	let expressions: Vec<&str> = inside.iter().map(|v| v["evaluateName"].as_str().unwrap()).collect();
+	assert_eq!(expressions[..3], ["keyed[\"a\\[b\\]\"]", "keyed[keyed[2]]", "keyed[keyed[3]]"]);
+	assert!(expressions[3].starts_with("keyed[locate(\"\\[0x"), "{}", expressions[3]);
+	for (entry, value) in inside.iter().zip(["1", "2", "3", "4"]) {
+		let expression = entry["evaluateName"].as_str().unwrap();
+		assert_eq!(world.evaluate_in(&frame, expression, "watch")["result"], value, "{}", expression);
+		let pair = world.variables(&entry["variablesReference"].clone());
+		assert_eq!(pair[1]["evaluateName"], expression);
+	}
+	if version >= 516 {
+		let inside = world.variables(&of("keyed_pairs")["variablesReference"].clone());
+		// Alist entries cannot be accessed by position.
+		assert!(inside[0]["evaluateName"].is_null(), "{}", inside[0]);
+		let expression = inside[1]["evaluateName"].as_str().unwrap();
+		assert_eq!(world.evaluate_in(&frame, expression, "watch")["result"], "2", "{}", expression);
+	}
+	ok("access expressions for awkward keys");
 
 	let arguments = world.scope(&frame, "Arguments");
 	let arguments = world.variables(&arguments);
@@ -224,7 +240,6 @@ fn setting(world: &mut World, version: u64) {
 		(&locals, "whole", "nowhere_at_all", "undefined var: nowhere_at_all"),
 		(&locals, "whole", "1 / 0", "runtime error: Division by zero"),
 		(&locals, "not_a_local", "1", "the frame has no local called not_a_local"),
-		(&locals, "twin", "1", "the proc has more than one local called twin"),
 		(&arguments, "third", "1", "the frame has no argument called third"),
 		(&named, "not_a_var", "1", "runtime error: ")
 	] {
@@ -268,6 +283,22 @@ fn byond_version(world: &mut World) -> u64 {
 pub fn run() {
 	let mut world = World::start();
 	let version = byond_version(&mut world);
+
+	// Resolve duplicate local names to the active slot in each block.
+	for (mark, value) in [("twin_1", "1"), ("twin_2", "2")] {
+		world.run_to("values", "/values", mark);
+		let frame = world.frame_id();
+		assert_eq!(world.evaluate_in(&frame, "twin", "hover")["result"], value, "hovering in {}", mark);
+		let twins: Vec<(String, String)> = world
+			.scope_values("Locals")
+			.into_iter()
+			.filter(|(name, _)| name.starts_with("twin"))
+			.collect();
+		assert_eq!(twins, [("twin".to_owned(), value.to_owned())], "at {}", mark);
+		world.resume_through("values");
+	}
+	ok("a local's name means the one in use");
+
 	world.run_to("values", "/values", "values_stop");
 
 	let frame = world.frame_id();
@@ -454,8 +485,14 @@ pub fn run() {
 		println!("(BYOND {} has no alists, vectors, pixlocs or callees to show)", version);
 	}
 
-	assert_eq!(local("twin"), "1");
-	assert_eq!(local("twin #1"), "2");
+	// After both blocks, expose only the duplicate local whose use started
+	// last.
+	let twins: Vec<(String, String)> = world
+		.scope_values("Locals")
+		.into_iter()
+		.filter(|(name, _)| name.starts_with("twin"))
+		.collect();
+	assert_eq!(twins, [("twin".to_owned(), "2".to_owned())], "past both blocks");
 	ok("duplicate local names");
 
 	assert_eq!(world.scope_values("Arguments"), [

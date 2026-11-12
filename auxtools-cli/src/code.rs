@@ -13,7 +13,7 @@ use std::{
 };
 
 use auxtools_cli::server_types::{
-	HotReloadInitProc, HotReloadLines, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, Macro, ProcRef
+	HotReloadInitProc, HotReloadLines, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, Macro, ProcRef, RemovedVar
 };
 use dmasm::reload::{diff, Changes, ParseOptions, ProcKey, Snapshot};
 
@@ -23,9 +23,14 @@ use crate::{adapter::Input, dap::Output};
 const INTERVAL: Duration = Duration::from_millis(500);
 /// Limit polling to 1 / LOOKING_SHARE of the worker's time.
 const LOOKING_SHARE: u32 = 5;
+/// Allowance for Linux file timestamps lagging the clock by a coarse timer
+/// tick.
+const STAMP_LAG: Duration = Duration::from_millis(50);
 
 pub struct Options {
 	pub dme: PathBuf,
+	/// The running .dmb; rebuilds establish a new source baseline.
+	pub dmb: PathBuf,
 	/// DreamMaker's command line defines, as `(name, value)`
 	pub defines: Vec<(String, Option<String>)>,
 	pub hot_reload: bool
@@ -45,7 +50,7 @@ pub enum Event {
 	/// warnings.
 	Reload {
 		request: Box<HotReloadRequest>,
-		summary: String,
+		summary: Summary,
 		notes: Vec<String>,
 		world: u64
 	},
@@ -93,6 +98,7 @@ pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>
 				reconnected: Cell::new(false),
 				world: Cell::new(0),
 				parsed: Cell::new(false),
+				parse_started: Cell::new(SystemTime::UNIX_EPOCH),
 				macros: RefCell::new(None)
 			};
 			code.run();
@@ -114,6 +120,8 @@ struct Code {
 	world: Cell<u64>,
 	/// A full parse occurred since the last heap trim.
 	parsed: Cell<bool>,
+	/// Start time of the last full parse.
+	parse_started: Cell<SystemTime>,
 	/// The macros the world was last given
 	macros: RefCell<Option<Vec<Macro>>>
 }
@@ -147,6 +155,7 @@ impl Code {
 
 	fn parse(&self) -> Result<Snapshot, String> {
 		self.parsed.set(true);
+		self.parse_started.set(SystemTime::now());
 		Snapshot::parse(&self.options.dme, &self.parse_options)
 	}
 
@@ -180,9 +189,11 @@ impl Code {
 			return;
 		}
 
+		self.warn_of_errors(&built);
 		let files = files(&built, &self.options.dme);
+		self.warn_of_later_edits(&files, dmb_modified);
 		let mut watching = Watching {
-			files: Watched::new(&self.root, &files),
+			files: Watched::new(&self.root, &files, self.parse_started.get()),
 			dmb_modified,
 			edited_since_built: HashSet::new(),
 			applied: None,
@@ -206,7 +217,7 @@ impl Code {
 	}
 
 	fn dmb_modified(&self) -> Option<SystemTime> {
-		std::fs::metadata(self.options.dme.with_extension("dmb")).and_then(|m| m.modified()).ok()
+		std::fs::metadata(&self.options.dmb).and_then(|m| m.modified()).ok()
 	}
 
 	fn watch(&self, watching: &mut Watching) {
@@ -265,7 +276,7 @@ impl Code {
 			match current.reload_file(&self.root, &file) {
 				Ok(reload) => {
 					watching.edited_since_built.insert(file);
-					return match self.reload(&reload.changes, current) {
+					return match self.reload(&reload.changes, current, current) {
 						None => false,
 						Some(true) => {
 							let current = match watching.applied.as_mut() {
@@ -294,15 +305,17 @@ impl Code {
 				return self.not_reloaded(e);
 			}
 		};
-		let changes = diff(watching.applied.as_ref().unwrap_or(&watching.built), &new, Some(&changed));
+		let current = watching.applied.as_ref().unwrap_or(&watching.built);
+		let mut changes = diff(current, &new, Some(&changed));
+		refuse_hidden(current, &new, &mut changes);
 		watching.edited_since_built.extend(changed);
 
 		// A file the new parse includes for the first time
 		for file in files(&new, &self.options.dme) {
-			watching.files.add(&self.root, &file);
+			watching.files.add(&self.root, &file, self.parse_started.get());
 		}
 
-		match self.reload(&changes, &new) {
+		match self.reload(&changes, &new, watching.applied.as_ref().unwrap_or(&watching.built)) {
 			None => false,
 			Some(true) => {
 				self.send(Event::Changed);
@@ -330,8 +343,11 @@ impl Code {
 			watching.files.changed(&self.root);
 			match self.parse() {
 				Ok(built) => {
-					for file in files(&built, &self.options.dme) {
-						watching.files.add(&self.root, &file);
+					self.warn_of_errors(&built);
+					let files = files(&built, &self.options.dme);
+					self.warn_of_later_edits(&files, dmb_modified);
+					for file in files {
+						watching.files.add(&self.root, &file, self.parse_started.get());
 					}
 					watching.built = built;
 				}
@@ -357,8 +373,9 @@ impl Code {
 				return self.not_reloaded(e) && self.ready();
 			}
 		};
-		let changes = diff(&watching.built, &current, Some(&watching.edited_since_built));
-		let Some(applied) = self.reload(&changes, &current) else {
+		let mut changes = diff(&watching.built, &current, Some(&watching.edited_since_built));
+		refuse_hidden(&watching.built, &current, &mut changes);
+		let Some(applied) = self.reload(&changes, &current, &watching.built) else {
 			return false;
 		};
 		if !self.ready() {
@@ -371,6 +388,49 @@ impl Code {
 		watching.built.clear_patches();
 		// Send evaluation macros after releasing the world.
 		self.give_macros()
+	}
+
+	/// Warn that parse errors make the source baseline incomplete.
+	fn warn_of_errors(&self, built: &Snapshot) {
+		let errors = errors(built);
+		if errors.is_empty() {
+			return;
+		}
+		self.log("source baseline has parse errors; definitions hidden by them require a rebuild:");
+		for error in placed(&errors, built).iter().take(5) {
+			self.out.console(format!("    {}", error));
+		}
+		if errors.len() > 5 {
+			self.out.console(format!("    and {} more", errors.len() - 5));
+		}
+	}
+
+	/// Warn about files saved after the build. Hot reload assumes the initial
+	/// source matches the world and only applies subsequent edits.
+	fn warn_of_later_edits(&self, files: &[PathBuf], built: Option<SystemTime>) {
+		let Some(built) = built else {
+			return;
+		};
+		let mut later: Vec<String> = files
+			.iter()
+			.filter(|file| modified_time(&self.root, file).is_some_and(|time| time > built))
+			.map(|file| file.display().to_string())
+			.collect();
+		if later.is_empty() {
+			return;
+		}
+		later.sort();
+		let more = later.len().saturating_sub(5);
+		later.truncate(5);
+		let mut named = later.join(", ");
+		if more > 0 {
+			named += &format!(" and {} more", more);
+		}
+		self.log(format!(
+			"changed since the .dmb was built: {}. These edits may be missing from the world; rebuild to include them. Hot reload only applies \
+			 later edits",
+			named
+		));
 	}
 
 	/// Release the world unless a newer connection needs synchronization first.
@@ -410,9 +470,9 @@ impl Code {
 		})
 	}
 
-	/// Ask the adapter to apply `changes` against `snapshot`.
-	/// Returns `None` if the adapter disconnected.
-	fn reload(&self, changes: &Changes, snapshot: &Snapshot) -> Option<bool> {
+	/// Apply `changes` from `before` to `snapshot` through the adapter.
+	/// Return `None` if the adapter disconnects.
+	fn reload(&self, changes: &Changes, snapshot: &Snapshot, before: &Snapshot) -> Option<bool> {
 		if !changes.refused.is_empty() {
 			self.log("rejected; rebuild required for these changes:");
 			let refused = placed(&changes.refused, snapshot);
@@ -426,12 +486,14 @@ impl Code {
 			};
 			return self.send(refused).then_some(false);
 		}
-		for why in &changes.warnings {
-			self.out.console(format!("    note: {}", why));
-		}
-
-		let request = reload_request(changes);
-		if request.is_empty() {
+		let mut request = reload_request(changes);
+		without_existing_statics(&mut request, before);
+		// The running world determines whether removed vars actually exist.
+		let notes: Vec<String> = changes.warnings.iter().filter(|note| removed_var(note).is_none()).cloned().collect();
+		if request.is_empty() && request.removed_vars.is_empty() {
+			for why in &notes {
+				self.out.console(format!("    note: {}", why));
+			}
 			self.log("no runtime changes");
 			return self
 				.send(Event::NothingChanged {
@@ -442,8 +504,8 @@ impl Code {
 
 		if !self.send(Event::Reload {
 			request: Box::new(request),
-			summary: summary(changes),
-			notes: changes.warnings.clone(),
+			summary: Summary::of(changes),
+			notes,
 			world: self.world.get()
 		}) {
 			return None;
@@ -460,26 +522,58 @@ impl Code {
 	}
 }
 
+/// Format unresolved snapshot errors without lines for comparison.
+/// Recovered const initializers are excluded by dmasm.
+fn errors(snapshot: &Snapshot) -> Vec<String> {
+	snapshot
+		.parse_errors()
+		.into_iter()
+		.map(|(error, _)| format!("parse error: {}", error))
+		.collect()
+}
+
+/// Reject additions exposed by a repaired parse error: they may already exist
+/// in the built world. Re-adding them could create unintended proc overrides.
+fn refuse_hidden(old: &Snapshot, new: &Snapshot, changes: &mut Changes) {
+	if changes.new_types.is_empty() && changes.new_procs.is_empty() && changes.new_vars.is_empty() {
+		return;
+	}
+	let mut fixed = errors(old);
+	for error in errors(new) {
+		if let Some(at) = fixed.iter().position(|e| *e == error) {
+			fixed.remove(at);
+		}
+	}
+	for error in fixed {
+		let error = error.strip_prefix("parse error: ").unwrap_or(&error);
+		changes.refused.push(format!(
+			"{}: newly visible definitions may have been hidden by this fixed parse error. Rebuild, then reboot before reloading",
+			error
+		));
+	}
+}
+
 /// Attach source locations to diagnostics as `file:line: message`.
 fn placed(errors: &[String], snapshot: &Snapshot) -> Vec<String> {
-	let ctx = snapshot.context();
-	let parse_errors: Vec<(String, String)> = ctx
-		.errors()
-		.iter()
-		.filter(|e| e.severity() == dreammaker::Severity::Error)
-		.map(|e| {
-			let file = ctx.file_path(e.location().file).to_string_lossy().replace('\\', "/");
-			(
-				format!("parse error: {}: {}", file, e.description()),
-				format!("{}:{}: {}", file, e.location().line, e.description())
-			)
-		})
+	let parse_errors: Vec<(String, String)> = snapshot
+		.parse_errors()
+		.into_iter()
+		.map(|(error, placed)| (format!("parse error: {}", error), placed))
 		.collect();
 	errors
 		.iter()
 		.map(|error| {
 			if let Some((_, placed)) = parse_errors.iter().find(|(text, _)| text == error) {
 				return placed.clone();
+			}
+			// Also accept diagnostics that already include a line: `parse
+			// error: file:line: message`.
+			if let Some(placed) = error.strip_prefix("parse error: ").filter(|rest| {
+				rest.split_once(": ")
+					.and_then(|(place, _)| place.rsplit_once(':'))
+					.is_some_and(|(_, line)| line.parse::<u32>().is_ok())
+			}) {
+				return placed.to_owned();
 			}
 			let file_line = error.split_once(": doesn't compile: line ").and_then(|(proc, rest)| {
 				let (line, what) = rest.split_once(": ")?;
@@ -491,47 +585,117 @@ fn placed(errors: &[String], snapshot: &Snapshot) -> Vec<String> {
 		.collect()
 }
 
-/// Summarize a reload in one line.
-fn summary(changes: &Changes) -> String {
-	let list = |names: Vec<String>, what: &str| match names.len() {
-		0 => None,
-		1..=5 => Some(names.join(", ")),
-		n => Some(format!("{} {}", n, what))
-	};
-	let parts: Vec<String> = [
-		list(changes.new_types.iter().map(|t| t.path.clone()).collect(), "types").map(|s| format!("added {}", s)),
-		list(changes.consts.iter().chain(&changes.retyped).cloned().collect(), "vars").map(|s| format!("recompiled users of {}", s)),
-		list(changes.reloads.iter().map(|r| r.proc.to_string()).collect(), "procs").map(|s| format!("reloaded {}", s)),
-		list(changes.settings.iter().map(|c| c.proc.to_string()).collect(), "procs").map(|s| format!("updated settings for {}", s)),
-		list(changes.new_procs.iter().map(|p| p.code.proc.to_string()).collect(), "procs").map(|s| format!("added {}", s)),
-		list(changes.removed_procs.iter().map(|p| p.proc.to_string()).collect(), "procs").map(|s| format!("unlinked {}", s)),
-		list(
-			changes.new_vars.iter().map(|v| format!("{}/var/{}", v.type_path, v.var)).collect(),
-			"vars"
-		)
-		.map(|s| format!("added {}", s)),
-		list(
-			changes.redeclared.iter().map(|v| format!("{}/var/{}", v.type_path, v.var)).collect(),
-			"vars"
-		)
-		.map(|s| format!("updated declarations for {}", s)),
-		list(
-			changes
-				.var_defaults
-				.iter()
-				.chain(&changes.builtin_defaults)
-				.map(|d| format!("{}/var/{}", d.types[0], d.var))
-				.collect(),
-			"vars"
-		)
-		.map(|s| format!("set the default of {}", s)),
-		list(changes.init_procs.iter().map(|i| i.type_path.clone()).collect(), "types").map(|s| format!("rebuilt the init procs of {}", s)),
-		(!changes.line_moves.is_empty()).then(|| format!("remapped lines in {} additional procs", changes.line_moves.len()))
-	]
-	.into_iter()
-	.flatten()
-	.collect();
-	parts.join("; ")
+/// Reload summary that can exclude removals skipped by the running world.
+pub struct Summary {
+	/// Actions, display names with optional removed-proc paths, and plural
+	/// labels.
+	parts: Vec<(&'static str, Vec<(String, Option<String>)>, &'static str)>,
+	line_moves: usize
+}
+
+impl Summary {
+	fn of(changes: &Changes) -> Self {
+		let named = |names: Vec<String>| names.into_iter().map(|name| (name, None)).collect();
+		let var = |type_path: &str, var: &str| format!("{}/var/{}", type_path, var);
+		let parts = vec![
+			("added", named(changes.new_types.iter().map(|t| t.path.clone()).collect()), "types"),
+			(
+				"recompiled users of",
+				named(changes.consts.iter().chain(&changes.retyped).cloned().collect()),
+				"vars"
+			),
+			("reloaded", named(changes.reloads.iter().map(|r| r.proc.to_string()).collect()), "procs"),
+			(
+				"updated settings for",
+				named(changes.settings.iter().map(|c| c.proc.to_string()).collect()),
+				"procs"
+			),
+			(
+				"added",
+				named(changes.new_procs.iter().map(|p| p.code.proc.to_string()).collect()),
+				"procs"
+			),
+			(
+				"unlinked",
+				changes
+					.removed_procs
+					.iter()
+					.map(|p| (p.proc.to_string(), Some(p.proc.path.clone())))
+					.collect(),
+				"procs"
+			),
+			(
+				"added",
+				named(changes.new_vars.iter().map(|v| var(&v.type_path, &v.var)).collect()),
+				"vars"
+			),
+			(
+				"updated declarations for",
+				named(changes.redeclared.iter().map(|v| var(&v.type_path, &v.var)).collect()),
+				"vars"
+			),
+			(
+				"set the default of",
+				named(
+					changes
+						.var_defaults
+						.iter()
+						.chain(&changes.builtin_defaults)
+						.map(|d| var(&d.types[0], &d.var))
+						.collect()
+				),
+				"vars"
+			),
+			(
+				"rebuilt the init procs of",
+				named(changes.init_procs.iter().map(|i| i.type_path.clone()).collect()),
+				"types"
+			),
+		];
+		Summary {
+			parts,
+			line_moves: changes.line_moves.len()
+		}
+	}
+
+	/// Format the summary, excluding removed procs listed in `skipped`.
+	pub fn text(&self, skipped: &[String]) -> String {
+		let mut said: Vec<String> = self
+			.parts
+			.iter()
+			.filter_map(|(done, names, what)| {
+				let names: Vec<&str> = names
+					.iter()
+					.filter(|(_, path)| path.as_ref().is_none_or(|path| !skipped.contains(path)))
+					.map(|(name, _)| name.as_str())
+					.collect();
+				match names.len() {
+					0 => None,
+					1..=5 => Some(format!("{} {}", done, names.join(", "))),
+					n => Some(format!("{} {} {}", done, n, what))
+				}
+			})
+			.collect();
+		if self.line_moves > 0 {
+			said.push(format!("remapped lines in {} additional procs", self.line_moves));
+		}
+		if said.is_empty() {
+			return "no runtime changes".to_owned();
+		}
+		said.join("; ")
+	}
+}
+
+/// Suffix used by dmasm's retained-definition diagnostics.
+pub const RETAINED: &str = " was removed from source but retained in the running world";
+
+/// Extract a removed type var for verification by the running world.
+fn removed_var(note: &str) -> Option<RemovedVar> {
+	let (type_path, var) = note.strip_suffix(RETAINED)?.split_once(": var ")?;
+	type_path.starts_with('/').then(|| RemovedVar {
+		type_path: type_path.to_owned(),
+		var: var.to_owned()
+	})
 }
 
 fn proc_ref(key: &ProcKey) -> ProcRef {
@@ -549,6 +713,27 @@ fn proc_code(r: &dmasm::reload::ProcReload) -> HotReloadProc {
 		params: r.params.clone(),
 		settings: r.settings.clone(),
 		statics: r.statics.clone()
+	}
+}
+
+/// Exclude statics declared before the edit so their slots and values survive.
+/// Unread statics are absent from proc bytecode; sending them again would
+/// allocate duplicate slots and rerun their initializers.
+fn without_existing_statics(request: &mut HotReloadRequest, before: &Snapshot) {
+	for code in &mut request.procs {
+		if code.statics.is_empty() {
+			continue;
+		}
+		let key = ProcKey {
+			path: code.proc.path.clone(),
+			override_id: code.proc.override_id
+		};
+		// New procs have no existing statics.
+		let Ok(old) = before.compile(&key) else {
+			continue;
+		};
+		code.statics
+			.retain(|local| !old.statics.iter().any(|had| had.name == local.name && had.scope == local.scope));
 	}
 }
 
@@ -597,7 +782,8 @@ pub fn reload_request(changes: &Changes) -> HotReloadRequest {
 				proc: proc_ref(&m.proc),
 				lines: m.lines.clone()
 			})
-			.collect()
+			.collect(),
+		removed_vars: changes.warnings.iter().filter_map(|note| removed_var(note)).collect()
 	}
 }
 
@@ -634,18 +820,22 @@ struct Watched {
 }
 
 impl Watched {
-	fn new(root: &Path, files: &[PathBuf]) -> Self {
+	/// Watch files read by a parse starting at `read`.
+	fn new(root: &Path, files: &[PathBuf], read: SystemTime) -> Self {
 		let mut watched = Self::default();
 		for file in files {
 			watched.insert(file);
 		}
 		// Record initial timestamps using the same lookup as later polls.
 		watched.changed(root);
+		for time in watched.times.values_mut() {
+			*time = unless_saved_since(*time, read);
+		}
 		watched
 	}
 
-	/// Start watching `file` if it is not already tracked.
-	fn add(&mut self, root: &Path, file: &Path) {
+	/// Register an untracked file read by a parse starting at `read`.
+	fn add(&mut self, root: &Path, file: &Path, read: SystemTime) {
 		let Some((dir, name)) = self.insert(file) else {
 			return;
 		};
@@ -654,7 +844,7 @@ impl Watched {
 			.get(&name)
 			.copied()
 			.unwrap_or_else(|| modified_time(root, file));
-		self.times.insert(file.to_owned(), time);
+		self.times.insert(file.to_owned(), unless_saved_since(time, read));
 	}
 
 	/// Register `file` without a timestamp. Return its directory and normalized
@@ -695,6 +885,13 @@ impl Watched {
 		self.took = started.elapsed();
 		changed
 	}
+}
+
+/// Clear timestamps near or after the parse start so the next poll rechecks
+/// files that may have changed while being read. The clock allowance can
+/// also cause a harmless reread of a file saved just before parsing.
+fn unless_saved_since(time: Option<SystemTime>, read: SystemTime) -> Option<SystemTime> {
+	time.filter(|time| *time + STAMP_LAG < read)
 }
 
 /// Read watched timestamps from a Windows directory listing. Return an empty
@@ -810,7 +1007,7 @@ mod tests {
 			.iter()
 			.map(PathBuf::from)
 			.collect();
-		let mut watched = Watched::new(&root, &files);
+		let mut watched = Watched::new(&root, &files, at(1));
 		let changed = |watched: &mut Watched| {
 			let mut changed: Vec<String> = watched.changed(&root).iter().map(|f| f.to_string_lossy().into_owned()).collect();
 			changed.sort();
@@ -829,17 +1026,26 @@ mod tests {
 
 		// A file discovered by a later parse.
 		write("code/later.dm", at(0));
-		watched.add(&root, Path::new("code/later.dm"));
+		watched.add(&root, Path::new("code/later.dm"), at(1));
 		assert_eq!(changed(&mut watched), Vec::<String>::new());
 		write("code/later.dm", at(9));
 		assert_eq!(changed(&mut watched), ["code/later.dm"]);
 
 		// Track differently cased paths to the same Windows file.
 		if cfg!(windows) {
-			watched.add(&root, Path::new("code/SUB/C.dm"));
+			watched.add(&root, Path::new("code/SUB/C.dm"), at(1));
 			write("code/sub/c.dm", at(12));
 			assert_eq!(changed(&mut watched), ["code/SUB/C.dm", "code/sub/c.dm"]);
 		}
+
+		// Recheck files saved during the parse, including newly discovered
+		// files.
+		write("code/b.dm", at(20));
+		write("code/during.dm", at(20));
+		let mut watched = Watched::new(&root, &files[..3], at(19));
+		watched.add(&root, Path::new("code/during.dm"), at(19));
+		assert_eq!(changed(&mut watched), ["code/b.dm", "code/during.dm"]);
+		assert_eq!(changed(&mut watched), Vec::<String>::new());
 		let _ = std::fs::remove_dir_all(&root);
 	}
 }

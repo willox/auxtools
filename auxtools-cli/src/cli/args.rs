@@ -197,6 +197,13 @@ pub struct Log {
 	pub world: bool,
 	#[arg(long, help = "Include results of code run by eval --spawn.")]
 	pub spawned: bool,
+	#[arg(
+		long,
+		value_name = "FILTER",
+		help = "Show only runtime errors whose messages match FILTER:\ncomma-separated substrings, any of which matches;\n! excludes one. \
+		        Case-insensitive. Implies --runtimes."
+	)]
+	pub runtime_filter: Option<String>,
 	#[arg(long, value_name = "N", value_parser = whole::<u64>, help = "Read entries with sequence numbers greater than N.")]
 	pub since: Option<u64>,
 	#[arg(long, value_name = "N", value_parser = whole::<u32>, help = "Limit initial output to the last N matching entries.")]
@@ -373,6 +380,13 @@ pub struct WaitPause {
 	pub runtimes: bool,
 	#[arg(long, help = "Also pause on runtime errors inside try blocks.\nImplies --runtimes.")]
 	pub caught: bool,
+	#[arg(
+		long,
+		value_name = "FILTER",
+		help = "Pause only on runtime errors whose messages match FILTER:\ncomma-separated substrings, any of which matches;\n! excludes one. \
+		        Case-insensitive. Implies --runtimes."
+	)]
+	pub runtime_filter: Option<String>,
 	#[arg(long, value_name = "SECONDS", value_parser = seconds, help = "Set the wait deadline. [default: unlimited]")]
 	pub timeout: Option<Duration>,
 	#[arg(long, help = "Do not retain the pause after this command disconnects.")]
@@ -422,7 +436,11 @@ pub struct WaitReboot {
 pub struct Trace {
 	#[arg(value_name = "LOCATION", required = true)]
 	pub locations: Vec<String>,
-	#[arg(long, value_name = "MESSAGE", help = "Format each hit using MESSAGE with {DM expression} values.")]
+	#[arg(
+		long,
+		value_name = "MESSAGE",
+		help = "Format each hit using MESSAGE with {DM expression} values.\n{{ and }} are literal braces."
+	)]
 	pub log: Option<String>,
 	#[arg(long = "if", value_name = "CONDITION", help = "Record only hits where the DM condition is true.")]
 	pub condition: Option<String>,
@@ -747,6 +765,10 @@ mod tests {
 		};
 		assert_eq!(pause.breaks, args(&["a.dm:3", "/proc/x"]));
 		assert!(pause.caught && pause.timeout == Some(Duration::from_secs(2)));
+		let Some(WaitFor::Pause(pause)) = wait(&["wait", "pause", "--runtime-filter", "!libdreamluau"]) else {
+			panic!("not a pause");
+		};
+		assert_eq!(pause.runtime_filter.as_deref(), Some("!libdreamluau"));
 		assert!(matches!(wait(&["wait", "reload", "--since", "12"]), Some(WaitFor::Reload(reload)) if reload.since == Some(12)));
 		assert!(matches!(wait(&["wait", "reboot", "--json"]), Some(WaitFor::Reboot(reboot)) if reboot.json));
 	}

@@ -106,6 +106,35 @@ impl Source {
 		assert!(changes.refused.is_empty(), "the edit was refused: {:?}", changes.refused);
 		changes
 	}
+
+	/// Apply an edit expected to be rejected, and return the reasons. Leave the
+	/// source edited.
+	fn edit_refused(&mut self, file: &str, from: &str, to: &str) -> Vec<String> {
+		let text = self.text(file);
+		assert_eq!(text.matches(from).count(), 1, "{:?} should be in {} once", from, file);
+		std::fs::write(self.dir.join(file), text.replace(from, to)).unwrap();
+		let old = self.snapshot.take().expect("parsed before editing");
+		self.parse();
+		let edited: HashSet<PathBuf> = [Path::new(file).to_owned()].into_iter().collect();
+		let changes = diff(&old, self.snapshot.as_ref().unwrap(), Some(&edited));
+		assert!(!changes.refused.is_empty(), "the edit wasn't refused");
+		changes.refused
+	}
+
+	/// Move the unique occurrence of `code` between file ends in a single
+	/// reload.
+	fn move_code(&mut self, code: &str, from: &str, to: &str) -> Changes {
+		let text = self.text(from);
+		assert_eq!(text.matches(code).count(), 1, "{:?} should be in {} once", code, from);
+		std::fs::write(self.dir.join(from), text.replace(code, "")).unwrap();
+		std::fs::write(self.dir.join(to), format!("{}\n{}", self.text(to), code)).unwrap();
+		let old = self.snapshot.take().expect("parsed before editing");
+		self.parse();
+		let edited: HashSet<PathBuf> = [Path::new(from).to_owned(), Path::new(to).to_owned()].into_iter().collect();
+		let changes = diff(&old, self.snapshot.as_ref().unwrap(), Some(&edited));
+		assert!(changes.refused.is_empty(), "the edit was refused: {:?}", changes.refused);
+		changes
+	}
 }
 
 impl Drop for Source {
@@ -176,7 +205,8 @@ fn reload_request(changes: &Changes) -> Request {
 				proc: proc_ref(&m.proc),
 				lines: m.lines.clone()
 			})
-			.collect()
+			.collect(),
+		removed_vars: vec![]
 	})
 }
 
@@ -402,6 +432,40 @@ fn main() {
 	wait_for(&mut client, "breakpoint_armed", "0");
 	println!("ok: remove remapped breakpoint by original offset");
 
+	// Moving a proc between files must preserve its statement breakpoints.
+	let line = source.line_of("reload.dm", "\tx += 1");
+	let offset = offset_of(&mut client, "/breakpoint_target", line);
+	let at = InstructionRef {
+		proc: ProcRef {
+			path: "/breakpoint_target".to_owned(),
+			override_id: 0
+		},
+		offset
+	};
+	let response = client.request(Request::BreakpointSet {
+		instruction: at.clone(),
+		condition: None,
+		hit: None,
+		log: None
+	});
+	assert!(matches!(response, Response::BreakpointSet { .. }), "{:?}", response);
+	const TARGET: &str = "/proc/breakpoint_target()\n\tvar/x = 1\n\tx += 1\n\treturn x\n";
+	let changes = source.move_code(TARGET, "reload.dm", "main.dm");
+	let result = reload(&mut watcher, &changes);
+	assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+	eval(&mut client, "arm_breakpoint()");
+	assert_eq!(client.expect_pause(), BreakpointReason::Breakpoint);
+	assert_eq!(
+		paused_line(&mut client),
+		("/breakpoint_target".to_owned(), Some(source.line_of("main.dm", "\tx += 1")))
+	);
+	client.resume();
+	let response = client.request(Request::BreakpointUnset { instruction: at });
+	assert!(matches!(response, Response::BreakpointUnset { success: true, .. }), "{:?}", response);
+	let changes = source.move_code(TARGET, "main.dm", "reload.dm");
+	reload(&mut watcher, &changes);
+	println!("ok: breakpoints move with a proc to another file");
+
 	// Two debuggers have a breakpoint on one line, and new code above it in
 	// its proc moves it. Each knows it by its old offset until it sets it
 	// anew: one that has, and then sets and takes away a breakpoint at the
@@ -492,6 +556,84 @@ fn main() {
 	assert_eq!(paused_line(&mut client), ("/runtime_target".to_owned(), Some(line)));
 	client.resume();
 	println!("ok: runtime error in reloaded code");
+
+	// Report the object used to name an exception.
+	let changes = source.edit(
+		"reload.dm",
+		"\tvar/list/nothing\n\treturn nothing.len",
+		"\tthrow EXCEPTION(new /datum/animal/cat)"
+	);
+	reload(&mut watcher, &changes);
+	eval(&mut client, "arm_runtime()");
+	match client.expect_pause() {
+		BreakpointReason::Runtime { message, .. } => assert_eq!(message, "/datum/animal/cat"),
+		other => panic!("expected a runtime, got {:?}", other)
+	}
+	client.resume();
+	println!("ok: exception named with an object");
+	// Resolve resource paths with different filename case, matching DreamMaker.
+	std::fs::write(source.dir.join("Case_Probe.txt"), "found").unwrap();
+	let changes = source.edit(
+		"reload.dm",
+		"/proc/runtime_target()\n\tthrow EXCEPTION(new /datum/animal/cat)",
+		"/proc/runtime_target()\n\treturn file2text('case_probe.txt')"
+	);
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "runtime_target()"), "\"found\"");
+	println!("ok: resource named in another case");
+	// Cache logpoint expressions, invalidating for src type and newly added
+	// globals.
+	let changes = source.edit(
+		"reload.dm",
+		"/proc/runtime_target()\n",
+		"/datum/cache_probe/proc/probe()\n\treturn 1\n\n/datum/cache_probe/sub\n\tvar/extra = 5\n\n/proc/runtime_target()\n"
+	);
+	reload(&mut watcher, &changes);
+	let line = source.line_of("reload.dm", "/datum/cache_probe/proc/probe()") + 1;
+	let instruction = InstructionRef {
+		proc: ProcRef {
+			path: "/datum/cache_probe/probe".to_owned(),
+			override_id: 0
+		},
+		offset: offset_of(&mut client, "/datum/cache_probe/probe", line)
+	};
+	let response = client.request(Request::BreakpointSet {
+		instruction,
+		condition: None,
+		hit: None,
+		log: Some(vec![
+			LogPart::Text("extra ".to_owned()),
+			LogPart::Expr("extra".to_owned()),
+			LogPart::Text(", global ".to_owned()),
+			LogPart::Expr("cache_global".to_owned()),
+		])
+	});
+	assert!(
+		matches!(response, Response::BreakpointSet {
+			result: BreakpointSetResult::Success { .. }
+		}),
+		"{:?}",
+		response
+	);
+	let mut logged = |client: &mut Client, object: &str| {
+		eval(client, &format!("spawn(0) (new {}).probe(); 1", object));
+		match client.recv() {
+			Response::Log { message, .. } => message,
+			other => panic!("expected a log message, got {:?}", other)
+		}
+	};
+	let sub = logged(&mut client, "/datum/cache_probe/sub");
+	assert!(sub.starts_with("extra 5, global {cache_global: "), "{}", sub);
+	let base = logged(&mut client, "/datum/cache_probe");
+	assert!(base.starts_with("extra {extra: "), "{}", base);
+	let changes = source.edit(
+		"reload.dm",
+		"/datum/cache_probe/sub\n",
+		"var/cache_global = 7\n\n/datum/cache_probe/sub\n"
+	);
+	reload(&mut watcher, &changes);
+	assert_eq!(logged(&mut client, "/datum/cache_probe/sub"), "extra 5, global 7");
+	println!("ok: logpoint expressions compiled once, for each type of src and reload");
 
 	// A proc auxtools hooked never runs its bytecode
 	let changes = source.edit(
@@ -643,6 +785,38 @@ fn main() {
 	assert_eq!(eval(&mut client, "visits()"), "11");
 	assert_eq!(eval(&mut client, "visits()"), "12");
 	println!("ok: new static locals");
+
+	// Reject duplicate var declarations on a type and its subtype.
+	const CAT: &str = "/datum/animal/cat\n\tsound = \"meow\"\n";
+	const DUPE: &str = "/datum/animal\n\tvar/dupe = 1\n\n/datum/animal/cat\n\tsound = \"meow\"\n\tvar/dupe = 2\n";
+	// dmasm should reject this before sending it to the world.
+	let refused = source.edit_refused("reload.dm", CAT, DUPE);
+	assert!(
+		refused
+			.iter()
+			.any(|e| e.contains("dupe: duplicate definition (/datum/animal declares it too)")),
+		"{:?}",
+		refused
+	);
+	source.edit("reload.dm", DUPE, CAT);
+	println!("ok: duplicate var definition refused by type");
+
+	// Re-adding a retained var reuses its declaration and applies the new
+	// default.
+	let changes = source.edit("reload.dm", "\tvar/spare = 1\n", "");
+	reload(&mut watcher, &changes);
+	let changes = source.edit("reload.dm", "/datum/animal\n", "/datum/animal\n\tvar/spare = 3\n");
+	let result = reload(&mut watcher, &changes);
+	assert!(
+		result
+			.warnings
+			.iter()
+			.any(|w| w.contains("var spare reuses the declaration retained by the running world")),
+		"{:?}",
+		result.warnings
+	);
+	assert_eq!(eval(&mut client, "var/datum/animal/a = new /datum/animal\nreturn a.spare"), "3");
+	println!("ok: a var removed and declared again");
 
 	// More definitions of a proc on a type that has one: one more of the dog's
 	// speak(), which the puppy's ..() goes through now, and two for the cat
@@ -1013,6 +1187,41 @@ fn main() {
 	);
 	assert_eq!(eval(&mut client, "answer()"), "4");
 	println!("ok: rejected reload preserves existing code");
+
+	// Removing definitions absent from the built world must not claim to remove
+	// runtime code.
+	let request = Request::HotReload(HotReloadRequest {
+		removed_procs: vec![dmasm::reload::RemovedProc {
+			proc: dmasm::reload::ProcKey {
+				path: "/datum/declared/never_built".to_owned(),
+				override_id: 0
+			},
+			type_path: "/datum/declared".to_owned(),
+			name: "never_built".to_owned(),
+			verb: false
+		}],
+		removed_vars: [
+			("/datum/declared", "count"),
+			("/datum/declared", "never_built"),
+			("/datum/never_built", "count")
+		]
+		.map(|(type_path, var)| RemovedVar {
+			type_path: type_path.to_owned(),
+			var: var.to_owned()
+		})
+		.to_vec(),
+		..Default::default()
+	});
+	let result = expect_reload_result(client.request(request));
+	assert!(result.applied, "{:?}", result.errors);
+	assert_eq!(result.skipped, ["/datum/declared/never_built"]);
+	assert_eq!(result.warnings, [
+		"/datum/declared: var count was removed from source but retained in the running world",
+		"/datum/declared: var never_built was removed from source and isn't in the running world",
+		"/datum/never_built: var count was removed from source and isn't in the running world",
+		"/datum/declared/never_built: not found in the running world; skipping removal"
+	]);
+	println!("ok: removals the world never had");
 
 	// A definition among a type's others goes where the source has it in the
 	// `..()` chain, and the world numbers them again as the source does

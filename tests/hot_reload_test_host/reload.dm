@@ -74,6 +74,7 @@ var/breakpoint_armed = FALSE
 /datum/animal
 	var/sound = "..."
 	var/legs = 4
+	var/spare = 1
 
 /datum/animal/proc/speak()
 	return sound

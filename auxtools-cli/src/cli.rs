@@ -262,9 +262,10 @@ fn expression(words: &[String], file: Option<&std::path::Path>, stdin: impl FnOn
 	Ok(expression)
 }
 
-/// Parse `/path` or `/path#N`, where N is the zero-based override index.
+/// Parse `/path` or `/path#N`, where N is the zero-based override index, or
+/// the name of a proc without a path, such as `(global init)`.
 fn proc_ref(text: &str) -> Result<ProcRef> {
-	if !text.starts_with('/') {
+	if !text.starts_with(['/', '(']) {
 		return Err(format!("invalid proc path '{}': expected /PATH[#N].", text).into());
 	}
 	let (path, override_id) = match text.split_once('#') {
@@ -318,6 +319,8 @@ struct Wait {
 	runtimes: bool,
 	/// Those inside a `try` too
 	caught: bool,
+	/// Runtime error message filter.
+	runtime_filter: RuntimeFilter,
 	timeout: Option<Duration>,
 	hold: bool
 }
@@ -337,6 +340,8 @@ pub struct World {
 	received: Receiver<io::Result<Response>>,
 	/// Pause and resume events received while awaiting a response.
 	events: Vec<Response>,
+	/// A reload may have moved the breakpoints installed by `wait`.
+	reloaded: bool,
 	/// Server notifications, including evaluation errors.
 	notes: Vec<String>,
 	/// Condition errors already reported, to avoid duplicate diagnostics.
@@ -369,6 +374,7 @@ impl World {
 			stream,
 			received,
 			events: vec![],
+			reloaded: false,
 			notes: vec![],
 			failed_conditions: vec![],
 			show_instruction: false,
@@ -455,8 +461,9 @@ impl World {
 					changes: args.changes.iter().map(|text| given_text(text)).collect::<Result<_>>()?,
 					frame: args.frame.unwrap_or(0),
 					condition: args.condition.as_deref().map(given_text).transpose()?,
-					runtimes: args.runtimes || args.caught,
+					runtimes: args.runtimes || args.caught || args.runtime_filter.is_some(),
 					caught: args.caught,
+					runtime_filter: args.runtime_filter.as_deref().map(RuntimeFilter::parse).unwrap_or_default(),
 					timeout: args.timeout,
 					hold: !args.no_hold
 				})
@@ -505,7 +512,7 @@ impl World {
 			match response.map_err(|_| hung_up())? {
 				Response::Disconnect => return Err(hung_up()),
 				Response::Notification { message } => self.notes.push(message),
-				Response::CodeChanged => {}
+				Response::CodeChanged => self.reloaded = true,
 				// Report each breakpoint condition error once; failed hits are
 				// skipped.
 				Response::ConditionFailed { message } => {
@@ -629,7 +636,7 @@ impl World {
 			BreakpointReason::Data { changes } => {
 				let changes: Vec<String> = changes
 					.iter()
-					.map(|change| format!("{} changed from {} to {}", change.name, change.old, change.new))
+					.map(|change| format!("{} changed from {} to {}", change.name, short(&change.old), short(&change.new)))
 					.collect();
 				format!("after a change: {}", changes.join("; "))
 			}
@@ -779,7 +786,7 @@ impl World {
 				return Err(format!("the world did not list the {}.", name).into());
 			};
 			for var in vars {
-				say!("  {} = {}", var.name, var.value);
+				say!("  {} = {}", var.name, short(&var.value));
 			}
 		}
 		Ok(())
@@ -882,7 +889,7 @@ impl World {
 		}
 
 		let until = timeout.map(|timeout| Instant::now() + timeout);
-		let mut follower = log::Follower::new(newest, vec![JournalKind::Spawned, JournalKind::World]);
+		let mut follower = log::Follower::new(newest, vec![JournalKind::Spawned, JournalKind::World, JournalKind::Runtime]);
 		loop {
 			let Some(entry) = follower.next(self, until)? else {
 				return Err(Failure(
@@ -904,6 +911,15 @@ impl World {
 					return Ok(());
 				}
 				JournalEvent::Loaded { .. } => return Err(Failure(HUNG_UP, format!("the world rebooted before spawn {} finished.", number))),
+				// Report non-fatal callee errors. The journal cannot identify
+				// which spawn caused them.
+				JournalEvent::Runtime {
+					message,
+					caught: false,
+					stack
+				} if stack.len() > 1 && stack.last().is_some_and(|frame| frame.proc == "/auxtools_spawn_stub") => {
+					eprintln!("{}", log::callee_runtime(&message, &stack));
+				}
 				_ => {}
 			}
 		}
@@ -1026,11 +1042,22 @@ impl World {
 
 	/// Waits for a pause, and keeps it held after we leave
 	fn await_pause(&mut self, until: Option<Instant>, hold: bool) -> Result<Option<BreakpointReason>> {
+		self.await_pause_for(until, hold, |_, _| true)
+	}
+
+	/// Wait for a pause accepted by `ours`, ignoring other clients' triggers.
+	/// Pass whether reload has changed breakpoint locations in the meantime.
+	/// Ignored pauses require another client to resume before our trigger can
+	/// fire.
+	fn await_pause_for(&mut self, until: Option<Instant>, hold: bool, ours: impl Fn(&Stop, bool) -> bool) -> Result<Option<BreakpointReason>> {
 		let reason = loop {
 			if let Some(i) = self.events.iter().position(|e| matches!(e, Response::BreakpointHit { .. })) {
 				let Response::BreakpointHit(stop) = self.events.remove(i) else {
 					unreachable!()
 				};
+				if !ours(&stop, self.reloaded) {
+					continue;
+				}
 				break stop.reason;
 			}
 			match self.next(until)? {
@@ -1072,9 +1099,54 @@ impl World {
 		Ok(())
 	}
 
-	/// Resume for a step and wait for a stop or step-exhausted notification.
+	/// Report uncaught runtime errors since `after` in `from` or its callees
+	/// when a step completed without pausing on the error.
+	fn runtimes_in(&mut self, from: &str, after: u64) -> Result<()> {
+		let Response::Journal { entries, .. } = self.request(Request::Journal {
+			after,
+			kinds: vec![JournalKind::Runtime],
+			limit: None,
+			follow: false
+		})?
+		else {
+			return Ok(());
+		};
+		for entry in entries {
+			if let JournalEvent::Runtime {
+				message,
+				caught: false,
+				stack
+			} = entry.event
+			{
+				if let Some(at) = stack.iter().position(|frame| frame.proc == from) {
+					if at == 0 {
+						eprintln!("the step ended {} with a runtime error: {}", from, message);
+					} else {
+						eprintln!(
+							"during the step, {} (called by {}) ended with a runtime error: {}",
+							stack[0].proc, from, message
+						);
+					}
+				}
+			}
+		}
+		Ok(())
+	}
+
 	fn step(&mut self, kind: ContinueKind, timeout: Option<Duration>) -> Result<()> {
 		self.need_pause()?;
+		// Record the starting proc and journal position to find errors during
+		// the step.
+		let from = self.frames(0, Some(1))?.first().map(|frame| proc_name(&frame.instruction.proc));
+		let newest = match self.request(Request::Journal {
+			after: u64::MAX,
+			kinds: vec![],
+			limit: Some(0),
+			follow: false
+		})? {
+			Response::Journal { last, .. } => last,
+			other => return Err(unexpected(&other))
+		};
 		self.events.clear();
 		self.request(Request::Continue { kind })?;
 		let until = timeout.map(|timeout| Instant::now() + timeout);
@@ -1095,6 +1167,12 @@ impl World {
 				Some(_) => {}
 			}
 		};
+		// A pause on the runtime error already reports it.
+		if !matches!(stepped, Stepped::TimedOut | Stepped::Paused(BreakpointReason::Runtime { .. })) {
+			if let Some(from) = from {
+				self.runtimes_in(&from, newest)?;
+			}
+		}
 		match stepped {
 			Stepped::Paused(reason) => {
 				self.request(Request::HoldPause)?;
@@ -1142,12 +1220,17 @@ impl World {
 				.unwrap_or_default();
 		}
 		let paused = self.paused()?;
+		// Track reloads that may move the breakpoints installed below.
+		self.reloaded = false;
 		// Set requested breakpoints before installing watches.
 		// With --change, conditions apply to the watches.
 		let condition = if wait.changes.is_empty() { wait.condition.clone() } else { None };
+		let mut ours_at = vec![];
+		let mut ours_watches = vec![];
 		for place in &wait.breaks {
 			for bound in self.set_breakpoint(place, condition.clone(), None)? {
 				self.say_bound(place, &bound);
+				ours_at.push(bound.at.clone());
 			}
 		}
 		if let (Some(reason), true) = (&paused, wait.changes.is_empty()) {
@@ -1174,8 +1257,9 @@ impl World {
 			};
 			match self.request(watch)? {
 				Response::WatchSet(Ok(watch)) => {
+					ours_watches.push(watch.id);
 					let said = json!([{ "name": watch.name, "value": watch.value }]);
-					self.say_waited("watching", said, Some(&format!("watching {}, now {}", watch.name, watch.value)));
+					self.say_waited("watching", said, Some(&format!("watching {}, now {}", watch.name, short(&watch.value))));
 				}
 				Response::WatchSet(Err(why)) => return Err(format!("cannot watch {}: {}", expression, why).into()),
 				other => return Err(unexpected(&other))
@@ -1190,13 +1274,30 @@ impl World {
 		if wait.runtimes {
 			// It has no answer
 			let catch = Request::CatchRuntimes {
-				uncaught: Some(RuntimeFilter::default()),
-				caught: wait.caught.then(RuntimeFilter::default)
+				uncaught: Some(wait.runtime_filter.clone()),
+				caught: wait.caught.then(|| wait.runtime_filter.clone())
 			};
 			local::send(&mut self.stream, &catch).map_err(|_| hung_up())?;
 		}
 		let until = wait.timeout.map(|t| Instant::now() + t);
-		match self.await_pause(until, wait.hold)? {
+		// With triggers, accept only matching pauses; otherwise accept any
+		// pause.
+		let triggered = !wait.breaks.is_empty() || !wait.changes.is_empty() || wait.runtimes;
+		let ours = |stop: &Stop, reloaded: bool| {
+			!triggered
+				|| match &stop.reason {
+					// Reloads do not report new breakpoint offsets. Accept a
+					// hit in any proc containing one of our breakpoints after a
+					// reload.
+					BreakpointReason::Breakpoint => ours_at.contains(&stop.at) || (reloaded && ours_at.iter().any(|at| at.proc == stop.at.proc)),
+					BreakpointReason::Data { changes } => changes.iter().any(|change| ours_watches.contains(&change.id)),
+					// The world pauses when any client's runtime filter
+					// matches.
+					BreakpointReason::Runtime { caught, message } => wait.runtimes && (wait.caught || !caught) && wait.runtime_filter.takes(message),
+					BreakpointReason::Step | BreakpointReason::Pause => false
+				}
+		};
+		match self.await_pause_for(until, wait.hold, ours)? {
 			Some(reason) => self.report(Some(&reason)),
 			None => Err(Failure(
 				TIMED_OUT,
@@ -1212,7 +1313,7 @@ impl World {
 	/// resolve to multiple procs. Reject targets without executable code.
 	/// With `log`, hits emit `Response::Log` without pausing.
 	fn set_breakpoint(&mut self, place: &str, condition: Option<String>, log: Option<Vec<LogPart>>) -> Result<Vec<Bound>> {
-		let (instructions, asked_line) = if place.starts_with('/') {
+		let (instructions, asked_line) = if place.starts_with(['/', '(']) {
 			// Asked first, for what's wrong with it if it isn't there
 			let proc = self
 				.find_proc(&proc_ref(place)?)
@@ -1279,7 +1380,12 @@ impl World {
 			Response::LinesWithCode { lines } => lines,
 			other => return Err(unexpected(&other))
 		};
+		let mut lines_known = || match self.request(Request::Files) {
+			Ok(Response::Files { files }) => files.iter().any(|name| name != HELPER_FILE),
+			_ => true
+		};
 		Ok(match lines.last() {
+			None if !lines_known() => format!("cannot set a breakpoint at {}:{}: {}.", file, line, crate::adapter::NO_LINES),
 			None => format!(
 				"cannot set a breakpoint at {}:{}: the world has no code from a file named {}.",
 				file, line, file
@@ -1318,6 +1424,9 @@ impl Bound {
 				text += &format!(" (line {} has no code; this is the next line that has)", asked);
 			}
 		}
+		if self.at.proc.path == GLOBAL_INIT {
+			text += ": this line initializes globals or static vars only at world startup";
+		}
 		text
 	}
 }
@@ -1353,9 +1462,32 @@ fn unexpected(response: &Response) -> Failure {
 	Failure(1, format!("unexpected response from the world: {:?}", response))
 }
 
+/// Maximum value length shown in summary lines.
+const SHORT_VALUE: usize = 200;
+
+/// Truncate long summary values and include their full length. JSON and eval
+/// remain complete.
+fn short(value: &str) -> std::borrow::Cow<'_, str> {
+	let length = value.chars().count();
+	if length <= SHORT_VALUE + 50 {
+		return value.into();
+	}
+	let start: String = value.chars().take(SHORT_VALUE).collect();
+	format!("{}... ({} characters)", start, length).into()
+}
+
 #[cfg(test)]
 mod tests {
 	use std::time::Duration;
+
+	#[test]
+	fn long_values_are_cut_short() {
+		assert_eq!(super::short("\"short\""), "\"short\"");
+		let long = format!("\"{}\"", "0123456789".repeat(100));
+		let shown = super::short(&long);
+		assert!(shown.starts_with("\"0123456789") && shown.ends_with("... (1002 characters)"), "{}", shown);
+		assert_eq!(shown.chars().count(), 200 + "... (1002 characters)".len());
+	}
 
 	use super::{expression, given_text, proc_ref, seconds_text, Failure};
 
@@ -1417,6 +1549,8 @@ mod tests {
 		assert_eq!((proc.path.as_str(), proc.override_id), ("/mob/proc/attack", 2));
 		let proc = proc_ref("/value").ok().unwrap();
 		assert_eq!((proc.path.as_str(), proc.override_id), ("/value", 0));
+		let proc = proc_ref("(in list)#3").ok().unwrap();
+		assert_eq!((proc.path.as_str(), proc.override_id), ("(in list)", 3));
 		for wrong in ["value", "/value#", "/value#two", "#1"] {
 			assert!(proc_ref(wrong).is_err(), "{}", wrong);
 		}

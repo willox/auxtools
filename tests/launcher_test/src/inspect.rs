@@ -99,13 +99,15 @@ pub fn command_line_inspect(pid: u64, dir: &Path, code: &Path) {
 	steps_that_end_elsewhere(pid, dir);
 }
 
-/// `eval` fails on stderr with exit code 1, whatever went wrong, and a
-/// runtime error says where it happened
+/// Evaluation failures use stderr and exit code 1. Callee runtime errors are
+/// reported with locations but let the expression continue, as in DM.
 fn eval_failures(pid: &str, code: &Path) {
-	let said = fails(pid, &["eval", "fail_in(3)"]);
+	let ran = run(pid, &["eval", "fail_in(3)"], 0);
+	assert_eq!(ran.out, "null\n", "unexpected eval output: {}", ran.out);
+	let said = ran.err;
 	let lines: Vec<&str> = said.lines().collect();
 	assert!(
-		lines.len() == 4 && lines[0].starts_with("runtime error: "),
+		lines.len() == 4 && lines[0].starts_with("runtime error in a called proc (the evaluation carried on): "),
 		"unexpected eval output: {}",
 		said
 	);
@@ -119,14 +121,41 @@ fn eval_failures(pid: &str, code: &Path) {
 	assert_eq!(fails(pid, &["eval", "1/0"]), "runtime error: Division by zero");
 	// One the proc catches is no failure
 	assert_eq!(run(pid, &["eval", "caught_inside()"], 0).out.trim(), "\"caught\"");
-	// /client in an expression is the value compiled code has for it, and a
-	// proc can be named without its /proc/
-	assert_eq!(run(pid, &["eval", "/client == client_type()"], 0).out.trim(), "1");
+	// A try block in the evaluation itself may catch the error, including when
+	// spawned.
+	let caught = "try\n\tvar/list/L = null\n\tL.len = 1\ncatch(var/exception/e)\n\treturn \"caught: [e.name]\"";
+	assert_eq!(run(pid, &["eval", caught], 0).out.trim(), "\"caught: Cannot modify null.len.\"");
 	assert_eq!(
-		run(pid, &["eval", "/datum/twice/act"], 0).out,
-		run(pid, &["eval", "/datum/twice/proc/act"], 0).out
+		run(pid, &["eval", "--spawn", "--wait", caught], 0).out.trim(),
+		"\"caught: Cannot modify null.len.\""
 	);
+	// Match DreamMaker's /client value and proc references: /proc/ selects the
+	// declaration; a path without it selects the last definition.
+	assert_eq!(run(pid, &["eval", "/client == client_type()"], 0).out.trim(), "1");
+	assert_eq!(run(pid, &["eval", "/datum/twice/proc/act"], 0).out, "/datum/twice/proc/act\n");
+	assert_eq!(run(pid, &["eval", "/datum/twice/act"], 0).out, "/datum/twice/act\n");
 	println!("ok: eval runtime error call stack");
+	println!("ok: eval carries on after a runtime error in a called proc");
+
+	// Resolve type proc references through actual type ancestry.
+	assert_eq!(run(pid, &["eval", "/datum/twice/more::act() == twice_ref()"], 0).out, "1\n");
+	assert_eq!(
+		run(pid, &["eval", "call(new /datum/twice/more, /datum/twice/more::act())()"], 0).out,
+		"\"second\"\n"
+	);
+	// Follow builtin parent types, not path prefixes: /obj inherits from /atom.
+	assert_eq!(run(pid, &["eval", "call(new /obj, /obj::atom_act())()"], 0).out, "\"atom\"\n");
+	// A same-named global proc cannot satisfy a type proc reference.
+	assert_eq!(
+		run(pid, &["eval", "call(new /datum/twice, /datum/twice/proc/act)()"], 0).out,
+		"\"first\"\n"
+	);
+	let said = fails(pid, &["eval", "/datum/twice::nope()"]);
+	assert!(said.contains("/datum/twice has no proc called nope"), "unexpected eval output: {}", said);
+	// Reject modified types that would persist in runtime tables.
+	let said = fails(pid, &["eval", "new /datum/twice{tag = \"x\"}()"]);
+	assert!(said.contains("use new and assign the vars"), "unexpected eval output: {}", said);
+	println!("ok: eval's type proc references");
 
 	// Long loops yield in the background, so synchronous eval loses the result.
 	let looped = "var/x = 0; for(var/i in 1 to 2000000) x++; return x";
@@ -148,11 +177,12 @@ fn eval_failures(pid: &str, code: &Path) {
 
 	// Paused, the same
 	run(pid, &["pause"], 0);
-	let said = fails(pid, &["eval", "fail_in(3)"]);
+	let ran = run(pid, &["eval", "fail_in(3)"], 0);
 	assert!(
-		said.contains("\n  in /fail_deeper  ") && said.ends_with("\n  called by the expression"),
-		"unexpected eval output: {}",
-		said
+		ran.out == "null\n" && ran.err.contains("\n  in /fail_deeper  ") && ran.err.ends_with("\n  called by the expression\n"),
+		"unexpected eval output: {}{}",
+		ran.out,
+		ran.err
 	);
 	for (args, said) in [
 		(&["eval", "1 +"][..], "parser error: "),
@@ -229,6 +259,34 @@ fn from_files(pid: &str, dir: &Path) {
 
 /// Where a proc is, and its bytecode
 fn procs(pid: &str, code: &Path) {
+	// Resolve init procs named by BYOND after startup.
+	run(pid, &["eval", "new /datum/inits"], 0);
+	let printed = run(pid, &["proc", "/datum/inits/(init)"], 0).out;
+	assert!(
+		printed.starts_with("/datum/inits/(init)") && printed.contains("definitions: 1"),
+		"proc said {}",
+		printed
+	);
+	println!("ok: procs named after startup");
+	// Keep a value for the next evaluation.
+	run(pid, &["eval", "auxtools_kept()[\"kept\"] = new /datum/twice"], 0);
+	assert_eq!(run(pid, &["eval", "auxtools_kept()[\"kept\"]:type"], 0).out, "/datum/twice\n");
+	println!("ok: values kept between evaluations");
+	// Expose only the active slot for duplicate local names in separate loops.
+	for (marker, value) in [("\t\ttotal += i // first loop", "1"), ("\t\ttotal += i // second loop", "10")] {
+		let place = format!("attach_host.dm:{}", line_of(code, marker));
+		let waiting = crate::journal::Background::start(pid.parse().unwrap(), &["wait", "pause", "--break", &place, "--timeout", "60"]);
+		std::thread::sleep(std::time::Duration::from_secs(1));
+		run(pid, &["eval", "--spawn", "two_loops()"], 0);
+		let (exit, printed) = waiting.finish();
+		assert_eq!(exit, 0, "unexpected wait output: {}", printed);
+		let vars = run(pid, &["vars"], 0).out;
+		assert_eq!(vars.matches("  i = ").count(), 1, "vars said {}", vars);
+		assert!(vars.contains(&format!("  i = {}\n", value)), "vars said {}", vars);
+		assert_eq!(run(pid, &["eval", "i"], 0).out.trim(), value);
+		run(pid, &["continue"], 0);
+	}
+	println!("ok: a local's name means the one in use");
 	// value() was hot reloaded before this
 	let printed = run(pid, &["proc", "/proc/value"], 0).out;
 	assert_eq!(
@@ -340,6 +398,29 @@ fn where_breakpoints_bound(pid: &str, code: &Path) {
 		)
 	);
 	println!("ok: resolved wait breakpoint locations");
+
+	// Global init has no path and runs before clients can attach.
+	let info = run(pid, &["proc", "(global init)"], 0).out;
+	assert!(
+		info.starts_with("(global init)  attach_host.dm:") && info.ends_with("\ndefinitions: 1\nreloaded: no\n"),
+		"unexpected proc output: {}",
+		info
+	);
+	let cached = line_of(code, "\tvar/static/list/cache = list()");
+	let ran = run(
+		pid,
+		&["wait", "pause", "--break", &format!("attach_host.dm:{}", cached), "--timeout", "1"],
+		2
+	);
+	assert_eq!(
+		ran.err,
+		format!(
+			"breakpoint set at (global init)  attach_host.dm:{}: this line initializes globals or static vars only at world startup\nerror: timed \
+			 out after 1 second waiting for the world to pause.\n",
+			cached
+		)
+	);
+	println!("ok: initializer proc names");
 
 	let last = line_of(code, "\treturn \"last [rounds]\"");
 	let nowhere = [
@@ -746,17 +827,33 @@ fn spawned(pid: &str, code: &Path) {
 	assert_eq!(run(pid, &["eval", "--spawn", "--wait", "slow_double(5)"], 0).out, "10\n");
 	println!("ok: spawned body variables survive sleep");
 
-	// A runtime error, before a sleep and after one
-	let said = fails(pid, &["eval", "--spawn", "--wait", "fail_in(3)"]);
+	// Evaluations must report compiler warnings, as hot reload does.
+	let ran = run(pid, &["eval", "var/a = 1\nreturn pick(1; a, 0; a)"], 0);
+	assert_eq!(ran.out, "1\n", "unexpected eval output: {}", ran.out);
 	assert!(
-		said.starts_with("runtime error: ") && said.contains("\n  in /fail_deeper  ") && said.ends_with("\n  called by the expression"),
+		ran.err.starts_with("warning: line 2: pick() ends with a zero-weight entry"),
 		"unexpected eval output: {}",
-		said
+		ran.err
 	);
-	let said = fails(pid, &["eval", "--spawn", "--wait", "slow_fail()"]);
+	println!("ok: an evaluation's compile warnings are said");
+
+	// Spawned evaluation continues after callee errors on either side of a
+	// sleep.
+	let ran = run(pid, &["eval", "--spawn", "--wait", "fail_in(3)"], 0);
+	assert_eq!(ran.out, "null\n", "unexpected eval output: {}", ran.out);
+	assert!(
+		ran.err.starts_with("runtime error in a called proc (the evaluation carried on): ")
+			&& ran.err.contains("\n  in /fail_deeper  ")
+			&& ran.err.ends_with("\n  called by the expression\n"),
+		"unexpected eval output: {}",
+		ran.err
+	);
+	let ran = run(pid, &["eval", "--spawn", "--wait", "slow_fail()"], 0);
+	assert_eq!(ran.out, "null\n", "unexpected eval output: {}", ran.out);
+	let said = ran.err;
 	let lines: Vec<&str> = said.lines().collect();
 	assert!(
-		lines.len() == 4 && lines[0].starts_with("runtime error: "),
+		lines.len() == 4 && lines[0].starts_with("runtime error in a called proc (the evaluation carried on): "),
 		"unexpected eval output: {}",
 		said
 	);
@@ -766,11 +863,7 @@ fn spawned(pid: &str, code: &Path) {
 		format!("  called by /slow_fail  attach_host.dm:{}", line_of(code, "\treturn fail_deeper(5)"))
 	);
 	let printed = run(pid, &["log", "--spawned", "--last", "1"], 0).out;
-	assert!(
-		printed.contains(": slow_fail() failed: runtime error: ") && printed.contains("\n  in /fail_deeper  "),
-		"log said {}",
-		printed
-	);
+	assert!(printed.contains(": slow_fail() returned null"), "log said {}", printed);
 	// Runtime journal stacks exclude the debugger's outer helper frames.
 	let printed = run(pid, &["log", "--runtimes", "--last", "1"], 0).out;
 	let frames: Vec<&str> = printed.lines().skip(1).collect();
@@ -781,6 +874,11 @@ fn spawned(pid: &str, code: &Path) {
 			&& frames[2].starts_with("  /auxtools_spawn_stub  "),
 		"log said {}",
 		printed
+	);
+	// An error in the spawned expression itself fails the result.
+	assert_eq!(
+		fails(pid, &["eval", "--spawn", "--wait", "sleep(1)\nvar/n = 0\nreturn 1/n"]),
+		"runtime error: Division by zero"
 	);
 	println!("ok: spawned runtime error stacks");
 
@@ -908,6 +1006,21 @@ fn steps_that_end_elsewhere(pid: &str, dir: &Path) {
 	assert_eq!(ran.err, "step completed with the world running: no frame remained to pause in.\n");
 	assert_eq!(json_of(pid, &["status", "--json"])["paused"], false);
 	println!("ok: step exhaustion succeeds with world running");
+
+	// Report a runtime error that ends the stepped proc.
+	call_soon(dir);
+	run(pid, &["wait", "pause", "--break", "/proc/fail_deeper", "--timeout", "60"], 0);
+	let ran = run(pid, &["step-over", "--timeout", "30"], 0);
+	assert!(ran.err.is_empty(), "step-over said {}", ran.err);
+	let ran = run(pid, &["step-over", "--timeout", "30"], 0);
+	assert!(
+		ran.out.starts_with(&format!("pid {}: paused after a step\n#0 /fail_in  ", pid)),
+		"step-over said {}",
+		ran.out
+	);
+	assert_eq!(ran.err, "the step ended /fail_deeper with a runtime error: list index out of bounds\n");
+	run(pid, &["continue"], 0);
+	println!("ok: a step reports the runtime error that ended its proc");
 
 	// A step over a sleep isn't over until the proc wakes
 	let waiting = crate::journal::Background::start(number, &["wait", "pause", "--break", "/proc/slow_double", "--timeout", "60"]);

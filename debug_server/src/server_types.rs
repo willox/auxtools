@@ -5,7 +5,17 @@ use serde::{Deserialize, Serialize};
 /// Wire protocol version. Increment for changes incompatible with older
 /// clients or servers. Including the version in endpoint names prevents
 /// connections using incompatible message layouts.
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
+
+/// Shutdown notification sent before disconnecting clients; not used for
+/// reboot.
+pub const WORLD_SHUTTING_DOWN: &str = "The world is shutting down";
+
+/// Display and lookup name for the unnamed global and static initializer proc.
+pub const GLOBAL_INIT: &str = "(global init)";
+
+/// Source filename used by launcher helper procs.
+pub const HELPER_FILE: &str = "auxtools_launcher.dm";
 
 /// The local socket the world in process `pid` listens on, when it has the
 /// debug library: `auxtools-debug-v1-1234`
@@ -216,6 +226,13 @@ pub enum Request {
 	Spawn {
 		expression: String,
 		object: Option<String>
+	},
+	/// Claim exclusive hot reload ownership until disconnect, preventing
+	/// duplicate reloads from multiple source watchers. `who` describes the
+	/// client, e.g. "the launcher (pid 123)". Respond with
+	/// `Response::Reloader`.
+	Reloader {
+		who: String
 	}
 }
 
@@ -361,7 +378,10 @@ pub enum Response {
 	Spawned(Result<u64, String>),
 	/// The requested step ended without pausing because its stack has no caller
 	/// to stop in. A step that pauses instead sends `BreakpointHit`.
-	StepEnded
+	StepEnded,
+	/// Whether ownership was granted, or a diagnostic identifying the existing
+	/// owner.
+	Reloader(Result<(), String>)
 }
 
 /// Journal entry retained across reboots for the process lifetime.
@@ -645,22 +665,36 @@ pub enum LogPart {
 
 #[allow(dead_code)]
 impl LogPart {
-	/// Parse text with `{expression}` interpolation. Respect nested braces
-	/// and strings; an unmatched opening brace remains literal text.
+	/// Parse `{expression}` interpolation, respecting nested braces and
+	/// strings. Outside expressions, `{{` and `}}` escape braces. An unmatched
+	/// opening brace remains literal text.
 	pub fn parse(message: &str) -> Vec<Self> {
 		let mut parts = vec![];
 		let mut text = String::new();
 		let mut rest = message;
-		while let Some(open) = rest.find('{') {
-			let Some(length) = Self::expression_length(&rest[open + 1..]) else {
+		while let Some(at) = rest.find(['{', '}']) {
+			text.push_str(&rest[..at]);
+			let brace = &rest[at..at + 1];
+			if rest[at + 1..].starts_with(brace) {
+				text.push_str(brace);
+				rest = &rest[at + 2..];
+				continue;
+			}
+			if brace == "}" {
+				text.push('}');
+				rest = &rest[at + 1..];
+				continue;
+			}
+			let Some(length) = Self::expression_length(&rest[at + 1..]) else {
+				text.push_str(&rest[at..]);
+				rest = "";
 				break;
 			};
-			text.push_str(&rest[..open]);
 			if !text.is_empty() {
 				parts.push(Self::Text(std::mem::take(&mut text)));
 			}
-			parts.push(Self::Expr(rest[open + 1..open + 1 + length].trim().to_owned()));
-			rest = &rest[open + 1 + length + 1..];
+			parts.push(Self::Expr(rest[at + 1..at + 1 + length].trim().to_owned()));
+			rest = &rest[at + 1 + length + 1..];
 		}
 		text.push_str(rest);
 		if !text.is_empty() {
@@ -918,7 +952,17 @@ pub struct HotReloadRequest {
 	pub builtin_defaults: Vec<dmasm::reload::VarDefault>,
 	/// Types whose new instances run other code to set their vars
 	pub init_procs: Vec<HotReloadInitProc>,
-	pub line_moves: Vec<HotReloadLines>
+	pub line_moves: Vec<HotReloadLines>,
+	/// Removed type vars; the world reports whether it retains each
+	/// declaration.
+	pub removed_vars: Vec<RemovedVar>
+}
+
+/// A type var declaration removed from source.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct RemovedVar {
+	pub type_path: String,
+	pub var: String
 }
 
 impl HotReloadRequest {
@@ -1001,5 +1045,7 @@ pub struct HotReloadResult {
 	/// Whether the reload changed runtime state. Errors prevent application.
 	pub applied: bool,
 	pub errors: Vec<String>,
-	pub warnings: Vec<String>
+	pub warnings: Vec<String>,
+	/// Removed proc paths absent from the world, for which no unlink occurred.
+	pub skipped: Vec<String>
 }

@@ -424,6 +424,38 @@ pub fn run() {
 	world.resume_through("fresh");
 	ok("stepping into an added proc");
 
+	// A reload must resolve a breakpoint in a previously unused, unchanged
+	// file.
+	let added = dir.join("added.dm");
+	std::fs::write(&added, "/proc/sc_added()\n\tvar/a = 1\n\treturn a + 1\n").unwrap();
+	std::fs::File::options()
+		.write(true)
+		.open(&added)
+		.unwrap()
+		.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600))
+		.unwrap();
+	let set = world.set_breakpoints(&added, json!([{ "line": 3 }]));
+	assert_eq!(set[0]["verified"], false, "{}", set[0]);
+	world.drop_events("breakpoint");
+	edit(
+		&mut world,
+		"dap_test_host.dme",
+		"#include \"main.dm\"\n",
+		"#include \"main.dm\"\n#include \"added.dm\"\n"
+	);
+	let told = world.event("breakpoint")["body"]["breakpoint"].clone();
+	assert_eq!(
+		(&told["id"], &told["verified"], &told["line"]),
+		(&set[0]["id"], &json!(true), &json!(3)),
+		"{}",
+		told
+	);
+	world.run("added");
+	world.launcher.stop_at("breakpoint", "/sc_added", 3);
+	world.set_breakpoints(&added, json!([]));
+	world.resume_through("added");
+	ok("breakpoint in a file a reload adds");
+
 	// The world counts a breakpoint's hits from when it's set: a reload of
 	// another file leaves it be
 	let (file, line) = world.marks.place("recurse_leaf");
@@ -475,6 +507,29 @@ pub fn run() {
 	world.function_breakpoints(&[]);
 	world.run_through("middle");
 	ok("function breakpoint follows reloaded entry");
+
+	// Resolve a pending function breakpoint when reload adds the proc.
+	let set = world.function_breakpoints(&["/proc/later"]);
+	assert_eq!(set[0]["message"], "there's no /proc/later", "{}", set[0]);
+	world.drop_events("breakpoint");
+	edit(
+		&mut world,
+		"stepping.dm",
+		"/proc/sc_middle()\n",
+		"/proc/sc_later()\n\treturn later()\n\n/proc/later()\n\treturn 1 // @later_1\n\n/proc/sc_middle()\n"
+	);
+	let told = world.event("breakpoint")["body"]["breakpoint"].clone();
+	assert_eq!(
+		(&told["id"], &told["verified"], &told["line"]),
+		(&set[0]["id"], &json!(true), &json!(world.marks.line("later_1"))),
+		"{}",
+		told
+	);
+	world.run("later");
+	world.stop_on("breakpoint", "/later", "later_1");
+	world.function_breakpoints(&[]);
+	world.resume_through("later");
+	ok("function breakpoint on a proc a reload adds");
 	edit(
 		&mut world,
 		"stepping.dm",

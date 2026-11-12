@@ -173,7 +173,12 @@ fn main() {
 	let _ = std::fs::remove_file(host_file("rebooted"));
 
 	attach_and_reload(&server, &library);
+	edited_after_build(&server);
 	launch_from_the_command_line(&server);
+	without_debug_info(&server);
+	unread_statics(&server);
+	errored_baseline(&server);
+	dmb_elsewhere(&server);
 	println!("all ok");
 }
 
@@ -701,6 +706,54 @@ fn command_line_more(pid: u64, dir: &Path) {
 	run(&["continue"], 0);
 	println!("ok: CLI runtime wait");
 
+	// Only runtime messages accepted by the filter should pause.
+	std::fs::write(dir.join("fail"), "yes").unwrap();
+	let printed = run(&["wait", "pause", "--runtime-filter", "!cannot read", "--timeout", "3"], 2);
+	assert!(printed.contains("timed out"), "wait --runtime-filter said {}", printed);
+	std::fs::write(dir.join("fail"), "yes").unwrap();
+	let printed = run(&["wait", "pause", "--runtime-filter", "bounds, FROM LIST", "--timeout", "60"], 0);
+	assert!(
+		printed.starts_with(&format!("pid {}: paused on a runtime error: cannot read from list", pid)),
+		"wait --runtime-filter said {}",
+		printed
+	);
+	run(&["continue"], 0);
+	println!("ok: CLI runtime filter");
+	// Apply the same filter to journal entries.
+	let printed = run(&["log", "--runtime-filter", "!cannot read", "--last", "3"], 0);
+	assert!(!printed.contains("cannot read from list"), "log --runtime-filter said {}", printed);
+	let printed = run(&["log", "--runtime-filter", "FROM LIST", "--last", "1"], 0);
+	assert!(
+		printed.contains("runtime error: cannot read from list") && printed.matches(" UTC (world.time ").count() == 1,
+		"log --runtime-filter said {}",
+		printed
+	);
+	println!("ok: log runtime filter");
+
+	// A wait with its own breakpoint must ignore another client's pause.
+	let waiting = std::process::Command::new(launcher_path())
+		.args(["--pid", pid.as_str(), "wait", "pause", "--break", "/proc/fail", "--timeout", "60"])
+		.stdout(std::process::Stdio::piped())
+		.stderr(std::process::Stdio::piped())
+		.spawn()
+		.unwrap();
+	std::thread::sleep(Duration::from_secs(2));
+	let printed = run(&["wait", "pause", "--break", "/proc/tick", "--timeout", "60"], 0);
+	assert!(printed.contains("#0 /tick"), "the other wait said {}", printed);
+	std::thread::sleep(Duration::from_secs(1));
+	run(&["continue"], 0);
+	std::fs::write(dir.join("fail"), "yes").unwrap();
+	let out = waiting.wait_with_output().unwrap();
+	let printed = String::from_utf8_lossy(&out.stdout);
+	assert!(
+		printed.starts_with(&format!("pid {}: paused at a breakpoint\n#0 /fail", pid)),
+		"the waiting client said {}{}",
+		printed,
+		String::from_utf8_lossy(&out.stderr)
+	);
+	run(&["continue"], 0);
+	println!("ok: CLI wait passes over another client's pause");
+
 	// A wait that doesn't hold its pause: the world carries on when it's gone
 	let printed = run(&["wait", "pause", "--break", "/proc/value", "--no-hold", "--timeout", "60"], 0);
 	assert!(
@@ -994,6 +1047,54 @@ fn command_line_trace(pid: u64, code: &Path) {
 	println!("ok: invalid trace target diagnostics");
 }
 
+/// Warn about source edits newer than the .dmb at launch and after rebuild.
+/// They are part of the source baseline but may be absent from the world.
+fn edited_after_build(server: &str) {
+	let (dir, dme) = attach_host_copy("later");
+	let dmb = dme.with_extension("dmb");
+	let code = dir.join("attach_host.dm");
+	let source = std::fs::read_to_string(&code).unwrap();
+	let edit = |text: String| {
+		std::fs::write(&code, text).unwrap();
+		// Ensure the file timestamp is newer than the build despite coarse
+		// clocks.
+		let later = std::fs::metadata(&dmb).unwrap().modified().unwrap() + Duration::from_secs(2);
+		std::fs::File::options().write(true).open(&code).unwrap().set_modified(later).unwrap();
+	};
+	edit(format!("{}\n/proc/edited()\n\treturn 1\n", source));
+	let mut started = Started::default();
+	let args = launch_args(&dmb, server, &["--detach", "--json"]);
+	let (got, printed) = launcher_command(&args.iter().map(String::as_str).collect::<Vec<_>>());
+	assert_eq!(got, 0, "unexpected launch --detach output: {}", printed);
+	let up: serde_json::Value = serde_json::from_str(&printed).unwrap_or_else(|_| panic!("unexpected launch --detach --json output: {}", printed));
+	let (pid, launcher) = (up["pid"].as_u64().unwrap(), up["launcher"].as_u64().unwrap());
+	started.pids.extend([pid, launcher]);
+	let log = PathBuf::from(up["log"].as_str().unwrap());
+	let read_log = || std::fs::read_to_string(&log).unwrap_or_default();
+	let said = "Hot reload: changed since the .dmb was built: attach_host.dm. These edits may be missing from the world";
+	assert!(read_log().contains(said), "launch said:\n{}", read_log());
+
+	// Reload an edit saved after rebuilding but before rebooting into that
+	// build.
+	let res = Command::new(paths::find_dm()).with_byond_paths().arg(&dme).status().unwrap();
+	assert!(res.success(), "dreammaker build failed");
+	edit(format!("{}\n/proc/edited()\n\treturn 1\n\n/proc/edited_again()\n\treturn 2\n", source));
+	wait_for_text("the launcher's log", "Hot reload: added /edited_again", read_log);
+	let pid = pid.to_string();
+	let (got, printed) = launcher_command(&["--pid", &pid, "reboot", "--timeout", "60"]);
+	assert_eq!(got, 0, "reboot said {}", printed);
+	let until = Instant::now() + Duration::from_secs(60);
+	while read_log().matches(said).count() < 2 {
+		assert!(Instant::now() < until, "the launcher said:\n{}", read_log());
+		std::thread::sleep(Duration::from_millis(100));
+	}
+	let (got, printed) = launcher_command(&["--pid", &pid, "stop"]);
+	assert_eq!(got, 0, "stop said {}", printed);
+	drop(started);
+	println!("ok: code changed after the .dmb was built");
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The line of `file` that `text` starts
 fn line_of(file: &Path, text: &str) -> u64 {
 	let source = std::fs::read_to_string(file).unwrap();
@@ -1037,9 +1138,17 @@ fn attach_and_reload(server: &str, library: &Path) {
 	first.request("configurationDone", json!({}));
 	let mut second = Launcher::start();
 	second.initialize();
-	second.request("attach", json!({ "processId": pid, "dme": dme }));
+	// The original launcher already owns hot reload for this world.
+	second.request("attach", json!({ "processId": pid, "dme": dme, "hotReload": true }));
 	second.event("initialized");
 	second.request("configurationDone", json!({}));
+	second.wait_output("Hot reload disabled: the launcher (pid ");
+	assert!(
+		second.output.contains("already hot reloads this world"),
+		"unexpected second-session output: {}",
+		second.output
+	);
+	println!("ok: one reloader per world");
 
 	// Either one's breakpoint stops the world for both, and either can let it
 	// carry on
@@ -1138,7 +1247,7 @@ fn attach_host_copy(name: &str) -> (PathBuf, PathBuf) {
 	// for this one
 	let _ = std::fs::remove_dir_all(&dir);
 	std::fs::create_dir_all(&dir).unwrap();
-	for left in ["stop", "fail", "reboot", "call", "refuse_del"] {
+	for left in ["stop", "fail", "reboot", "call", "refuse_del", "fail_del"] {
 		let _ = std::fs::remove_file(dir.join(left));
 		assert!(
 			!dir.join(left).exists(),
@@ -1300,6 +1409,77 @@ fn started_pid(output: &str) -> u64 {
 		.unwrap_or_else(|| panic!("launch output missing process ID:\n{}", output))
 }
 
+/// Repairing a parse error in the initial baseline must not duplicate
+/// definitions already present in the built world.
+fn errored_baseline(server: &str) {
+	let (dir, dme) = attach_host_copy("errored");
+	let code = dir.join("attach_host.dm");
+	let source = std::fs::read_to_string(&code).unwrap();
+	// An unclosed parenthesis hides the remaining definitions.
+	std::fs::write(&code, source.replace("\treturn 1", "\treturn (1")).unwrap();
+	let mut started = Started::default();
+	let output = launch_here(&dme.with_extension("dmb"), server, &mut started);
+	let read = || output.lock().unwrap().clone();
+	wait_for_text("launch", "Hot reload: watching", read);
+	started.pids.push(started_pid(&read()));
+	assert!(
+		read().contains("Hot reload: source baseline has parse errors"),
+		"launch didn't say the code has errors:\n{}",
+		read()
+	);
+	std::fs::write(&code, &source).unwrap();
+	wait_for_text("launch", "fixed parse error", read);
+	let printed = read();
+	assert!(
+		printed.contains("Hot reload: rejected") && !printed.contains("Hot reload: added"),
+		"launch said:\n{}",
+		printed
+	);
+	std::fs::write(dir.join("stop"), "yes").unwrap();
+	let exit = launcher_exit(&mut started, &output);
+	assert_eq!(exit, 0, "launch exited with {}:\n{}", exit, read());
+	drop(started);
+	let _ = std::fs::remove_dir_all(&dir);
+	println!("ok: repaired baseline errors do not duplicate definitions");
+}
+
+/// Detect rebuilds of a .dmb outside the source directory and avoid reapplying
+/// changes already included in it.
+fn dmb_elsewhere(server: &str) {
+	let (dir, dme) = attach_host_copy("elsewhere");
+	let built = dme.with_extension("dmb");
+	let dmb = dir.join("build").join("attach_host.dmb");
+	std::fs::create_dir_all(dmb.parent().unwrap()).unwrap();
+	std::fs::rename(&built, &dmb).unwrap();
+	let mut started = Started::default();
+	let args = launch_args(&dmb, server, &["--detach", "--json", "--dme", dme.to_str().unwrap()]);
+	let (got, printed) = launcher_command(&args.iter().map(String::as_str).collect::<Vec<_>>());
+	assert_eq!(got, 0, "unexpected launch --detach output: {}", printed);
+	let up: serde_json::Value = serde_json::from_str(&printed).unwrap_or_else(|_| panic!("unexpected launch --detach --json output: {}", printed));
+	let (pid, launcher) = (up["pid"].as_u64().unwrap(), up["launcher"].as_u64().unwrap());
+	started.pids.extend([pid, launcher]);
+	let pid = pid.to_string();
+	let run = |args: &[&str]| {
+		let args: Vec<&str> = ["--pid", pid.as_str()].iter().chain(args).copied().collect();
+		launcher_command(&args).1
+	};
+
+	let code = dir.join("attach_host.dm");
+	let source = std::fs::read_to_string(&code).unwrap();
+	std::fs::write(&code, format!("{}\n/proc/added_here()\n\treturn 99\n", source)).unwrap();
+	wait_for_text("the world", "99", || run(&["eval", "added_here()"]));
+	let res = Command::new(paths::find_dm()).with_byond_paths().arg(&dme).status().unwrap();
+	assert!(res.success(), "dreammaker build failed");
+	std::fs::rename(&built, &dmb).unwrap();
+	assert_eq!(run(&["reboot", "--timeout", "60"]).trim(), format!("pid {}: rebooted", pid));
+	let printed = run(&["proc", "/added_here"]);
+	assert!(printed.contains("definitions: 1\n"), "proc said {}", printed);
+	assert_eq!(run(&["stop"]).trim(), format!("pid {}: stopped", pid));
+	drop(started);
+	println!("ok: a rebuilt .dmb that isn't beside its .dme");
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// `auxtools launch`, `stop` and `reboot`: worlds the command line starts and
 /// ends itself, in the foreground and in the background
 fn launch_from_the_command_line(server: &str) {
@@ -1321,17 +1501,32 @@ fn launch_from_the_command_line(server: &str) {
 	}
 	println!("ok: missing .dmb launch error");
 
-	// In the foreground: the world's output, its hot reloads, and its end
+	// Check foreground output, reloads and shutdown. The source baseline
+	// includes a proc and var absent from the .dmb.
+	let source = std::fs::read_to_string(&code).unwrap();
+	let unbuilt = "\n/datum/held/var/unbuilt = 1\n\n/datum/held/proc/unbuilt_proc()\n\treturn src\n";
+	std::fs::write(&code, format!("{}{}", source, unbuilt)).unwrap();
 	let mut started = Started::default();
 	let output = launch_here(&dmb, server, &mut started);
 	let read = || output.lock().unwrap().clone();
 	wait_for_text("launch", "Hot reload: watching", read);
 	wait_for_text("launch", "attach test: 1", read);
 	started.pids.push(started_pid(&read()));
-	let source = std::fs::read_to_string(&code).unwrap();
 	std::fs::write(&code, source.replace("\treturn 1", "\treturn 2")).unwrap();
 	wait_for_text("launch", "Hot reload: reloaded /value", read);
 	wait_for_text("launch", "attach test: 2", read);
+	// Removing these definitions must not claim runtime removals.
+	wait_for_text("launch", "var unbuilt was removed from source and isn't in the running world", read);
+	let printed = read();
+	assert!(
+		printed.contains("Hot reload: reloaded /value in ")
+			&& !printed.contains("unlinked /")
+			&& printed.contains("unbuilt_proc: not found in the running world; skipping removal")
+			&& !printed.contains("retained in the running world"),
+		"launch said:\n{}",
+		printed
+	);
+	println!("ok: removing code the world never had");
 	std::fs::write(dir.join("stop"), "yes").unwrap();
 	let exit = launcher_exit(&mut started, &output);
 	let printed = read();
@@ -1339,6 +1534,11 @@ fn launch_from_the_command_line(server: &str) {
 	assert!(
 		printed.contains("attach test: done") && printed.contains("The world exited with code 0"),
 		"launch said:\n{}",
+		printed
+	);
+	assert!(
+		!printed.contains("Debug server disconnected") && !printed.contains("waiting to reconnect"),
+		"launch took the world's end for a lost connection:\n{}",
 		printed
 	);
 	std::fs::remove_file(dir.join("stop")).unwrap();
@@ -1540,6 +1740,7 @@ fn launch_from_the_command_line(server: &str) {
 	);
 	println!("ok: reboot throughout world execution");
 
+	let before = read_log().len();
 	let printed = run(&["stop"], 0);
 	assert_eq!(printed.trim(), format!("pid {}: stopped", pid));
 	assert!(!alive(pid), "world process is still running");
@@ -1549,6 +1750,13 @@ fn launch_from_the_command_line(server: &str) {
 	assert!(
 		said.contains("attach test: world/Del") && said.contains("The world exited with code 0"),
 		"the log has:\n{}",
+		said
+	);
+	// Each reboot occurs before the shutdown notification, so clients
+	// reconnect.
+	assert!(
+		!said[before..].contains("waiting to reconnect"),
+		"the launcher took the world's end for a lost connection:\n{}",
 		said
 	);
 	drop(started);
@@ -1591,6 +1799,24 @@ fn launch_from_the_command_line(server: &str) {
 		printed
 	);
 	println!("ok: missing source-macro diagnostic");
+	// A failed world/Del must leave the running world debuggable.
+	std::fs::remove_file(dir.join("refuse_del")).unwrap();
+	std::fs::write(dir.join("fail_del"), "yes").unwrap();
+	let printed = run(&["stop", "--timeout", "10"], 1);
+	assert!(
+		printed.starts_with(&format!(
+			"error: world.Del() failed with a runtime error (see the world's log), so the world (pid {}) is still running.",
+			pid
+		)),
+		"stop said {}",
+		printed
+	);
+	assert!(alive(pid), "the world ended");
+	let printed = run(&["eval", "1 + 1"], 0);
+	assert_eq!(printed.trim(), "2", "eval after the failed stop said {}", printed);
+	std::fs::remove_file(dir.join("fail_del")).unwrap();
+	std::fs::write(dir.join("refuse_del"), "yes").unwrap();
+	println!("ok: stop reports a failing world/Del");
 	let printed = run(&["stop", "--timeout", "2"], 2);
 	assert!(
 		printed.starts_with(&format!(
@@ -1626,5 +1852,106 @@ fn launch_from_the_command_line(server: &str) {
 
 	// (the directory can outlast this on Windows, while its files are open)
 	let _ = std::fs::remove_file(dir.join("refuse_del"));
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Line breakpoints should explain missing debug info in non-DEBUG worlds.
+fn without_debug_info(server: &str) {
+	let (dir, dme) = attach_host_copy("nolines");
+	let text = std::fs::read_to_string(&dme).unwrap().replace("#define DEBUG\n", "");
+	std::fs::write(&dme, text).unwrap();
+	let res = Command::new(paths::find_dm()).with_byond_paths().arg(&dme).status().unwrap();
+	assert!(res.success(), "dreammaker build failed");
+	let dmb = dme.with_extension("dmb");
+
+	let mut started = Started::default();
+	let args = launch_args(&dmb, server, &["--detach", "--no-hot-reload", "--json"]);
+	let (got, printed) = launcher_command(&args.iter().map(String::as_str).collect::<Vec<_>>());
+	assert_eq!(got, 0, "unexpected launch --detach output: {}", printed);
+	let launched: serde_json::Value = serde_json::from_str(printed.lines().next().unwrap_or_default())
+		.unwrap_or_else(|_| panic!("unexpected launch --detach --json output: {}", printed));
+	let pid = launched["pid"].as_u64().unwrap();
+	started.pids.extend([pid, launched["launcher"].as_u64().unwrap()]);
+	let pid_text = pid.to_string();
+	let line = line_of(&dir.join("attach_host.dm"), "\ttick(1)").to_string();
+	let place = format!("attach_host.dm:{}", line);
+	let (got, printed) = launcher_command(&["--pid", &pid_text, "wait", "pause", "--break", &place, "--timeout", "5"]);
+	assert_eq!(got, 1, "a line breakpoint without debug info gave {}: {}", got, printed);
+	assert!(
+		printed.contains("the world was compiled without debug information"),
+		"a line breakpoint without debug info said {}",
+		printed
+	);
+	let (got, printed) = launcher_command(&["--pid", &pid_text, "stop", "--timeout", "10", "--kill"]);
+	assert_eq!(got, 0, "stop gave {}: {}", got, printed);
+	drop(started);
+	println!("ok: line breakpoints in a world without debug info");
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Preserve unread static locals and avoid rerunning their initializers.
+fn unread_statics(server: &str) {
+	let (dir, dme) = attach_host_copy("statics");
+	let code = dir.join("attach_host.dm");
+	let mut source = std::fs::read_to_string(&code).unwrap();
+	source.push_str(
+		"\nvar/inits = 0\n\n/proc/count_init(x)\n\tinits++\n\treturn x\n\n/proc/unread_static()\n\tvar/static/kept = count_init(1)\n\treturn \
+		 1\n\n// __PROC__ needs BYOND 515.1644.\n#if DM_VERSION > 515 || DM_BUILD >= 1644\n#define STATIC_NAME __PROC__\n#else\n#define STATIC_NAME \
+		 2\n#endif\n\n/proc/unread_static_proc()\n\tvar/static/named = count_init(STATIC_NAME)\n\treturn 1\n"
+	);
+	std::fs::write(&code, &source).unwrap();
+	let res = Command::new(paths::find_dm()).with_byond_paths().arg(&dme).status().unwrap();
+	assert!(res.success(), "dreammaker build failed");
+	let dmb = dme.with_extension("dmb");
+
+	let mut started = Started::default();
+	let args = launch_args(&dmb, server, &["--detach", "--json"]);
+	let (got, printed) = launcher_command(&args.iter().map(String::as_str).collect::<Vec<_>>());
+	assert_eq!(got, 0, "unexpected launch --detach output: {}", printed);
+	let launched: serde_json::Value = serde_json::from_str(printed.lines().next().unwrap_or_default())
+		.unwrap_or_else(|_| panic!("unexpected launch --detach --json output: {}", printed));
+	let pid = launched["pid"].as_u64().unwrap();
+	started.pids.extend([pid, launched["launcher"].as_u64().unwrap()]);
+	let pid_text = pid.to_string();
+	let run = |args: &[&str], code: i32| {
+		let args: Vec<&str> = ["--pid", pid_text.as_str()].iter().chain(args).copied().collect();
+		let (got, printed) = launcher_command(&args);
+		assert_eq!(got, code, "`{}` gave {}, not {}: {}", args.join(" "), got, code, printed);
+		printed
+	};
+	assert_eq!(run(&["eval", "inits"], 0).trim(), "2");
+
+	for (n, edited) in ["1 + 1", "3"].iter().enumerate() {
+		let before = if n == 0 { "1".to_owned() } else { "1 + 1".to_owned() };
+		source = source.replace(
+			&format!("count_init(1)\n\treturn {}\n", before),
+			&format!("count_init(1)\n\treturn {}\n", edited)
+		);
+		source = source.replace(
+			&format!("count_init(STATIC_NAME)\n\treturn {}\n", before),
+			&format!("count_init(STATIC_NAME)\n\treturn {}\n", edited)
+		);
+		// Start before the edit so the wait can find a reload that already
+		// finished.
+		let since = journal::newest(pid).to_string();
+		std::fs::write(&code, &source).unwrap();
+		let printed = run(&["wait", "reload", "--since", &since, "--timeout", "60"], 0);
+		assert!(printed.contains("hot reload applied"), "the reload said {}", printed);
+		assert_eq!(run(&["eval", "inits"], 0).trim(), "2", "an initializer ran again");
+	}
+	assert_eq!(run(&["eval", "unread_static() + unread_static_proc()"], 0).trim(), "6");
+
+	// Resolve a newly read static through its original initializer and preserve
+	// its value.
+	source = source.replace("count_init(1)\n\treturn 3\n", "count_init(1)\n\treturn kept + 10\n");
+	let since = journal::newest(pid).to_string();
+	std::fs::write(&code, &source).unwrap();
+	let printed = run(&["wait", "reload", "--since", &since, "--timeout", "60"], 0);
+	assert!(printed.contains("hot reload applied"), "the reload said {}", printed);
+	assert_eq!(run(&["eval", "unread_static()"], 0).trim(), "11");
+	assert_eq!(run(&["eval", "inits"], 0).trim(), "2", "an initializer ran again");
+	run(&["stop", "--timeout", "10", "--kill"], 0);
+	drop(started);
+	println!("ok: reloads keep static locals the code doesn't read");
 	let _ = std::fs::remove_dir_all(&dir);
 }

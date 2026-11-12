@@ -21,7 +21,7 @@ use dmasm::reload::{ProcKey, Snapshot};
 use crate::{
 	connection, hot_reload,
 	server::Server,
-	server_types::{HotReloadNewProc, HotReloadProc, HotReloadRequest, ProcRef},
+	server_types::{HotReloadNewProc, HotReloadProc, HotReloadRequest, ProcRef, HELPER_FILE},
 	waker
 };
 
@@ -68,7 +68,12 @@ const HELPER_PROCS: &str = r#"
 /proc/auxtools_spawn_done(number, result)
 	CRASH("the debugger's library isn't loaded")
 
-/proc/auxtools_launched_world_del()
+/proc/auxtools_kept()
+	// Keep values between evaluations: `auxtools_kept()["m"] = m`.
+	var/static/list/kept = list()
+	return kept
+
+/proc/auxtools_launched_world_del(failed)
 	CRASH("the debugger's library isn't loaded")
 
 /proc/auxtools_launched_world_reboot()
@@ -82,13 +87,10 @@ const HELPER_PROCS: &str = r#"
 	try
 		..()
 	catch(var/exception/e)
-		auxtools_launched_world_del()
+		auxtools_launched_world_del(TRUE)
 		throw e
 	auxtools_launched_world_del()
 "#;
-
-/// What the launcher's file is called in stack traces
-const HELPER_FILE: &str = "auxtools_launcher.dm";
 
 /// Helper overrides excluded from source override numbering
 /// (see `Proc::set_apart`). Keep them above reloaded world definitions.
@@ -187,7 +189,7 @@ fn prepare() -> Result<(), String> {
 	}
 
 	let mut warnings = vec![];
-	let prepared = hot_reload::prepare(&request, &mut warnings).map_err(|errors| errors.join("; "))?;
+	let prepared = hot_reload::prepare(&request, &mut warnings, &mut vec![]).map_err(|errors| errors.join("; "))?;
 	hot_reload::apply(prepared, &mut HashMap::<_, BTreeMap<(), ()>>::new(), &mut HashMap::new(), &mut warnings);
 	for warning in warnings {
 		eprintln!("auxtools: {}", warning);
@@ -296,15 +298,21 @@ fn ready() {
 	}
 }
 
-fn world_del(_: &Value, _: &Value, _: Vec<Value>) -> auxtools::DMResult {
+/// Handle world/Del completion; `failed` indicates a runtime error.
+fn world_del(_: &Value, _: &Value, args: Vec<Value>) -> auxtools::DMResult {
+	let failed = args.first().is_some_and(|failed| failed.as_number().is_ok_and(|failed| failed != 0.0));
 	if REBOOTING.swap(false, Ordering::Relaxed) {
-		// Use a helper added after load to distinguish this world from
-		// the next world loaded by reboot.
+		// Reboot proceeds even if Del throws. The post-load helper
+		// distinguishes this world from the next one.
 		let ours = Proc::find_override("/world/Del", Proc::APART);
 		auxtools::init_on_next_world_load(ours.as_ref());
-	} else {
+	} else if !failed {
+		if let Some(server) = unsafe { &mut *crate::DEBUG_SERVER.get() } {
+			server.world_shutting_down();
+		}
 		auxtools::shut_down_with_world();
 	}
+	// A failed Del leaves the world running and must preserve its debugger.
 	Ok(Value::NULL)
 }
 

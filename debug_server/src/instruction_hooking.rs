@@ -17,13 +17,12 @@ const OPCODE_THROW: u32 = 0x12D;
 const OPCODE_DEBUG_BREAK: u32 = 0x1337;
 const OPCODE_DEBUG_OPERAND: u32 = 0x1338;
 
+// Restore breakpoint instructions on debugger shutdown. Code can still run
+// after world/Del, including its caller and paused frames; an unhandled
+// OPCODE_DEBUG_BREAK would end the proc with a bad-instruction error.
 #[shutdown]
 fn instruction_hooking_shutdown() {
-	unsafe {
-		CURRENT_ACTION = DebuggerAction::None;
-		*DEFERRED_INSTRUCTION_REPLACE.get() = None;
-		*ORIGINAL_BYTECODE.lock().unwrap() = HashMap::new();
-	}
+	unhook_all();
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
@@ -316,16 +315,17 @@ unsafe fn in_try(mut ctx: *mut raw_types::procs::ExecutionContext) -> bool {
 	false
 }
 
-/// Whether the evaluated code catches the error before it reaches the
-/// expression stub. The paused world's surrounding `try` blocks do not apply.
+/// Whether the evaluated code catches the error, in the expression stub's own
+/// `try` blocks or those of the procs it called. The paused world's
+/// surrounding `try` blocks do not apply.
 unsafe fn in_try_above_expression(mut ctx: *mut raw_types::procs::ExecutionContext) -> bool {
 	unsafe {
 		while !ctx.is_null() {
-			if crate::server::is_expression_frame(ctx) {
-				return false;
-			}
 			if *(*ctx).throw_handler() != 0 {
 				return true;
+			}
+			if crate::server::is_expression_frame(ctx) {
+				return false;
 			}
 			ctx = *(*ctx).parent_context();
 		}
@@ -341,8 +341,17 @@ unsafe fn thrown(ctx: *mut raw_types::procs::ExecutionContext) -> String {
 		return "an exception".to_owned();
 	}
 	let value = unsafe { Value::from_raw(*(*(*ctx).stack()).add(size - 1)) };
-	if let Ok(name) = value.get_string(byond_string!("name")) {
-		return name;
+	if let Ok(name) = value.get(byond_string!("name")) {
+		if let Ok(text) = name.as_string() {
+			return text;
+		}
+		// EXCEPTION(object) uses the object as its name; report that instead of
+		// "/exception".
+		if name != Value::NULL {
+			if let Ok(text) = name.to_string() {
+				return text;
+			}
+		}
 	}
 	match value.as_string() {
 		Ok(text) => text,

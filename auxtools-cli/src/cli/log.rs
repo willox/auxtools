@@ -14,10 +14,16 @@ use super::{args, hung_up, seconds_text, unexpected, Failure, Result, World, HUN
 /// `auxtools log`
 pub fn log(world: &mut World, args: &args::Log) -> Result<()> {
 	let kinds = kinds(args);
+	let filter = args.runtime_filter.as_deref().map(RuntimeFilter::parse);
+	// Apply --last after filtering, since only matching entries count.
+	let shown = |entry: &JournalEntry| match (&filter, &entry.event) {
+		(Some(filter), JournalEvent::Runtime { message, .. }) => filter.takes(message),
+		_ => true
+	};
 	let (entries, first, newest) = match world.request(Request::Journal {
 		after: args.since.unwrap_or(0),
 		kinds: kinds.clone(),
-		limit: args.last,
+		limit: if filter.is_some() { None } else { args.last },
 		follow: false
 	})? {
 		Response::Journal { entries, first, last } => (entries, first, last),
@@ -30,7 +36,9 @@ pub fn log(world: &mut World, args: &args::Log) -> Result<()> {
 			first - 1
 		);
 	}
-	for entry in &entries {
+	let entries: Vec<&JournalEntry> = entries.iter().filter(|entry| shown(entry)).collect();
+	let skip = args.last.map_or(0, |last| entries.len().saturating_sub(last as usize));
+	for entry in entries.into_iter().skip(skip) {
 		if !print(entry, args.json) {
 			return Ok(());
 		}
@@ -44,7 +52,7 @@ pub fn log(world: &mut World, args: &args::Log) -> Result<()> {
 	loop {
 		match follower.next(world, None) {
 			Ok(Some(entry)) => {
-				if !print(&entry, args.json) {
+				if shown(&entry) && !print(&entry, args.json) {
 					return Ok(());
 				}
 			}
@@ -118,7 +126,7 @@ pub fn wait_reboot(world: &mut World, since: Option<u64>, timeout: Option<Durati
 /// The kinds of entries the options ask for: all of them, if none are named
 pub fn kinds(args: &args::Log) -> Vec<JournalKind> {
 	[
-		(args.runtimes, JournalKind::Runtime),
+		(args.runtimes || args.runtime_filter.is_some(), JournalKind::Runtime),
 		(args.reloads, JournalKind::Reload),
 		(args.output, JournalKind::Output),
 		(args.world, JournalKind::World),
@@ -321,6 +329,16 @@ pub fn describe(event: &JournalEvent) -> (String, Vec<String>) {
 			)
 		}
 	}
+}
+
+/// Report a spawned evaluation's callee error using the same format as
+/// synchronous eval.
+pub fn callee_runtime(message: &str, stack: &[JournalFrame]) -> String {
+	let mut said = format!("runtime error in a called proc (the evaluation carried on): {}", message);
+	for (i, at) in stack[..stack.len() - 1].iter().enumerate() {
+		said += &format!("\n  {} {}", if i == 0 { "in" } else { "called by" }, frame(at));
+	}
+	said + "\n  called by the expression"
 }
 
 fn frame(frame: &JournalFrame) -> String {

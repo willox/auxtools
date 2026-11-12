@@ -1,5 +1,7 @@
 //! Pausing, and the procs asleep while the world is paused: each is a thread
 
+use std::time::Duration;
+
 use serde_json::json;
 
 use crate::{client::named, ok, world::World};
@@ -43,8 +45,23 @@ pub fn run() {
 	let stop = world.step("next");
 	assert_eq!((stop.reason.as_str(), stop.proc.as_str()), ("step", "/sc_busy"));
 	ok("step after pause");
-	world.eval("stop_busy = TRUE");
-	world.resume_through("busy");
+
+	// A continue may overtake its queued stop event. Do not report that stale
+	// stop.
+	world.resume();
+	for _ in 0..3 {
+		world.pipeline(&[("pause", json!({ "threadId": 0 })), ("continue", json!({ "threadId": 0 }))]);
+		// The stop may arrive before the continue; either order is valid.
+		if let Some(stop) = world.event_within("stopped", Duration::from_secs(1)) {
+			let thread = stop["body"]["threadId"].as_u64().unwrap();
+			assert!(!world.frames(thread).is_empty(), "told of a stop the world had carried on from: {}", stop);
+			world.resume();
+		}
+	}
+	ok("stop followed by continue");
+	world.eval_global("stop_busy = TRUE");
+	world.finish("busy");
+	assert!(!world.has_event("stopped"), "the world stopped again during busy");
 
 	// Nothing of the world's runs for three seconds: it pauses in the
 	// debugger's own loop, which isn't shown as a thread

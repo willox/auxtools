@@ -292,6 +292,23 @@ pub fn reloads(pid: u64, code: &Path) {
 		printed
 	);
 	println!("ok: uptime and latest reload status");
+
+	// A wait must recognize its breakpoint after reload moves it within the
+	// proc.
+	let place = format!("attach_host.dm:{}", crate::line_of(code, "\t\ttotal += i // first loop"));
+	let waiting = Background::start(pid, &["wait", "pause", "--break", &place, "--timeout", "60"]);
+	std::thread::sleep(Duration::from_secs(1));
+	let since = newest(pid).to_string();
+	std::fs::write(code, source.replace("/proc/two_loops()\n", "/proc/two_loops()\n\tvar/moved = 1\n")).unwrap();
+	run(pid, &["wait", "reload", "--since", &since, "--timeout", "60"], 0);
+	run(pid, &["eval", "--spawn", "two_loops()"], 0);
+	let (exit, printed) = waiting.finish();
+	assert_eq!(exit, 0, "wait pause after a reload gave: {}", printed);
+	run(pid, &["continue"], 0);
+	let since = newest(pid).to_string();
+	std::fs::write(code, &source).unwrap();
+	run(pid, &["wait", "reload", "--since", &since, "--timeout", "60"], 0);
+	println!("ok: wait pause keeps its breakpoint through a reload");
 }
 
 /// A reboot goes in the record, whose numbers go on in the new world:

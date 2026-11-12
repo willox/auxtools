@@ -290,7 +290,30 @@ pub fn get_proc_override<S: Into<String>>(path: S, override_id: u32) -> Option<P
 	if override_id == Proc::APART {
 		return PROCS_APART.with(|apart| apart.borrow().get(&s).cloned());
 	}
-	PROCS_BY_NAME.with(|h| h.borrow().get(&s)?.get(override_id as usize).cloned())
+	let found = PROCS_BY_NAME.with(|h| h.borrow().get(&s)?.get(override_id as usize).cloned());
+	if found.is_none() && s.ends_with("/(init)") && adopt_named(&s) {
+		return PROCS_BY_NAME.with(|h| h.borrow().get(&s)?.get(override_id as usize).cloned());
+	}
+	found
+}
+
+/// Index init procs that BYOND named after the initial proc scan.
+/// Return whether any unnamed procs now have `path`.
+fn adopt_named(path: &str) -> bool {
+	if PROCS_BY_NAME.with(|h| h.borrow().contains_key(path)) {
+		return false;
+	}
+	let unnamed = PROCS_BY_NAME.with(|h| h.borrow().get("").cloned().unwrap_or_default());
+	let named: Vec<Proc> = unnamed
+		.iter()
+		.filter_map(|proc| Proc::from_id(proc.id))
+		.filter(|proc| proc.path == path)
+		.collect();
+	let any = !named.is_empty();
+	for proc in named {
+		register_proc(proc);
+	}
+	any
 }
 
 /// Retrieves the 0th override of a proc.

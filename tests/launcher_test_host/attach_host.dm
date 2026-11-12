@@ -14,6 +14,10 @@ var/datum/held/held = new
 /datum/held
 	var/count = 3
 
+// A static initializer evaluated once at world startup.
+/datum/cached
+	var/static/list/cache = list()
+
 /datum/held/proc/double(n)
 	return n * 2
 
@@ -42,6 +46,8 @@ var/datum/held/held = new
 	world.log << "attach test: world/Del"
 	if (fexists("refuse_del"))
 		return
+	if (fexists("fail_del"))
+		CRASH("attach test: world/Del failed")
 	..()
 
 /proc/run_until_stopped()
@@ -90,6 +96,18 @@ var/datum/held/held = new
 /obj/macro_named
 	name = "\improper AI Chamber"
 
+// BYOND assigns the var initializer path /datum/inits/proc/(init) after startup.
+/datum/inits
+	var/list/given = list(1)
+// Two loops with separate local slots named i.
+/proc/two_loops()
+	var/total = 0
+	for(var/i = 1, i <= 3, i++)
+		total += i // first loop
+	for(var/i in list(10, 20))
+		total += i // second loop
+	return total
+
 // For the command line's eval: a runtime error two procs down from it, and
 // one a proc catches itself
 /proc/fail_in(n)
@@ -117,6 +135,20 @@ var/datum/held/held = new
 /datum/twice/act()
 	. = ..()
 	return "second"
+
+// Inherited proc reference for DreamMaker-compatible `::` resolution.
+/datum/twice/more
+
+/proc/twice_ref()
+	return /datum/twice/more::act()
+
+// A same-named global proc must not satisfy /datum/twice/proc/act.
+// /obj also inherits a proc from /atom despite its path prefix.
+/proc/act()
+	return "global"
+
+/atom/proc/atom_act()
+	return "atom"
 
 // DreamMaker inserts a .dme location between this proc's source locations.
 // Keep this proc last to reproduce it.

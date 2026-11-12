@@ -14,7 +14,7 @@ use std::{
 
 use auxtools_cli::{
 	local::{self, Shared, Stream},
-	server_types::{BreakpointReason, DataChange, InstructionRef, Request, Response, Stop}
+	server_types::{BreakpointReason, DataChange, InstructionRef, Request, Response, Stop, WORLD_SHUTTING_DOWN}
 };
 use dap_types::{ContinuedEvent, StoppedEvent as Reasons};
 
@@ -138,7 +138,8 @@ const GOODBYE_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct Debuggee {
 	writer: Shared,
-	responses: mpsc::Receiver<Response>,
+	/// Responses paired with the number of stops read before them.
+	responses: mpsc::Receiver<(Response, u64)>,
 	/// Whether the world is paused
 	stopped: Arc<AtomicBool>,
 	out: Arc<Output>,
@@ -151,6 +152,10 @@ pub struct Debuggee {
 	caught_up: bool,
 	/// How many times the world has stopped
 	stops: u32,
+	/// Stops read before the last continue or step acknowledgement.
+	/// Suppress those stops if they reach the adapter event loop after
+	/// resuming.
+	resumed_after: u64,
 	/// Outstanding fire-and-forget evaluations whose responses must be
 	/// discarded.
 	unanswered: Arc<AtomicU32>,
@@ -176,6 +181,9 @@ impl Debuggee {
 		let (responses_sender, responses) = mpsc::channel();
 		let unanswered = Arc::new(AtomicU32::new(0));
 		let reader_unanswered = unanswered.clone();
+		// Number stops as they arrive; the adapter may process queued requests
+		// first.
+		let mut stops_read = 0;
 
 		std::thread::Builder::new()
 			.name("debuggee reader".to_owned())
@@ -189,6 +197,14 @@ impl Debuggee {
 					match response {
 						Response::Disconnect => break "the debug server disconnected".to_owned(),
 
+						// A shutdown notification suppresses reconnect messages
+						// after disconnection.
+						Response::Notification { message } if message == WORLD_SHUTTING_DOWN => {
+							if inputs.send(Input::ShuttingDown { generation }).is_err() {
+								break "adapter event receiver closed".to_owned();
+							}
+						}
+
 						Response::Notification { message } => out.console(format!("[auxtools] {}", message)),
 
 						// A breakpoint's condition failed: said once, and the
@@ -198,7 +214,15 @@ impl Debuggee {
 						Response::BreakpointHit { .. } | Response::Resumed if !debugging => {}
 
 						Response::BreakpointHit(stop) => {
-							if inputs.send(Input::Stopped { generation, stop }).is_err() {
+							stops_read += 1;
+							if inputs
+								.send(Input::Stopped {
+									generation,
+									stop,
+									number: stops_read
+								})
+								.is_err()
+							{
 								break "adapter event receiver closed".to_owned();
 							}
 						}
@@ -251,7 +275,7 @@ impl Debuggee {
 								.is_ok() => {}
 
 						response => {
-							if responses_sender.send(response).is_err() {
+							if responses_sender.send((response, stops_read)).is_err() {
 								break "response receiver closed".to_owned();
 							}
 						}
@@ -271,14 +295,15 @@ impl Debuggee {
 			thread: Arc::new(AtomicU32::new(0)),
 			caught_up: false,
 			stops: 0,
+			resumed_after: 0,
 			unanswered,
 			generation
 		})
 	}
 
-	/// The world stopped (`Input::Stopped`): the client is told
-	pub fn stopped_at(&mut self, stop: Stop) {
-		if self.caught_up {
+	/// Report the numbered stop unless this client has already resumed past it.
+	pub fn stopped_at(&mut self, stop: Stop, number: u64) {
+		if self.caught_up || number <= self.resumed_after {
 			return;
 		}
 		self.stopped.store(true, Ordering::Relaxed);
@@ -372,13 +397,20 @@ impl Debuggee {
 		// Anything still waiting belonged to a request that timed out
 		while self.responses.try_recv().is_ok() {}
 
-		if let Request::Continue { .. } = request {
+		let resumes = matches!(request, Request::Continue { .. });
+		if resumes {
 			self.caught_up = false;
 			self.stopped.store(false, Ordering::Relaxed);
 		}
 		self.send(request)?;
 		match self.responses.recv_timeout(RESPONSE_TIMEOUT) {
-			Ok(response) => Ok(response),
+			Ok((response, stops)) => {
+				// Discard a queued stop superseded by the acknowledged resume.
+				if resumes && matches!(response, Response::Ack) {
+					self.resumed_after = stops;
+				}
+				Ok(response)
+			}
 			Err(mpsc::RecvTimeoutError::Timeout) => Err("debug server response timed out".to_owned()),
 			Err(mpsc::RecvTimeoutError::Disconnected) => Err("the world disconnected".to_owned())
 		}

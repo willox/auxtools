@@ -296,7 +296,8 @@ impl Server {
 		if name == "." {
 			return Ok(Some(Slot::Dot));
 		}
-		let mut locals = frame.locals.iter().enumerate().filter(|(_, (local, _))| String::from(local) == name);
+		let visible = Self::visible_locals(frame);
+		let mut locals = visible.iter().enumerate().filter(|(_, local)| local.as_deref() == Some(name));
 		match (locals.next(), locals.next()) {
 			(Some((index, _)), None) => return Ok(Some(Slot::Local(index))),
 			(Some(_), Some(_)) => return Err(format!("the proc has more than one local called {}", name)),
@@ -407,16 +408,15 @@ impl Server {
 						};
 						pointed(pointer, within(&holder, name.clone()))
 					}
-					Variables::ListPair { key, of, list, .. } => {
+					Variables::ListPair { key, of, entry, .. } => {
 						if name != "value" {
 							return Err("list keys cannot be watched for value changes".to_owned());
 						}
-						let shown = list.zip(Self::literal(&key)).map(|(list, key)| format!("{}[{}]", list, key));
 						let pointer = self.pointer_to(None, &format!("{}[{}]", HOLDER, KEY), vec![
 							(HOLDER.to_owned(), of),
 							(KEY.to_owned(), key),
 						])?;
-						pointed(pointer, shown.unwrap_or_else(|| name.clone()))
+						pointed(pointer, entry.unwrap_or_else(|| name.clone()))
 					}
 					// What a pointer names is the place itself
 					Variables::Pointee(pointer, holder) => pointed(pointer, within(&holder, String::new()).trim_start_matches('*').to_owned())

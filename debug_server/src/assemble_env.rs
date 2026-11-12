@@ -40,6 +40,79 @@ impl AssembleEnv {
 	}
 }
 
+/// Find the last definition at `/type/name`, as a call on that type would.
+fn last_definition(path: &str) -> Option<Proc> {
+	let mut last = None;
+	let mut n = 0;
+	while let Some(proc) = Proc::find_override(path, n) {
+		last = Some(proc);
+		n += 1;
+	}
+	last
+}
+
+/// Type paths from `ty` through its actual parents, nearest first.
+/// Follow the runtime table, including builtin and explicit parent_type
+/// ancestry. Fall back to path prefixes if the table is unavailable.
+fn ancestry(ty: &str) -> Vec<String> {
+	let ty = ty.trim_end_matches('/');
+	if let Some(paths) = crate::hot_reload::ancestry(ty) {
+		return paths;
+	}
+	let mut paths = vec![];
+	let mut at = ty;
+	while !at.is_empty() {
+		paths.push(at.to_owned());
+		at = at.rsplit_once('/').map_or("", |(parent, _)| parent);
+	}
+	paths
+}
+
+fn found(proc: Proc, warning: Option<String>) -> dmasm::compiler::FoundProc {
+	dmasm::compiler::FoundProc {
+		tag: raw_types::values::ValueTag::ProcRef as u8,
+		data: proc.id.0,
+		warning
+	}
+}
+
+/// Resolve `ty::name()` to the nearest definition in the type ancestry,
+/// matching DreamMaker.
+pub fn type_proc(ty: &str, name: &str) -> Result<dmasm::compiler::FoundProc, String> {
+	if dmasm::assembler::AssembleEnv::get_type(&mut AssembleEnv, ty).is_none() {
+		return Err(format!("there's no type {} in the running world", ty));
+	}
+	ancestry(ty)
+		.iter()
+		.find_map(|at| last_definition(&format!("{}/{}", at, name)))
+		.map(|proc| found(proc, None))
+		.ok_or_else(|| format!("{} has no proc called {}", ty, name))
+}
+
+/// Resolve `/type/proc/name` or `/type/verb/name` to the first definition on
+/// the original declaring type. Warn if that type differs from the written
+/// path, which DreamMaker rejects. Only `/proc/name` resolves a global proc.
+pub fn proc_path(path: &str) -> Option<dmasm::compiler::FoundProc> {
+	let (ty, name) = path.rsplit_once("/proc/").or_else(|| path.rsplit_once("/verb/"))?;
+	if name.is_empty() || name.contains('/') {
+		return None;
+	}
+	if ty.is_empty() {
+		return Proc::find(format!("/{}", name)).map(|proc| found(proc, None));
+	}
+	let (at, proc) = ancestry(ty)
+		.into_iter()
+		.filter_map(|at| Proc::find(format!("{}/{}", at, name)).map(|proc| (at, proc)))
+		.last()?;
+	let warning = (at != ty).then(|| {
+		format!(
+			"{}: DreamMaker refuses this path, since {} isn't declared on {}; this is {}/proc/{}",
+			path, name, ty, at, name
+		)
+	});
+	Some(found(proc, warning))
+}
+
 impl dmasm::assembler::AssembleEnv for AssembleEnv {
 	fn get_string_index(&mut self, string: &[u8]) -> Option<u32> {
 		let string = StringRef::from_raw(string).ok()?;
@@ -89,16 +162,19 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 		if let Some(res) = Self::eval_with_name("text2path(name)", path) {
 			return Some((res.raw.tag as u8, unsafe { res.raw.data.id }));
 		}
+		if let Some(id) = crate::hot_reload::image_type(path) {
+			return Some((raw_types::values::ValueTag::ImageTypepath as u8, id));
+		}
 
-		// A reference to a proc written without `/proc/`, like /obj/foo/bar,
-		// is one text2path() doesn't know
-		Proc::find(path).map(|proc| (raw_types::values::ValueTag::ProcRef as u8, proc.id.0))
+		// Without `/proc/`, a proc path names the last definition, matching
+		// DreamMaker. text2path() does not resolve this form.
+		last_definition(path).map(|proc| (raw_types::values::ValueTag::ProcRef as u8, proc.id.0))
 	}
 
 	// fcopy_rsc() hands back the cache entry a file already has, and adds the
 	// file to the cache if it isn't there yet
 	fn get_resource_index(&mut self, path: &str) -> Option<u32> {
-		let res = Self::eval_with_name("fcopy_rsc(name)", path)?;
+		let res = Self::eval_with_name("fcopy_rsc(name)", path).or_else(|| Self::eval_with_name("fcopy_rsc(name)", &case_insensitive_path(path)?))?;
 
 		if res.raw.tag != raw_types::values::ValueTag::Resource {
 			return None;
@@ -106,4 +182,38 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 
 		Some(unsafe { res.raw.data.id })
 	}
+}
+
+/// Resolve resource paths case-insensitively, matching DreamMaker on Linux.
+/// Prefer exact path components, then the first sorted case-insensitive match.
+/// Return `None` if the path already exists or any component cannot be
+/// resolved.
+fn case_insensitive_path(path: &str) -> Option<String> {
+	use std::path::{Component, Path, PathBuf};
+
+	if Path::new(path).exists() {
+		return None;
+	}
+	let mut found = PathBuf::new();
+	for component in Path::new(path).components() {
+		let Component::Normal(part) = component else {
+			found.push(component);
+			continue;
+		};
+		let exact = found.join(part);
+		if exact.symlink_metadata().is_ok() {
+			found = exact;
+			continue;
+		}
+		let part = part.to_str()?;
+		let dir = if found.as_os_str().is_empty() { Path::new(".") } else { found.as_path() };
+		let mut names: Vec<String> = std::fs::read_dir(dir)
+			.ok()?
+			.filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+			.filter(|name| name.eq_ignore_ascii_case(part))
+			.collect();
+		names.sort();
+		found.push(names.into_iter().next()?);
+	}
+	found.to_str().map(|found| found.replace('\\', "/"))
 }

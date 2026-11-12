@@ -71,6 +71,7 @@ path: `/mob/proc/Login`, or `/mob/Login#1` for its second definition.
   restarts. Function breakpoint counts survive hot reload.
 - **Logpoints** print instead of pausing. Use `{expression}` interpolation, such as
   `health is {health} for {src}`. Failed expressions display their errors in place.
+  Write `{{` and `}}` for literal braces.
   Logpoints can also have conditions and hit counts.
 
 With hot reload enabled, breakpoints added to unsaved text remain unverified
@@ -140,7 +141,9 @@ Watches, conditions and the Debug Console accept DM expressions such as
 `health / maxHealth` or `get_dist(src, usr) < 3`. Name resolution follows the
 selected proc: locals and arguments, then `src` variables, then globals. Bare calls
 resolve to `src` procs where available. While running, evaluation has only global
-scope. `/obj/item::force` reads a type's initial value.
+scope. `/obj/item::force` reads a type's initial value. In launched worlds,
+`auxtools_kept()` stores values between evaluations until reboot. For example,
+`auxtools_kept()["m"] = m` saves a value for a later `auxtools_kept()["m"]`.
 
 Expressions can assign variables and call procs. Watch expressions run at every
 stop, so their side effects can change the world.
@@ -154,8 +157,10 @@ for (var/mob/M in world)
 n
 ```
 
-The result is the returned value, or the final expression. Bodies can modify frame
-variables. Evaluation is aborted if it sleeps or calls a sleeping proc.
+The result is the returned value or final expression. A body ending with a
+statement, including an assignment or increment, returns `.`, as a proc does.
+Bodies can modify frame variables. Compiler warnings accompany the result.
+Evaluation is aborted if it sleeps or calls a sleeping proc.
 
 Source `#define`s are available in evaluations and logpoints when the launcher has
 parsed the project for hot reload. Definitions update on reload; undefined macros
@@ -195,12 +200,20 @@ Reloads are restored after reboot.
 
 Supported changes include proc bodies, new procs and verbs, removals, new types
 (including mobs), new variables and static locals, variable types and defaults,
-parameters, `in` lists, prefabs and `set` statements. Type proc definitions can be
-inserted or removed between existing overrides.
+changes to `static`, `const` and `tmp` variable declarations,
+parameters (including `as` input types), `in` lists, prefabs and `set` statements.
+Proc, verb, world proc and global proc definitions can be inserted or removed
+between existing overrides.
 
-Changes requiring a rebuild include parent types; declaration flags such as
-`static`, `tmp`, `const` and `as`; non-terminal additions or removals of verb and
-global proc definitions; and unsupported built-in defaults such as `ckey`.
+Changes requiring a rebuild include parent types; proc declaration changes,
+such as switching between proc and verb or adding `final`; and unsupported
+built-in defaults such as `ckey`.
+
+Reloaded and evaluated code preserves DreamMaker's field caching: after
+`a.b.f()`, a later `a.b.x` in the same flow can use the old object even if
+`f()` replaced `a.b`. This common pattern does not warn. Read the field into
+a local when a call may replace it. Other compatibility differences and
+copied quirks are reported as warnings.
 
 Active calls finish on their original code. Existing instances retain their verbs
 and built-in values. Computed defaults apply to new instances. New computed

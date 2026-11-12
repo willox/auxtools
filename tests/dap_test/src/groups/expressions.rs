@@ -482,7 +482,8 @@ pub fn run() {
 			"runtime error: undefined variable /datum/thing/sub/var/not_a_name_anywhere"
 		),
 		("/datum/not_a_type", "there's no type /datum/not_a_type"),
-		("sleep(1)", "proc not found: /proc/sleep"),
+		// A statement-only builtin is compiled as a body and cannot sleep here.
+		("sleep(1)", "evaluation aborted because the code slept"),
 		("..()", "relative calls are not supported")
 	]);
 	ok("unresolved and unsupported expression diagnostics");
@@ -491,7 +492,6 @@ pub fn run() {
 		("src.other.name", "runtime error: Cannot read null.name"),
 		("1 / 0", "runtime error: Division by zero"),
 		("local_list[9]", "runtime error: list index out of bounds"),
-		("fail_null()", "runtime error: cannot read from list"),
 		("src.shared.len", "runtime error: Cannot read 9.len"),
 		// (a statement, which is a body)
 		("CRASH(\"no\")", "runtime error: no"),

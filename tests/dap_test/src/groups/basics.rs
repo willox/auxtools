@@ -445,6 +445,11 @@ fn output_and_exit() {
 	let exited = world.event("exited");
 	assert!(exited["body"]["exitCode"].is_number(), "no exit code: {}", exited);
 	assert_eq!(category(&world, "The world exited"), "console");
+	assert!(
+		!world.output.contains("waiting to reconnect"),
+		"the launcher took the world's end for a lost connection:\n{}",
+		world.output
+	);
 	ok("exit events include status");
 	world.end();
 
