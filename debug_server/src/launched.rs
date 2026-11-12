@@ -21,7 +21,7 @@ use dmasm::reload::{ProcKey, Snapshot};
 use crate::{
 	connection, hot_reload,
 	server::Server,
-	server_types::{HotReloadNewProc, HotReloadProc, HotReloadRequest, ProcRef},
+	server_types::{HotReloadNewProc, HotReloadProc, HotReloadRequest, ProcRef, HELPER_FILE},
 	waker
 };
 
@@ -91,9 +91,6 @@ const HELPER_PROCS: &str = r#"
 		throw e
 	auxtools_launched_world_del()
 "#;
-
-/// What the launcher's file is called in stack traces
-const HELPER_FILE: &str = "auxtools_launcher.dm";
 
 /// Helper overrides excluded from source override numbering
 /// (see `Proc::set_apart`). Keep them above reloaded world definitions.

@@ -8,11 +8,9 @@ use auxtools::{raw_types::procs::ProcId, runtime_tables, Proc};
 
 use crate::{
 	hot_reload,
-	server_types::{ProcRef, Reloaded}
+	server_types::{ProcRef, Reloaded, GLOBAL_INIT}
 };
 
-/// Display name for the global and static initializer proc.
-pub const GLOBAL_INIT: &str = "(global init)";
 const IN_LIST: &str = "(in list)";
 /// Fallback name, indexed among auxtools' unnamed procs.
 const OTHER: &str = "(var initializer)";

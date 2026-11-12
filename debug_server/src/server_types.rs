@@ -11,6 +11,12 @@ pub const PROTOCOL_VERSION: u32 = 6;
 /// reboot.
 pub const WORLD_SHUTTING_DOWN: &str = "The world is shutting down";
 
+/// Display and lookup name for the unnamed global and static initializer proc.
+pub const GLOBAL_INIT: &str = "(global init)";
+
+/// Source filename used by launcher helper procs.
+pub const HELPER_FILE: &str = "auxtools_launcher.dm";
+
 /// The local socket the world in process `pid` listens on, when it has the
 /// debug library: `auxtools-debug-v1-1234`
 #[allow(dead_code)]

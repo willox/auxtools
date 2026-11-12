@@ -1381,7 +1381,7 @@ impl World {
 			other => return Err(unexpected(&other))
 		};
 		let mut lines_known = || match self.request(Request::Files) {
-			Ok(Response::Files { files }) => files.iter().any(|name| name != "auxtools_launcher.dm"),
+			Ok(Response::Files { files }) => files.iter().any(|name| name != HELPER_FILE),
 			_ => true
 		};
 		Ok(match lines.last() {
@@ -1395,9 +1395,6 @@ impl World {
 		.into())
 	}
 }
-
-/// Server name for the global and static initializer proc.
-const GLOBAL_INIT: &str = "(global init)";
 
 /// A breakpoint that was set
 struct Bound {

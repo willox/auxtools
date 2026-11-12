@@ -18,7 +18,7 @@ use auxtools_cli::{
 	byond::{self, Server},
 	game::{Game, Launch},
 	local::{self, Stream},
-	server_types::{self as aux, ContinueKind, InstructionRef, ProcRef, Request as AuxRequest, Response as AuxResponse}
+	server_types::{self as aux, ContinueKind, InstructionRef, ProcRef, Request as AuxRequest, Response as AuxResponse, GLOBAL_INIT, HELPER_FILE}
 };
 use dap_types::*;
 use serde::Deserialize;
@@ -47,8 +47,6 @@ const STDDEF_REFERENCE: i64 = 1;
 const EXIT_GRACE: Duration = Duration::from_secs(5);
 /// Grace period before forcibly terminating the world.
 const TERMINATE_GRACE: Duration = Duration::from_secs(5);
-/// Source file used for debugger helper procs.
-const HELPER_FILE: &str = "auxtools_launcher.dm";
 
 /// Diagnostic for line breakpoints in a world built without debug information.
 pub const NO_LINES: &str =
@@ -2678,9 +2676,6 @@ fn instruction_window(
 		})
 		.collect()
 }
-
-/// Server name for the global and static initializer proc.
-const GLOBAL_INIT: &str = "(global init)";
 
 /// Parse a function breakpoint path and optional zero-based `#N` override.
 fn named_proc(name: &str) -> ProcRef {

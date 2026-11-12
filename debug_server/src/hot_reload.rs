@@ -2518,7 +2518,7 @@ impl WorldGlobals {
 	/// ID.
 	fn initialized(&mut self) -> &[(Vec<u8>, Vec<u8>, u32, u32)] {
 		self.1.get_or_insert_with(|| {
-			let Some(proc) = crate::unnamed::find(crate::unnamed::GLOBAL_INIT, 0) else {
+			let Some(proc) = crate::unnamed::find(crate::server_types::GLOBAL_INIT, 0) else {
 				return vec![];
 			};
 			let bytecode = original_bytecode(&proc);
