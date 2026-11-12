@@ -315,16 +315,17 @@ unsafe fn in_try(mut ctx: *mut raw_types::procs::ExecutionContext) -> bool {
 	false
 }
 
-/// Whether the evaluated code catches the error before it reaches the
-/// expression stub. The paused world's surrounding `try` blocks do not apply.
+/// Whether the evaluated code catches the error, in the expression stub's own
+/// `try` blocks or those of the procs it called. The paused world's
+/// surrounding `try` blocks do not apply.
 unsafe fn in_try_above_expression(mut ctx: *mut raw_types::procs::ExecutionContext) -> bool {
 	unsafe {
 		while !ctx.is_null() {
-			if crate::server::is_expression_frame(ctx) {
-				return false;
-			}
 			if *(*ctx).throw_handler() != 0 {
 				return true;
+			}
+			if crate::server::is_expression_frame(ctx) {
+				return false;
 			}
 			ctx = *(*ctx).parent_context();
 		}

@@ -121,6 +121,14 @@ fn eval_failures(pid: &str, code: &Path) {
 	assert_eq!(fails(pid, &["eval", "1/0"]), "runtime error: Division by zero");
 	// One the proc catches is no failure
 	assert_eq!(run(pid, &["eval", "caught_inside()"], 0).out.trim(), "\"caught\"");
+	// A try block in the evaluation itself may catch the error, including when
+	// spawned.
+	let caught = "try\n\tvar/list/L = null\n\tL.len = 1\ncatch(var/exception/e)\n\treturn \"caught: [e.name]\"";
+	assert_eq!(run(pid, &["eval", caught], 0).out.trim(), "\"caught: Cannot modify null.len.\"");
+	assert_eq!(
+		run(pid, &["eval", "--spawn", "--wait", caught], 0).out.trim(),
+		"\"caught: Cannot modify null.len.\""
+	);
 	// /client in an expression is the value compiled code has for it, and a
 	// proc can be named without its /proc/
 	assert_eq!(run(pid, &["eval", "/client == client_type()"], 0).out.trim(), "1");

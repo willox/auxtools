@@ -603,6 +603,10 @@ impl Server {
 		while !at.is_null() {
 			let id = proc_of(at);
 			if id == stub.id {
+				// The spawned code's own `try` catches it
+				if unsafe { *(*at).throw_handler() } != 0 {
+					return;
+				}
 				if at != ctx {
 					return;
 				}
