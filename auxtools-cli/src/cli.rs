@@ -1098,9 +1098,54 @@ impl World {
 		Ok(())
 	}
 
-	/// Resume for a step and wait for a stop or step-exhausted notification.
+	/// Report uncaught runtime errors since `after` in `from` or its callees
+	/// when a step completed without pausing on the error.
+	fn runtimes_in(&mut self, from: &str, after: u64) -> Result<()> {
+		let Response::Journal { entries, .. } = self.request(Request::Journal {
+			after,
+			kinds: vec![JournalKind::Runtime],
+			limit: None,
+			follow: false
+		})?
+		else {
+			return Ok(());
+		};
+		for entry in entries {
+			if let JournalEvent::Runtime {
+				message,
+				caught: false,
+				stack
+			} = entry.event
+			{
+				if let Some(at) = stack.iter().position(|frame| frame.proc == from) {
+					if at == 0 {
+						eprintln!("the step ended {} with a runtime error: {}", from, message);
+					} else {
+						eprintln!(
+							"during the step, {} (called by {}) ended with a runtime error: {}",
+							stack[0].proc, from, message
+						);
+					}
+				}
+			}
+		}
+		Ok(())
+	}
+
 	fn step(&mut self, kind: ContinueKind, timeout: Option<Duration>) -> Result<()> {
 		self.need_pause()?;
+		// Record the starting proc and journal position to find errors during
+		// the step.
+		let from = self.frames(0, Some(1))?.first().map(|frame| proc_name(&frame.instruction.proc));
+		let newest = match self.request(Request::Journal {
+			after: u64::MAX,
+			kinds: vec![],
+			limit: Some(0),
+			follow: false
+		})? {
+			Response::Journal { last, .. } => last,
+			other => return Err(unexpected(&other))
+		};
 		self.events.clear();
 		self.request(Request::Continue { kind })?;
 		let until = timeout.map(|timeout| Instant::now() + timeout);
@@ -1121,6 +1166,12 @@ impl World {
 				Some(_) => {}
 			}
 		};
+		// A pause on the runtime error already reports it.
+		if !matches!(stepped, Stepped::TimedOut | Stepped::Paused(BreakpointReason::Runtime { .. })) {
+			if let Some(from) = from {
+				self.runtimes_in(&from, newest)?;
+			}
+		}
 		match stepped {
 			Stepped::Paused(reason) => {
 				self.request(Request::HoldPause)?;

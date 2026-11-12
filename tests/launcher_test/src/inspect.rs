@@ -920,6 +920,21 @@ fn steps_that_end_elsewhere(pid: &str, dir: &Path) {
 	assert_eq!(json_of(pid, &["status", "--json"])["paused"], false);
 	println!("ok: step exhaustion succeeds with world running");
 
+	// Report a runtime error that ends the stepped proc.
+	call_soon(dir);
+	run(pid, &["wait", "pause", "--break", "/proc/fail_deeper", "--timeout", "60"], 0);
+	let ran = run(pid, &["step-over", "--timeout", "30"], 0);
+	assert!(ran.err.is_empty(), "step-over said {}", ran.err);
+	let ran = run(pid, &["step-over", "--timeout", "30"], 0);
+	assert!(
+		ran.out.starts_with(&format!("pid {}: paused after a step\n#0 /fail_in  ", pid)),
+		"step-over said {}",
+		ran.out
+	);
+	assert_eq!(ran.err, "the step ended /fail_deeper with a runtime error: list index out of bounds\n");
+	run(pid, &["continue"], 0);
+	println!("ok: a step reports the runtime error that ended its proc");
+
 	// A step over a sleep isn't over until the proc wakes
 	let waiting = crate::journal::Background::start(number, &["wait", "pause", "--break", "/proc/slow_double", "--timeout", "60"]);
 	std::thread::sleep(std::time::Duration::from_secs(2));
