@@ -23,6 +23,9 @@ use crate::{adapter::Input, dap::Output};
 const INTERVAL: Duration = Duration::from_millis(500);
 /// Limit polling to 1 / LOOKING_SHARE of the worker's time.
 const LOOKING_SHARE: u32 = 5;
+/// Allowance for Linux file timestamps lagging the clock by a coarse timer
+/// tick.
+const STAMP_LAG: Duration = Duration::from_millis(50);
 
 pub struct Options {
 	pub dme: PathBuf,
@@ -93,6 +96,7 @@ pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>
 				reconnected: Cell::new(false),
 				world: Cell::new(0),
 				parsed: Cell::new(false),
+				parse_started: Cell::new(SystemTime::UNIX_EPOCH),
 				macros: RefCell::new(None)
 			};
 			code.run();
@@ -114,6 +118,8 @@ struct Code {
 	world: Cell<u64>,
 	/// A full parse occurred since the last heap trim.
 	parsed: Cell<bool>,
+	/// Start time of the last full parse.
+	parse_started: Cell<SystemTime>,
 	/// The macros the world was last given
 	macros: RefCell<Option<Vec<Macro>>>
 }
@@ -147,6 +153,7 @@ impl Code {
 
 	fn parse(&self) -> Result<Snapshot, String> {
 		self.parsed.set(true);
+		self.parse_started.set(SystemTime::now());
 		Snapshot::parse(&self.options.dme, &self.parse_options)
 	}
 
@@ -182,7 +189,7 @@ impl Code {
 
 		let files = files(&built, &self.options.dme);
 		let mut watching = Watching {
-			files: Watched::new(&self.root, &files),
+			files: Watched::new(&self.root, &files, self.parse_started.get()),
 			dmb_modified,
 			edited_since_built: HashSet::new(),
 			applied: None,
@@ -299,7 +306,7 @@ impl Code {
 
 		// A file the new parse includes for the first time
 		for file in files(&new, &self.options.dme) {
-			watching.files.add(&self.root, &file);
+			watching.files.add(&self.root, &file, self.parse_started.get());
 		}
 
 		match self.reload(&changes, &new, watching.applied.as_ref().unwrap_or(&watching.built)) {
@@ -331,7 +338,7 @@ impl Code {
 			match self.parse() {
 				Ok(built) => {
 					for file in files(&built, &self.options.dme) {
-						watching.files.add(&self.root, &file);
+						watching.files.add(&self.root, &file, self.parse_started.get());
 					}
 					watching.built = built;
 				}
@@ -728,18 +735,22 @@ struct Watched {
 }
 
 impl Watched {
-	fn new(root: &Path, files: &[PathBuf]) -> Self {
+	/// Watch files read by a parse starting at `read`.
+	fn new(root: &Path, files: &[PathBuf], read: SystemTime) -> Self {
 		let mut watched = Self::default();
 		for file in files {
 			watched.insert(file);
 		}
 		// Record initial timestamps using the same lookup as later polls.
 		watched.changed(root);
+		for time in watched.times.values_mut() {
+			*time = unless_saved_since(*time, read);
+		}
 		watched
 	}
 
-	/// Start watching `file` if it is not already tracked.
-	fn add(&mut self, root: &Path, file: &Path) {
+	/// Register an untracked file read by a parse starting at `read`.
+	fn add(&mut self, root: &Path, file: &Path, read: SystemTime) {
 		let Some((dir, name)) = self.insert(file) else {
 			return;
 		};
@@ -748,7 +759,7 @@ impl Watched {
 			.get(&name)
 			.copied()
 			.unwrap_or_else(|| modified_time(root, file));
-		self.times.insert(file.to_owned(), time);
+		self.times.insert(file.to_owned(), unless_saved_since(time, read));
 	}
 
 	/// Register `file` without a timestamp. Return its directory and normalized
@@ -789,6 +800,13 @@ impl Watched {
 		self.took = started.elapsed();
 		changed
 	}
+}
+
+/// Clear timestamps near or after the parse start so the next poll rechecks
+/// files that may have changed while being read. The clock allowance can
+/// also cause a harmless reread of a file saved just before parsing.
+fn unless_saved_since(time: Option<SystemTime>, read: SystemTime) -> Option<SystemTime> {
+	time.filter(|time| *time + STAMP_LAG < read)
 }
 
 /// Read watched timestamps from a Windows directory listing. Return an empty
@@ -904,7 +922,7 @@ mod tests {
 			.iter()
 			.map(PathBuf::from)
 			.collect();
-		let mut watched = Watched::new(&root, &files);
+		let mut watched = Watched::new(&root, &files, at(1));
 		let changed = |watched: &mut Watched| {
 			let mut changed: Vec<String> = watched.changed(&root).iter().map(|f| f.to_string_lossy().into_owned()).collect();
 			changed.sort();
@@ -923,17 +941,26 @@ mod tests {
 
 		// A file discovered by a later parse.
 		write("code/later.dm", at(0));
-		watched.add(&root, Path::new("code/later.dm"));
+		watched.add(&root, Path::new("code/later.dm"), at(1));
 		assert_eq!(changed(&mut watched), Vec::<String>::new());
 		write("code/later.dm", at(9));
 		assert_eq!(changed(&mut watched), ["code/later.dm"]);
 
 		// Track differently cased paths to the same Windows file.
 		if cfg!(windows) {
-			watched.add(&root, Path::new("code/SUB/C.dm"));
+			watched.add(&root, Path::new("code/SUB/C.dm"), at(1));
 			write("code/sub/c.dm", at(12));
 			assert_eq!(changed(&mut watched), ["code/SUB/C.dm", "code/sub/c.dm"]);
 		}
+
+		// Recheck files saved during the parse, including newly discovered
+		// files.
+		write("code/b.dm", at(20));
+		write("code/during.dm", at(20));
+		let mut watched = Watched::new(&root, &files[..3], at(19));
+		watched.add(&root, Path::new("code/during.dm"), at(19));
+		assert_eq!(changed(&mut watched), ["code/b.dm", "code/during.dm"]);
+		assert_eq!(changed(&mut watched), Vec::<String>::new());
 		let _ = std::fs::remove_dir_all(&root);
 	}
 }
