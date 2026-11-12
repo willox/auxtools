@@ -1077,9 +1077,17 @@ fn attach_and_reload(server: &str, library: &Path) {
 	first.request("configurationDone", json!({}));
 	let mut second = Launcher::start();
 	second.initialize();
-	second.request("attach", json!({ "processId": pid, "dme": dme }));
+	// The original launcher already owns hot reload for this world.
+	second.request("attach", json!({ "processId": pid, "dme": dme, "hotReload": true }));
 	second.event("initialized");
 	second.request("configurationDone", json!({}));
+	second.wait_output("Hot reload disabled: the launcher (pid ");
+	assert!(
+		second.output.contains("already hot reloads this world"),
+		"unexpected second-session output: {}",
+		second.output
+	);
+	println!("ok: one reloader per world");
 
 	// Either one's breakpoint stops the world for both, and either can let it
 	// carry on

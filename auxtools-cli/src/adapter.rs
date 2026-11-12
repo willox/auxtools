@@ -931,6 +931,23 @@ impl Adapter {
 			}
 		}
 
+		// Prevent multiple sessions from reloading the same change.
+		let reloads = match &self.code_settings {
+			Some(settings) => settings.hot_reload,
+			None => self.hot_reload && self.code.is_some()
+		};
+		if reloads && !self.claim_reloads() {
+			match &mut self.code_settings {
+				Some(settings) => settings.hot_reload = false,
+				// Stop watching if another session claimed reloads during
+				// disconnection.
+				None => {
+					self.hot_reload = false;
+					self.code = None;
+				}
+			}
+		}
+
 		match self.code_settings.take() {
 			Some(settings) => self.start_code(settings),
 			None => self.out.console("The world restarted")
@@ -945,6 +962,22 @@ impl Adapter {
 		};
 		if !self.waiting_for_code {
 			self.ready();
+		}
+	}
+
+	/// Claim hot reload ownership. Report an existing owner and return false if
+	/// denied.
+	fn claim_reloads(&mut self) -> bool {
+		let who = match self.game {
+			Some(_) => format!("the launcher (pid {})", std::process::id()),
+			None => format!("another debugger session (pid {})", std::process::id())
+		};
+		match self.request(&AuxRequest::Reloader { who }) {
+			Ok(AuxResponse::Reloader(Err(why))) => {
+				self.out.console(format!("Hot reload disabled: {}", why));
+				false
+			}
+			_ => true
 		}
 	}
 

@@ -216,6 +216,13 @@ pub enum Request {
 	Spawn {
 		expression: String,
 		object: Option<String>
+	},
+	/// Claim exclusive hot reload ownership until disconnect, preventing
+	/// duplicate reloads from multiple source watchers. `who` describes the
+	/// client, e.g. "the launcher (pid 123)". Respond with
+	/// `Response::Reloader`.
+	Reloader {
+		who: String
 	}
 }
 
@@ -361,7 +368,10 @@ pub enum Response {
 	Spawned(Result<u64, String>),
 	/// The requested step ended without pausing because its stack has no caller
 	/// to stop in. A step that pauses instead sends `BreakpointHit`.
-	StepEnded
+	StepEnded,
+	/// Whether ownership was granted, or a diagnostic identifying the existing
+	/// owner.
+	Reloader(Result<(), String>)
 }
 
 /// Journal entry retained across reboots for the process lifetime.

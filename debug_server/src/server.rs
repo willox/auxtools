@@ -317,6 +317,8 @@ pub struct Server {
 	/// reporting.
 	eval_callee_errors: Vec<String>,
 	eval_callee_more: usize,
+	/// Hot reload owner and its client description (see `Request::Reloader`).
+	reloader: Option<(ClientId, String)>,
 	/// Last executing evaluation frame; identifies the frame if it sleeps.
 	eval_ran: *mut raw_types::procs::ExecutionContext,
 	breakpoints: Breakpoints,
@@ -414,6 +416,7 @@ impl Server {
 			eval_error: None,
 			eval_callee_errors: vec![],
 			eval_callee_more: 0,
+			reloader: None,
 			eval_ran: std::ptr::null_mut(),
 			breakpoints: HashMap::new(),
 			moved_breakpoints: HashMap::new(),
@@ -2748,7 +2751,35 @@ impl Server {
 		Ok(found)
 	}
 
+	/// Claim hot reload ownership unless another connected client holds it.
+	fn claim_reloads(&mut self, who: String) -> Result<(), String> {
+		let id = self.current.ok_or("no client")?;
+		match &self.reloader {
+			Some((holder, theirs)) if *holder != id && self.clients.contains_key(holder) => Err(format!(
+				"{} already hot reloads this world; two watchers would apply each change twice",
+				theirs
+			)),
+			_ => {
+				self.reloader = Some((id, who));
+				Ok(())
+			}
+		}
+	}
+
 	fn handle_hot_reload(&mut self, request: &HotReloadRequest) {
+		// Reject reloads from clients other than the connected owner.
+		if let Some((holder, who)) = &self.reloader {
+			if Some(*holder) != self.current && self.clients.contains_key(holder) {
+				let refused = HotReloadResult {
+					applied: false,
+					errors: vec![format!("{} already hot reloads this world", who)],
+					warnings: vec![],
+					skipped: vec![]
+				};
+				self.send_or_disconnect(Response::HotReload(refused));
+				return;
+			}
+		}
 		let result = self.hot_reload(request);
 		self.send_or_disconnect(Response::HotReload(result));
 	}
@@ -2894,6 +2925,10 @@ impl Server {
 			}
 
 			Request::HotReload(request) => self.handle_hot_reload(&request),
+			Request::Reloader { who } => {
+				let claimed = self.claim_reloads(who);
+				self.send_or_disconnect(Response::Reloader(claimed));
+			}
 
 			Request::Status => {
 				let paused = self.paused.clone();
