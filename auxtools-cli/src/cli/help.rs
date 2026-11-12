@@ -358,7 +358,9 @@ Use `auxtools wait COMMAND --help` for options."
   By default, the resulting pause persists after exit. --no-hold does not
   request a retained pause; an existing hold or another debugger can still
   keep the world paused.
-  --if does not filter runtime errors or pauses caused by other clients.
+  --if does not filter runtime errors or pauses caused by other clients;
+  --runtime-filter selects errors by message: 'bounds, null' matches either
+  substring; '!libdreamluau' excludes messages containing libdreamluau.
 
 Input:
   For EXPR and CONDITION, @FILE reads text from a file.
@@ -379,7 +381,8 @@ Exit codes:
 Examples:
   auxtools --pid 1234 wait pause --break code/combat.dm:42 --timeout 30 --json
   auxtools --pid 1234 wait pause --change src.health --if \"value < old\" --json
-  auxtools --pid 1234 wait pause --runtimes --hold-max 60 --json"
+  auxtools --pid 1234 wait pause --runtimes --hold-max 60 --json
+  auxtools --pid 1234 wait pause --runtime-filter '!libdreamluau' --json"
 	},
 	Page {
 		path: &["wait", "reload"],

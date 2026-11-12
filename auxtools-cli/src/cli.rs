@@ -318,6 +318,8 @@ struct Wait {
 	runtimes: bool,
 	/// Those inside a `try` too
 	caught: bool,
+	/// Runtime error message filter.
+	runtime_filter: RuntimeFilter,
 	timeout: Option<Duration>,
 	hold: bool
 }
@@ -455,8 +457,9 @@ impl World {
 					changes: args.changes.iter().map(|text| given_text(text)).collect::<Result<_>>()?,
 					frame: args.frame.unwrap_or(0),
 					condition: args.condition.as_deref().map(given_text).transpose()?,
-					runtimes: args.runtimes || args.caught,
+					runtimes: args.runtimes || args.caught || args.runtime_filter.is_some(),
 					caught: args.caught,
+					runtime_filter: args.runtime_filter.as_deref().map(RuntimeFilter::parse).unwrap_or_default(),
 					timeout: args.timeout,
 					hold: !args.no_hold
 				})
@@ -1190,8 +1193,8 @@ impl World {
 		if wait.runtimes {
 			// It has no answer
 			let catch = Request::CatchRuntimes {
-				uncaught: Some(RuntimeFilter::default()),
-				caught: wait.caught.then(RuntimeFilter::default)
+				uncaught: Some(wait.runtime_filter.clone()),
+				caught: wait.caught.then(|| wait.runtime_filter.clone())
 			};
 			local::send(&mut self.stream, &catch).map_err(|_| hung_up())?;
 		}

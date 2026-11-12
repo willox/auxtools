@@ -373,6 +373,13 @@ pub struct WaitPause {
 	pub runtimes: bool,
 	#[arg(long, help = "Also pause on runtime errors inside try blocks.\nImplies --runtimes.")]
 	pub caught: bool,
+	#[arg(
+		long,
+		value_name = "FILTER",
+		help = "Pause only on runtime errors whose messages match FILTER:\ncomma-separated substrings, any of which matches;\n! excludes one. \
+		        Case-insensitive. Implies --runtimes."
+	)]
+	pub runtime_filter: Option<String>,
 	#[arg(long, value_name = "SECONDS", value_parser = seconds, help = "Set the wait deadline. [default: unlimited]")]
 	pub timeout: Option<Duration>,
 	#[arg(long, help = "Do not retain the pause after this command disconnects.")]
@@ -747,6 +754,10 @@ mod tests {
 		};
 		assert_eq!(pause.breaks, args(&["a.dm:3", "/proc/x"]));
 		assert!(pause.caught && pause.timeout == Some(Duration::from_secs(2)));
+		let Some(WaitFor::Pause(pause)) = wait(&["wait", "pause", "--runtime-filter", "!libdreamluau"]) else {
+			panic!("not a pause");
+		};
+		assert_eq!(pause.runtime_filter.as_deref(), Some("!libdreamluau"));
 		assert!(matches!(wait(&["wait", "reload", "--since", "12"]), Some(WaitFor::Reload(reload)) if reload.since == Some(12)));
 		assert!(matches!(wait(&["wait", "reboot", "--json"]), Some(WaitFor::Reboot(reboot)) if reboot.json));
 	}

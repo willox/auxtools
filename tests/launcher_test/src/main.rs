@@ -703,6 +703,20 @@ fn command_line_more(pid: u64, dir: &Path) {
 	run(&["continue"], 0);
 	println!("ok: CLI runtime wait");
 
+	// Only runtime messages accepted by the filter should pause.
+	std::fs::write(dir.join("fail"), "yes").unwrap();
+	let printed = run(&["wait", "pause", "--runtime-filter", "!cannot read", "--timeout", "3"], 2);
+	assert!(printed.contains("timed out"), "wait --runtime-filter said {}", printed);
+	std::fs::write(dir.join("fail"), "yes").unwrap();
+	let printed = run(&["wait", "pause", "--runtime-filter", "bounds, FROM LIST", "--timeout", "60"], 0);
+	assert!(
+		printed.starts_with(&format!("pid {}: paused on a runtime error: cannot read from list", pid)),
+		"wait --runtime-filter said {}",
+		printed
+	);
+	run(&["continue"], 0);
+	println!("ok: CLI runtime filter");
+
 	// A wait that doesn't hold its pause: the world carries on when it's gone
 	let printed = run(&["wait", "pause", "--break", "/proc/value", "--no-hold", "--timeout", "60"], 0);
 	assert!(
