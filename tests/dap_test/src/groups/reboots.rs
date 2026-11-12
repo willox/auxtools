@@ -10,9 +10,8 @@ fn rebooted(world: &mut World, worlds: usize) {
 	world.wait_count("The world restarted", worlds - 1);
 }
 
-/// A function breakpoint on a proc the world doesn't have isn't set. A
-/// reload adds it, and the next world has it too after a reboot: it's set
-/// there, and the client is told.
+/// Resolve a pending function breakpoint when reload adds its proc or after
+/// reboot, whichever happens first, then verify that it hits.
 fn told_after_reboot() {
 	let dir = super::reloading::copy_of_the_world("reboots");
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
@@ -27,7 +26,6 @@ fn told_after_reboot() {
 		"/proc/leaf(x)\n",
 		"/proc/sc_added()\n\treturn 1 // @added_1\n\n/proc/leaf(x)\n"
 	);
-	assert!(!world.has_event("breakpoint"));
 
 	world.run("reboot");
 	rebooted(&mut world, 2);

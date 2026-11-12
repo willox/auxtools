@@ -1260,6 +1260,7 @@ impl Adapter {
 			let breakpoints = self.apply_breakpoints(&file);
 			self.tell(breakpoints, true);
 		}
+		self.retry_function_breakpoints();
 
 		// A paused world's frames may be on other lines now
 		if self.client.supports_invalidated_event && self.debuggee.as_ref().is_some_and(Debuggee::stopped) {
@@ -1744,44 +1745,87 @@ impl Adapter {
 				});
 				continue;
 			}
-			let instruction = InstructionRef {
-				proc: named_proc(&name),
-				offset: 0
-			};
-			let set_as_asked = hit_condition(hit.as_deref()).and_then(|hit| self.set_breakpoint(&instruction, condition, hit, None));
-			let mut at = None;
-			breakpoints.push(match set_as_asked {
-				Ok(Some((line, set_at))) => {
-					at = Some(set_at);
-					Breakpoint {
-						id: Some(id),
-						verified: true,
-						line: line.map(i64::from),
-						..Default::default()
-					}
-				}
-				Ok(None) => Breakpoint {
-					id: Some(id),
-					verified: false,
-					message: Some(format!("there's no {}", name)),
-					..Default::default()
-				},
-				Err(e) => Breakpoint {
-					id: Some(id),
-					verified: false,
-					message: Some(e),
-					..Default::default()
-				}
-			});
-			set.push(SetBreakpoint {
-				asked: instruction,
-				at,
-				watch: None,
-				id
-			});
+			let (breakpoint, in_world) = self.function_breakpoint(id, &name, condition, hit.as_deref());
+			breakpoints.push(breakpoint);
+			set.push(in_world);
 		}
 		self.set.lock().unwrap().insert(FUNCTION_BREAKPOINTS.to_owned(), set);
 		breakpoints
+	}
+
+	/// Set a function breakpoint and return its client response and runtime
+	/// location.
+	fn function_breakpoint(&mut self, id: i64, name: &str, condition: Option<String>, hit: Option<&str>) -> (Breakpoint, SetBreakpoint) {
+		let instruction = InstructionRef {
+			proc: named_proc(name),
+			offset: 0
+		};
+		let set_as_asked = hit_condition(hit).and_then(|hit| self.set_breakpoint(&instruction, condition, hit, None));
+		let mut at = None;
+		let breakpoint = match set_as_asked {
+			Ok(Some((line, set_at))) => {
+				at = Some(set_at);
+				Breakpoint {
+					id: Some(id),
+					verified: true,
+					line: line.map(i64::from),
+					..Default::default()
+				}
+			}
+			Ok(None) => Breakpoint {
+				id: Some(id),
+				verified: false,
+				message: Some(format!("there's no {}", name)),
+				..Default::default()
+			},
+			Err(e) => Breakpoint {
+				id: Some(id),
+				verified: false,
+				message: Some(e),
+				..Default::default()
+			}
+		};
+		let in_world = SetBreakpoint {
+			asked: instruction,
+			at,
+			watch: None,
+			id
+		};
+		(breakpoint, in_world)
+	}
+
+	/// Retry unresolved function breakpoints after reload; new procs may now
+	/// exist. Leave resolved breakpoints and their hit counts intact.
+	fn retry_function_breakpoints(&mut self) {
+		if !self.debugging || self.debuggee.is_none() {
+			return;
+		}
+		let unset: Vec<(i64, String, Option<String>, Option<String>)> = {
+			let set = self.set.lock().unwrap();
+			let in_world = set.get(FUNCTION_BREAKPOINTS).map_or(&[][..], Vec::as_slice);
+			self.function_breakpoints
+				.iter()
+				.zip(&self.function_breakpoint_ids)
+				.filter(|(_, id)| in_world.iter().any(|b| b.id == **id && b.at.is_none()))
+				.map(|(b, id)| (*id, b.name.clone(), b.condition.clone(), b.hitCondition.clone()))
+				.collect()
+		};
+		let mut told = vec![];
+		for (id, name, condition, hit) in unset {
+			let (breakpoint, in_world) = self.function_breakpoint(id, &name, condition, hit.as_deref());
+			// Only report newly resolved breakpoints. A disconnect during the
+			// retry does not change what the client knows about an unresolved
+			// breakpoint.
+			if in_world.at.is_none() {
+				continue;
+			}
+			let mut set = self.set.lock().unwrap();
+			if let Some(b) = set.get_mut(FUNCTION_BREAKPOINTS).and_then(|set| set.iter_mut().find(|b| b.id == id)) {
+				*b = in_world;
+			}
+			told.push(breakpoint);
+		}
+		self.tell(told, false);
 	}
 
 	fn set_instruction_breakpoints(&mut self, args: InstructionBreakpointsArguments) -> Handled {

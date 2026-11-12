@@ -475,6 +475,29 @@ pub fn run() {
 	world.function_breakpoints(&[]);
 	world.run_through("middle");
 	ok("function breakpoint follows reloaded entry");
+
+	// Resolve a pending function breakpoint when reload adds the proc.
+	let set = world.function_breakpoints(&["/proc/later"]);
+	assert_eq!(set[0]["message"], "there's no /proc/later", "{}", set[0]);
+	world.drop_events("breakpoint");
+	edit(
+		&mut world,
+		"stepping.dm",
+		"/proc/sc_middle()\n",
+		"/proc/sc_later()\n\treturn later()\n\n/proc/later()\n\treturn 1 // @later_1\n\n/proc/sc_middle()\n"
+	);
+	let told = world.event("breakpoint")["body"]["breakpoint"].clone();
+	assert_eq!(
+		(&told["id"], &told["verified"], &told["line"]),
+		(&set[0]["id"], &json!(true), &json!(world.marks.line("later_1"))),
+		"{}",
+		told
+	);
+	world.run("later");
+	world.stop_on("breakpoint", "/later", "later_1");
+	world.function_breakpoints(&[]);
+	world.resume_through("later");
+	ok("function breakpoint on a proc a reload adds");
 	edit(
 		&mut world,
 		"stepping.dm",
