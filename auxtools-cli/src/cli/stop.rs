@@ -4,7 +4,10 @@
 
 use std::time::{Duration, Instant};
 
-use auxtools_cli::{local, server_types::Request};
+use auxtools_cli::{
+	local,
+	server_types::{Request, Response}
+};
 use serde_json::json;
 
 use super::{args, seconds_text, Failure, Result, World, HUNG_UP, TIMED_OUT};
@@ -35,6 +38,34 @@ fn gone_by(pid: u32, until: Instant) -> bool {
 	}
 }
 
+/// Wait for process exit until `until`. Successful world.Del() closes the
+/// debugger before returning; an eval response means shutdown failed with
+/// a runtime error and the world is still running.
+fn ended_by(world: &mut World, until: Instant) -> Result<bool> {
+	loop {
+		if !local::alive(world.pid) {
+			return Ok(true);
+		}
+		let now = Instant::now();
+		if now >= until {
+			return Ok(false);
+		}
+		match world.next(Some(until.min(now + INTERVAL))) {
+			Ok(Some(Response::Eval(_))) => {
+				return Err(format!(
+					"world.Del() failed with a runtime error (see the world's log), so the world (pid {}) is still running. Fix world/Del() or \
+					 include --kill in the stop request.",
+					world.pid
+				)
+				.into())
+			}
+			Ok(_) => {}
+			// Debugger disconnection can precede process exit.
+			Err(_) => return Ok(gone_by(world.pid, until))
+		}
+	}
+}
+
 /// What a command that's done says: a line, or with `--json` the same as JSON
 fn done(as_json: bool, document: serde_json::Value, line: String) {
 	if as_json {
@@ -52,14 +83,21 @@ pub fn stop(world: &mut World, args: &args::Stop) -> Result<()> {
 	if ask(world, "world.Del()").is_err() && local::alive(pid) {
 		return Err(format!("cannot send the shutdown request: the connection to the world with pid {} ended.", pid).into());
 	}
-	if gone_by(pid, Instant::now() + timeout) {
-		done(
-			args.json,
-			json!({ "pid": pid, "stopped": true, "killed": false }),
-			format!("pid {}: stopped", pid)
-		);
-		return Ok(());
-	}
+	// With --kill, force termination after either a timeout or failed
+	// world.Del().
+	let failed = match ended_by(world, Instant::now() + timeout) {
+		Ok(true) => {
+			done(
+				args.json,
+				json!({ "pid": pid, "stopped": true, "killed": false }),
+				format!("pid {}: stopped", pid)
+			);
+			return Ok(());
+		}
+		Ok(false) => None,
+		Err(e) if args.kill => Some(e),
+		Err(e) => return Err(e)
+	};
 	if !args.kill {
 		return Err(Failure(
 			TIMED_OUT,
@@ -73,7 +111,10 @@ pub fn stop(world: &mut World, args: &args::Stop) -> Result<()> {
 	}
 	local::kill(pid);
 	if gone_by(pid, Instant::now() + kill_timeout) {
-		eprintln!("graceful shutdown timed out after {}; the process was terminated.", seconds_text(timeout));
+		match failed {
+			Some(_) => eprintln!("world.Del() failed with a runtime error; the process was terminated."),
+			None => eprintln!("graceful shutdown timed out after {}; the process was terminated.", seconds_text(timeout))
+		}
 		done(
 			args.json,
 			json!({ "pid": pid, "stopped": true, "killed": true }),

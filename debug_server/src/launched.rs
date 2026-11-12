@@ -68,7 +68,7 @@ const HELPER_PROCS: &str = r#"
 /proc/auxtools_spawn_done(number, result)
 	CRASH("the debugger's library isn't loaded")
 
-/proc/auxtools_launched_world_del()
+/proc/auxtools_launched_world_del(failed)
 	CRASH("the debugger's library isn't loaded")
 
 /proc/auxtools_launched_world_reboot()
@@ -82,7 +82,7 @@ const HELPER_PROCS: &str = r#"
 	try
 		..()
 	catch(var/exception/e)
-		auxtools_launched_world_del()
+		auxtools_launched_world_del(TRUE)
 		throw e
 	auxtools_launched_world_del()
 "#;
@@ -296,15 +296,18 @@ fn ready() {
 	}
 }
 
-fn world_del(_: &Value, _: &Value, _: Vec<Value>) -> auxtools::DMResult {
+/// Handle world/Del completion; `failed` indicates a runtime error.
+fn world_del(_: &Value, _: &Value, args: Vec<Value>) -> auxtools::DMResult {
+	let failed = args.first().is_some_and(|failed| failed.as_number().is_ok_and(|failed| failed != 0.0));
 	if REBOOTING.swap(false, Ordering::Relaxed) {
-		// Use a helper added after load to distinguish this world from
-		// the next world loaded by reboot.
+		// Reboot proceeds even if Del throws. The post-load helper
+		// distinguishes this world from the next one.
 		let ours = Proc::find_override("/world/Del", Proc::APART);
 		auxtools::init_on_next_world_load(ours.as_ref());
-	} else {
+	} else if !failed {
 		auxtools::shut_down_with_world();
 	}
+	// A failed Del leaves the world running and must preserve its debugger.
 	Ok(Value::NULL)
 }
 

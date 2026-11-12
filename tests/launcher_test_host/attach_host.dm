@@ -42,6 +42,8 @@ var/datum/held/held = new
 	world.log << "attach test: world/Del"
 	if (fexists("refuse_del"))
 		return
+	if (fexists("fail_del"))
+		CRASH("attach test: world/Del failed")
 	..()
 
 /proc/run_until_stopped()

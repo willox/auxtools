@@ -1178,7 +1178,7 @@ fn attach_host_copy(name: &str) -> (PathBuf, PathBuf) {
 	// for this one
 	let _ = std::fs::remove_dir_all(&dir);
 	std::fs::create_dir_all(&dir).unwrap();
-	for left in ["stop", "fail", "reboot", "call", "refuse_del"] {
+	for left in ["stop", "fail", "reboot", "call", "refuse_del", "fail_del"] {
 		let _ = std::fs::remove_file(dir.join(left));
 		assert!(
 			!dir.join(left).exists(),
@@ -1631,6 +1631,24 @@ fn launch_from_the_command_line(server: &str) {
 		printed
 	);
 	println!("ok: missing source-macro diagnostic");
+	// A failed world/Del must leave the running world debuggable.
+	std::fs::remove_file(dir.join("refuse_del")).unwrap();
+	std::fs::write(dir.join("fail_del"), "yes").unwrap();
+	let printed = run(&["stop", "--timeout", "10"], 1);
+	assert!(
+		printed.starts_with(&format!(
+			"error: world.Del() failed with a runtime error (see the world's log), so the world (pid {}) is still running.",
+			pid
+		)),
+		"stop said {}",
+		printed
+	);
+	assert!(alive(pid), "the world ended");
+	let printed = run(&["eval", "1 + 1"], 0);
+	assert_eq!(printed.trim(), "2", "eval after the failed stop said {}", printed);
+	std::fs::remove_file(dir.join("fail_del")).unwrap();
+	std::fs::write(dir.join("refuse_del"), "yes").unwrap();
+	println!("ok: stop reports a failing world/Del");
 	let printed = run(&["stop", "--timeout", "2"], 2);
 	assert!(
 		printed.starts_with(&format!(

@@ -118,14 +118,17 @@ Exit codes:
 		arguments: "",
 		sections: "Behavior:
   Calls world.Del(). A world started by launch also shuts down its launcher.
-  world.Del() shuts down the debugger even if custom shutdown code leaves the
-  process running. Include --kill in the initial request for a forced fallback.
-  With --kill, reaching the graceful deadline starts forced termination.
+  If world.Del() returns without ending the world, the debugger still shuts
+  down. In launched worlds, a runtime error in world.Del() instead leaves
+  the debugger available, and stop reports the failure.
+  Include --kill in the initial request for a forced fallback.
+  With --kill, forced termination starts when the graceful deadline passes,
+  or at once when world.Del() fails.
   Success depends on the process exiting within the additional kill timeout.
 
 Output:
   JSON contains pid, stopped, and killed. killed is true when the process was
-  terminated after the graceful deadline.
+  terminated.
 
 Exit codes:
   0  Process exited.
