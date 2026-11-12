@@ -2084,7 +2084,19 @@ fn apply_code<K: Ord + std::hash::Hash + Copy, T>(
 			}
 		}
 
-		let Some(offset) = offset_of_line(&p.bytecode, line) else {
+		// Preserve breakpoint offsets relative to the proc's first line when it
+		// moves files.
+		let moved = match (first_line(&old_bytecode), first_line(&p.bytecode)) {
+			(Some(old_first), Some(new_first)) if debug_file(&old_bytecode) != debug_file(&p.bytecode) && line >= old_first => {
+				Some(line - old_first + new_first)
+			}
+			_ => None
+		};
+		// Absolute line numbers are unrelated in the destination file.
+		let Some((line, offset)) = (match moved {
+			Some(moved) => offset_of_line(&p.bytecode, moved).map(|offset| (moved, offset)),
+			None => offset_of_line(&p.bytecode, line).map(|offset| (line, offset))
+		}) else {
 			warnings.push(format!(
 				"{}: removed breakpoint on line {}: no executable code after reload",
 				p.name, line
@@ -2391,6 +2403,23 @@ fn line_at(bytecode: &[u32], offset: u32) -> Option<u32> {
 		}
 	}
 	line
+}
+
+/// First DbgFile string ID in the proc bytecode.
+fn debug_file(bytecode: &[u32]) -> Option<u32> {
+	(bytecode.first() == Some(&Opcode::DbgFile.word()))
+		.then(|| bytecode.get(1).copied())
+		.flatten()
+}
+
+/// First source line in the proc bytecode.
+fn first_line(bytecode: &[u32]) -> Option<u32> {
+	dmasm::scan(bytecode)
+		.ok()?
+		.instructions
+		.iter()
+		.find(|ins| ins.opcode == Opcode::DbgLine)
+		.and_then(|ins| ins.bytecode.get(1).copied())
 }
 
 /// Resolve a line breakpoint to the instruction after its DbgLine,

@@ -120,6 +120,21 @@ impl Source {
 		assert!(!changes.refused.is_empty(), "the edit wasn't refused");
 		changes.refused
 	}
+
+	/// Move the unique occurrence of `code` between file ends in a single
+	/// reload.
+	fn move_code(&mut self, code: &str, from: &str, to: &str) -> Changes {
+		let text = self.text(from);
+		assert_eq!(text.matches(code).count(), 1, "{:?} should be in {} once", code, from);
+		std::fs::write(self.dir.join(from), text.replace(code, "")).unwrap();
+		std::fs::write(self.dir.join(to), format!("{}\n{}", self.text(to), code)).unwrap();
+		let old = self.snapshot.take().expect("parsed before editing");
+		self.parse();
+		let edited: HashSet<PathBuf> = [Path::new(from).to_owned(), Path::new(to).to_owned()].into_iter().collect();
+		let changes = diff(&old, self.snapshot.as_ref().unwrap(), Some(&edited));
+		assert!(changes.refused.is_empty(), "the edit was refused: {:?}", changes.refused);
+		changes
+	}
 }
 
 impl Drop for Source {
@@ -416,6 +431,40 @@ fn main() {
 	eval(&mut client, "arm_breakpoint()");
 	wait_for(&mut client, "breakpoint_armed", "0");
 	println!("ok: remove remapped breakpoint by original offset");
+
+	// Moving a proc between files must preserve its statement breakpoints.
+	let line = source.line_of("reload.dm", "\tx += 1");
+	let offset = offset_of(&mut client, "/breakpoint_target", line);
+	let at = InstructionRef {
+		proc: ProcRef {
+			path: "/breakpoint_target".to_owned(),
+			override_id: 0
+		},
+		offset
+	};
+	let response = client.request(Request::BreakpointSet {
+		instruction: at.clone(),
+		condition: None,
+		hit: None,
+		log: None
+	});
+	assert!(matches!(response, Response::BreakpointSet { .. }), "{:?}", response);
+	const TARGET: &str = "/proc/breakpoint_target()\n\tvar/x = 1\n\tx += 1\n\treturn x\n";
+	let changes = source.move_code(TARGET, "reload.dm", "main.dm");
+	let result = reload(&mut watcher, &changes);
+	assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+	eval(&mut client, "arm_breakpoint()");
+	assert_eq!(client.expect_pause(), BreakpointReason::Breakpoint);
+	assert_eq!(
+		paused_line(&mut client),
+		("/breakpoint_target".to_owned(), Some(source.line_of("main.dm", "\tx += 1")))
+	);
+	client.resume();
+	let response = client.request(Request::BreakpointUnset { instruction: at });
+	assert!(matches!(response, Response::BreakpointUnset { success: true, .. }), "{:?}", response);
+	let changes = source.move_code(TARGET, "main.dm", "reload.dm");
+	reload(&mut watcher, &changes);
+	println!("ok: breakpoints move with a proc to another file");
 
 	// Two debuggers have a breakpoint on one line, and new code above it in
 	// its proc moves it. Each knows it by its old offset until it sets it
