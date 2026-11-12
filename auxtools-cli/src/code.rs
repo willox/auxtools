@@ -191,6 +191,7 @@ impl Code {
 
 		self.warn_of_errors(&built);
 		let files = files(&built, &self.options.dme);
+		self.warn_of_later_edits(&files, dmb_modified);
 		let mut watching = Watching {
 			files: Watched::new(&self.root, &files, self.parse_started.get()),
 			dmb_modified,
@@ -343,7 +344,9 @@ impl Code {
 			match self.parse() {
 				Ok(built) => {
 					self.warn_of_errors(&built);
-					for file in files(&built, &self.options.dme) {
+					let files = files(&built, &self.options.dme);
+					self.warn_of_later_edits(&files, dmb_modified);
+					for file in files {
 						watching.files.add(&self.root, &file, self.parse_started.get());
 					}
 					watching.built = built;
@@ -400,6 +403,34 @@ impl Code {
 		if errors.len() > 5 {
 			self.out.console(format!("    and {} more", errors.len() - 5));
 		}
+	}
+
+	/// Warn about files saved after the build. Hot reload assumes the initial
+	/// source matches the world and only applies subsequent edits.
+	fn warn_of_later_edits(&self, files: &[PathBuf], built: Option<SystemTime>) {
+		let Some(built) = built else {
+			return;
+		};
+		let mut later: Vec<String> = files
+			.iter()
+			.filter(|file| modified_time(&self.root, file).is_some_and(|time| time > built))
+			.map(|file| file.display().to_string())
+			.collect();
+		if later.is_empty() {
+			return;
+		}
+		later.sort();
+		let more = later.len().saturating_sub(5);
+		later.truncate(5);
+		let mut named = later.join(", ");
+		if more > 0 {
+			named += &format!(" and {} more", more);
+		}
+		self.log(format!(
+			"changed since the .dmb was built: {}. These edits may be missing from the world; rebuild to include them. Hot reload only applies \
+			 later edits",
+			named
+		));
 	}
 
 	/// Release the world unless a newer connection needs synchronization first.

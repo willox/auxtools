@@ -173,6 +173,7 @@ fn main() {
 	let _ = std::fs::remove_file(host_file("rebooted"));
 
 	attach_and_reload(&server, &library);
+	edited_after_build(&server);
 	launch_from_the_command_line(&server);
 	without_debug_info(&server);
 	unread_statics(&server);
@@ -1044,6 +1045,54 @@ fn command_line_trace(pid: u64, code: &Path) {
 	let printed = run(&["trace", "/proc/value", "--count", "1"], 0);
 	assert_eq!(printed.lines().count(), 3, "unexpected trace output: {}", printed);
 	println!("ok: invalid trace target diagnostics");
+}
+
+/// Warn about source edits newer than the .dmb at launch and after rebuild.
+/// They are part of the source baseline but may be absent from the world.
+fn edited_after_build(server: &str) {
+	let (dir, dme) = attach_host_copy("later");
+	let dmb = dme.with_extension("dmb");
+	let code = dir.join("attach_host.dm");
+	let source = std::fs::read_to_string(&code).unwrap();
+	let edit = |text: String| {
+		std::fs::write(&code, text).unwrap();
+		// Ensure the file timestamp is newer than the build despite coarse
+		// clocks.
+		let later = std::fs::metadata(&dmb).unwrap().modified().unwrap() + Duration::from_secs(2);
+		std::fs::File::options().write(true).open(&code).unwrap().set_modified(later).unwrap();
+	};
+	edit(format!("{}\n/proc/edited()\n\treturn 1\n", source));
+	let mut started = Started::default();
+	let args = launch_args(&dmb, server, &["--detach", "--json"]);
+	let (got, printed) = launcher_command(&args.iter().map(String::as_str).collect::<Vec<_>>());
+	assert_eq!(got, 0, "unexpected launch --detach output: {}", printed);
+	let up: serde_json::Value = serde_json::from_str(&printed).unwrap_or_else(|_| panic!("unexpected launch --detach --json output: {}", printed));
+	let (pid, launcher) = (up["pid"].as_u64().unwrap(), up["launcher"].as_u64().unwrap());
+	started.pids.extend([pid, launcher]);
+	let log = PathBuf::from(up["log"].as_str().unwrap());
+	let read_log = || std::fs::read_to_string(&log).unwrap_or_default();
+	let said = "Hot reload: changed since the .dmb was built: attach_host.dm. These edits may be missing from the world";
+	assert!(read_log().contains(said), "launch said:\n{}", read_log());
+
+	// Reload an edit saved after rebuilding but before rebooting into that
+	// build.
+	let res = Command::new(paths::find_dm()).with_byond_paths().arg(&dme).status().unwrap();
+	assert!(res.success(), "dreammaker build failed");
+	edit(format!("{}\n/proc/edited()\n\treturn 1\n\n/proc/edited_again()\n\treturn 2\n", source));
+	wait_for_text("the launcher's log", "Hot reload: added /edited_again", read_log);
+	let pid = pid.to_string();
+	let (got, printed) = launcher_command(&["--pid", &pid, "reboot", "--timeout", "60"]);
+	assert_eq!(got, 0, "reboot said {}", printed);
+	let until = Instant::now() + Duration::from_secs(60);
+	while read_log().matches(said).count() < 2 {
+		assert!(Instant::now() < until, "the launcher said:\n{}", read_log());
+		std::thread::sleep(Duration::from_millis(100));
+	}
+	let (got, printed) = launcher_command(&["--pid", &pid, "stop"]);
+	assert_eq!(got, 0, "stop said {}", printed);
+	drop(started);
+	println!("ok: code changed after the .dmb was built");
+	let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// The line of `file` that `text` starts
