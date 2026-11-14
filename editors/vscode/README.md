@@ -167,6 +167,15 @@ parsed the project for hot reload. Definitions update on reload; undefined macro
 are removed. They are unavailable when the project has not been parsed, including
 with `"hotReload": false`.
 
+Evaluation uses the proc compiler's constant folding, including DreamMaker
+quirks such as `~-4` and `new /obj` in conditions. Some differences remain:
+
+- Const vars are read from the running world, so expressions such as `~-CONST`
+  or `-(0 * CONST)` can differ from DreamMaker's folded result.
+- `x::name` uses the type of `x`'s current value, rather than its declared type,
+  and returns null when `x` is null.
+- `..()`, `__FILE__`, `__LINE__`, `__PROC__` and `__TYPE__` are unavailable.
+
 Hovering source code evaluates a single expression in the selected frame without
 calling procs or assigning values. The Debug Console completes visible variables
 and procs, including members after `.`.
