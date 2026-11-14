@@ -69,6 +69,11 @@
 				"command": "auxtools.reconnectClients",
 				"title": "Reconnect players",
 				"category": "auxtools"
+			},
+			{
+				"command": "auxtools.reboot",
+				"title": "Reboot world",
+				"category": "auxtools"
 			}
 		],
 		"menus": {
@@ -79,6 +84,10 @@
 				},
 				{
 					"command": "auxtools.reconnectClients",
+					"when": "debugType == auxtools"
+				},
+				{
+					"command": "auxtools.reboot",
 					"when": "debugType == auxtools"
 				}
 			]

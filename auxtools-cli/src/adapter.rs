@@ -697,6 +697,7 @@ impl Adapter {
 			"setBreakpoints" => arguments(args).and_then(|args| self.set_breakpoints(args)),
 			"auxtoolsUnsaved" => arguments(args).and_then(|args| self.unsaved_changed(args)),
 			"auxtoolsReconnect" => self.reconnect_clients(),
+			"auxtoolsReboot" => self.reboot(),
 			"restart" => arguments(args).and_then(|args| self.restart(args)),
 			"setFunctionBreakpoints" => arguments(args).and_then(|args| self.set_function_breakpoints(args)),
 			"setInstructionBreakpoints" => arguments(args).and_then(|args| self.set_instruction_breakpoints(args)),

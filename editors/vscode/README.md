@@ -66,13 +66,14 @@ After five seconds, the launcher terminates the process. Press **Stop** again or
 use **Disconnect** to terminate a launched world immediately. Attached worlds
 follow the [attach behavior](#attach-to-a-running-world) below.
 
-**Restart** runs the configuration's `preLaunchTask`, then reboots with
-`world.Reboot()`. The process and port stay the same, players reconnect,
-and the world loads the `.dmb` and restores reloads. A build task can
-therefore rebuild the world before it reboots.
+**Restart** runs the configuration's `preLaunchTask`, then reboots the world
+with `world.Reboot()`. The process and port stay the same, players reconnect,
+and the world loads the `.dmb` and restores reloads. A build task can therefore
+rebuild the world before it reboots.
 
-If launch settings changed or the debugger disconnected, Restart stops
-the old process and launches a replacement.
+If launch settings changed or the debugger disconnected, Restart stops the
+old process and launches a replacement. **auxtools: Reboot world** skips the
+build task and reboots in place, including in attached sessions.
 
 Windowed DreamDaemon (`dreamdaemon-gui`) may prompt before running in trusted
 mode. Select "Don't ask me this again" to suppress that prompt.

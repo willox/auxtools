@@ -49,6 +49,12 @@ pub fn run() {
 	breaks_at_leaf(&mut world);
 	ok("restart while paused");
 
+	world.request("auxtoolsReboot", json!({}));
+	world.wait_count("dap: world/New", 4);
+	announced(&mut world, &address, false);
+	breaks_at_leaf(&mut world);
+	ok("explicit reboot request");
+
 	// Configuration changes require a replacement process.
 	let changed = client::launch_arguments(
 		&paths::find_byond(),
@@ -58,7 +64,7 @@ pub fn run() {
 	world.request("restart", json!({ "arguments": changed }));
 	let again = process_id(&world.event("process"));
 	assert_ne!(again, pid, "restart did not replace the process");
-	world.wait_count("dap: world/New", 4);
+	world.wait_count("dap: world/New", 5);
 	assert_eq!(world.eval_global("world.port"), port.to_string());
 	assert_eq!(world.eval_global("world.GetConfig(\"env\", \"AUXTOOLS_RESTART_TEST\")"), "\"1\"");
 	breaks_at_leaf(&mut world);

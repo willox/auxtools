@@ -298,6 +298,20 @@ async function reconnectClients(session) {
 	}
 }
 
+// Reboot the active session's world without relaunching its process.
+async function reboot() {
+	const session = vscode.debug.activeDebugSession;
+	if (!session || session.type !== DEBUG_TYPE) {
+		vscode.window.showErrorMessage("No active auxtools debug session.");
+		return;
+	}
+	try {
+		await session.customRequest("auxtoolsReboot");
+	} catch (e) {
+		vscode.window.showErrorMessage(`Could not reboot the world: ${e.message}`);
+	}
+}
+
 // Offer reconnect after a skin reload.
 async function skinReloaded(event) {
 	const { file, clients, hosted } = event.body;
@@ -338,6 +352,7 @@ function activate(context) {
 		vscode.commands.registerCommand("auxtools.debugDreamDaemon", debugInDreamDaemon),
 		vscode.commands.registerCommand("auxtools.attach", attach),
 		vscode.commands.registerCommand("auxtools.reconnectClients", () => reconnectClients()),
+		vscode.commands.registerCommand("auxtools.reboot", reboot),
 		vscode.debug.onDidReceiveDebugSessionCustomEvent((event) => {
 			if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsSkin") {
 				skinReloaded(event);
