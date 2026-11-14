@@ -3201,6 +3201,7 @@ impl Server {
 			}
 			Request::SetVariable { vars, name, value } => {
 				let result = self.set_variable(vars, &name, &value);
+				self.send_callee_errors();
 				self.send_or_disconnect(Response::SetVariable(result));
 			}
 			Request::Eval { frame_id, command, .. } => self.handle_eval(frame_id, &command),

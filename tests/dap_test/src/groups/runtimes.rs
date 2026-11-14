@@ -111,6 +111,16 @@ pub fn run() {
 	assert_eq!(why, "runtime error: list index out of bounds");
 	assert!(!world.has_event("stopped"), "an expression's runtime error stopped the world again");
 	assert_eq!(world.eval("x"), "3");
+	// Variable-view assignments must report called-proc errors too.
+	let arguments = world.scope(&frame, "Arguments");
+	let reported = world.count("runtime error in a called proc");
+	let now = world.request(
+		"setVariable",
+		json!({ "variablesReference": arguments, "name": "x", "value": "fail_null()" })
+	);
+	assert_eq!(now["value"], "null", "setVariable gave {}", now);
+	world.wait_count("runtime error in a called proc", reported + 1);
+	world.request("setVariable", json!({ "variablesReference": arguments, "name": "x", "value": "3" }));
 	world.resume_through("middle");
 	ok("evaluation errors do not stop recursively");
 
