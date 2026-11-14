@@ -51,7 +51,20 @@ impl Source {
 
 	fn copy_files(&self) {
 		let host = std::env::current_dir().unwrap().join("tests/hot_reload_test_host");
-		for file in ["hot_reload_test_host.dme", "main.dm", "reload.dm"] {
+		for file in [
+			"hot_reload_test_host.dme",
+			"main.dm",
+			"reload.dm",
+			"resources.dm",
+			"lamp.dmi",
+			"lamp_edited.dmi",
+			"lamp_third.dmi",
+			"lamp_built.dmi",
+			"crate.dmi",
+			"crate_edited.dmi",
+			"beep.wav",
+			"beep_edited.wav"
+		] {
 			std::fs::copy(host.join(file), self.dir.join(file)).unwrap();
 		}
 	}
@@ -208,8 +221,45 @@ fn reload_request(changes: &Changes) -> Request {
 			.collect(),
 		removed_vars: vec![],
 		builtin_inherited: changes.builtin_inherited.clone(),
-		reparented: changes.reparented.clone()
+		reparented: changes.reparented.clone(),
+		resources: vec![],
+		resource_dirs: vec![]
 	})
+}
+
+/// Resource ID from a resource `\ref`, such as `[0xc000003]`.
+fn resource_id(reference: &str) -> u32 {
+	let hex = reference.trim_matches('"').trim_start_matches("[0x").trim_end_matches(']');
+	u32::from_str_radix(hex, 16).unwrap_or_else(|_| panic!("{} isn't a resource reference", reference)) & 0xFF_FFFF
+}
+
+/// Replace and reload a resource file as the watcher does, recompiling
+/// its code/default users and updating appearances using `ids`.
+fn reload_resource(client: &mut Client, source: &Source, file: &str, edited: &str, ids: Vec<u32>) -> HotReloadResult {
+	reload_resources(client, source, &[(file, edited, ids)])
+}
+
+/// Reload several (file, edited, ids) replacements together.
+fn reload_resources(client: &mut Client, source: &Source, files: &[(&str, &str, Vec<u32>)]) -> HotReloadResult {
+	for (file, edited, _) in files {
+		std::fs::copy(source.dir.join(edited), source.dir.join(file)).unwrap();
+	}
+	let names: Vec<String> = files.iter().map(|(file, ..)| file.to_string()).collect();
+	let changes = source.snapshot.as_ref().unwrap().resource_users(&names);
+	assert!(changes.refused.is_empty(), "the resource reload was refused: {:?}", changes.refused);
+	let Request::HotReload(mut request) = reload_request(&changes) else {
+		unreachable!()
+	};
+	request.resources = files
+		.iter()
+		.map(|(file, _, ids)| HotReloadResource {
+			path: file.to_string(),
+			ids: ids.clone()
+		})
+		.collect();
+	let result = expect_reload_result(client.request(Request::HotReload(request)));
+	assert!(result.applied, "resource reload rejected: {:?}", result.errors);
+	result
 }
 
 fn expect_reload_result(response: Response) -> HotReloadResult {
@@ -1590,6 +1640,78 @@ fn main() {
 	);
 	println!("ok: world/Del source override numbering");
 
+	// Icon edits update literals, defaults, existing appearances, overlays,
+	// mouse pointers and new instances.
+	assert_eq!(eval(&mut client, "make_lamps()"), "\"made\"");
+	assert_eq!(eval(&mut client, "lamp_states()"), "\"on,off\"");
+	let built_lamp = resource_id(&eval(&mut client, "lamp_ref()"));
+	let result = reload_resource(&mut watcher, &source, "lamp.dmi", "lamp_edited.dmi", vec![built_lamp]);
+	let lamp = result.resources.first().unwrap_or_else(|| panic!("no resource in {:?}", result));
+	assert_ne!(lamp.id, built_lamp, "the edited file kept its resource");
+	assert!(lamp.appearances >= 3, "only {} appearances changed", lamp.appearances);
+	assert_eq!(resource_id(&eval(&mut client, "lamp_ref()")), lamp.id);
+	assert_eq!(eval(&mut client, "lamp_states()"), "\"on,off,new\"");
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off,new\"");
+	assert_eq!(eval(&mut client, "new_lamp_states()"), "\"on,off,new\"");
+	assert_eq!(eval(&mut client, "overlay_states()"), "\"on,off,new\"");
+	assert_eq!(resource_id(&eval(&mut client, "\"\\ref[placed_lamp.mouse_over_pointer]\"")), lamp.id);
+	println!("ok: resource reload of an icon");
+
+	// Sound literals and defaults resolve to the new resource.
+	let built_beep = resource_id(&eval(&mut client, "beep_ref()"));
+	let result = reload_resource(&mut watcher, &source, "beep.wav", "beep_edited.wav", vec![built_beep]);
+	let beep = result.resources.first().unwrap_or_else(|| panic!("no resource in {:?}", result));
+	assert_ne!(beep.id, built_beep, "the edited file kept its resource");
+	assert_eq!(resource_id(&eval(&mut client, "beep_ref()")), beep.id);
+	assert_eq!(resource_id(&eval(&mut client, "default_sound_ref()")), beep.id);
+	println!("ok: resource reload of a sound");
+
+	// Reload two files together. Values retained from the build must keep
+	// the old resource even when the client supplies that ID too.
+	assert_eq!(eval(&mut client, "make_crate()"), "\"made\"");
+	let built_crate = resource_id(&eval(&mut client, "crate_ref()"));
+	let held = "\"\\ref[held_lamp.icon]\"";
+	assert_eq!(resource_id(&eval(&mut client, held)), built_lamp);
+	let result = reload_resources(&mut watcher, &source, &[
+		("lamp.dmi", "lamp_third.dmi", vec![built_lamp, lamp.id]),
+		("crate.dmi", "crate_edited.dmi", vec![built_crate])
+	]);
+	assert_eq!(result.resources.len(), 2, "{:?}", result);
+	assert!(result.resources.iter().all(|r| r.appearances >= 1), "{:?}", result);
+	let crate_id = result.resources[1].id;
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off,third\"");
+	assert_eq!(eval(&mut client, "overlay_states()"), "\"on,off,third\"");
+	assert_eq!(eval(&mut client, "states_of(placed_crate.icon)"), "\"new1\"");
+	assert_eq!(resource_id(&eval(&mut client, held)), built_lamp);
+	println!("ok: resource reload of two files");
+
+	// Saving crate.dmi with the built lamp's content shares its resource ID.
+	// Later saves must leave that ID and held lamp values unchanged.
+	let result = reload_resource(&mut watcher, &source, "crate.dmi", "lamp_built.dmi", vec![crate_id]);
+	assert_eq!(result.resources[0].id, built_lamp, "{:?}", result);
+	assert!(
+		result.warnings.iter().any(|w| w.contains("crate.dmi shares existing resource")),
+		"{:?}",
+		result.warnings
+	);
+	assert_eq!(eval(&mut client, "states_of(placed_crate.icon)"), "\"on,off\"");
+	reload_resource(&mut watcher, &source, "crate.dmi", "crate_edited.dmi", vec![]);
+	assert_eq!(resource_id(&eval(&mut client, held)), built_lamp);
+	assert_eq!(eval(&mut client, "states_of(placed_crate.icon)"), "\"on,off\"");
+	println!("ok: resource reload with shared content");
+
+	// Restoring lamp.dmi's built content restores its own resource ID;
+	// its next save can replace that ID.
+	let third = resource_id(&eval(&mut client, "lamp_ref()"));
+	let result = reload_resource(&mut watcher, &source, "lamp.dmi", "lamp_built.dmi", vec![third]);
+	assert_eq!(result.resources[0].id, built_lamp, "{:?}", result);
+	assert!(!result.warnings.iter().any(|w| w.contains("same bytes")), "{:?}", result.warnings);
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off\"");
+	let result = reload_resource(&mut watcher, &source, "lamp.dmi", "lamp_edited.dmi", vec![built_lamp]);
+	assert!(result.warnings.iter().all(|w| !w.contains("same bytes")), "{:?}", result.warnings);
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off,new\"");
+	println!("ok: resource reload with restored built content");
+
 	// Shutting auxtools down puts back what the world had, which BYOND frees
 	// itself. The world then starts again from its .dmb.
 	eval(&mut client, "request_reboot()");
@@ -1601,6 +1723,29 @@ fn main() {
 	assert_eq!(eval(&mut client, "counter()"), "1");
 	assert_eq!(eval(&mut client, "old_dog.legs"), "4");
 	println!("ok: reboot after reload");
+
+	// After reboot, reload the edited icon over the built resource again.
+	assert_eq!(eval(&mut client, "make_lamps()"), "\"made\"");
+	assert_eq!(eval(&mut client, "lamp_states()"), "\"on,off\"");
+	assert_eq!(resource_id(&eval(&mut client, "lamp_ref()")), built_lamp);
+	let mut watcher = world.connect_watcher();
+	let result = reload_resource(&mut watcher, &source, "lamp.dmi", "lamp_edited.dmi", vec![built_lamp]);
+	assert!(result.resources.first().is_some_and(|lamp| lamp.appearances >= 3), "{:?}", result);
+	assert_eq!(eval(&mut client, "lamp_states()"), "\"on,off,new\"");
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off,new\"");
+	assert_eq!(eval(&mut client, "overlay_states()"), "\"on,off,new\"");
+	println!("ok: resource reload after a reboot");
+
+	// A world with more appearances than 16-bit ids
+	let lamp = result.resources[0].id;
+	assert_eq!(eval(&mut client, "make_many_appearances()"), "\"made\"");
+	let result = reload_resource(&mut watcher, &source, "lamp.dmi", "lamp_third.dmi", vec![lamp]);
+	assert!(result.resources.first().is_some_and(|lamp| lamp.appearances >= 3), "{:?}", result);
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off,third\"");
+	eval(&mut client, "many_appearances = null");
+	watcher.send(Request::Disconnect);
+	watcher.wait_closed();
+	println!("ok: resource reload past 65,535 appearances");
 
 	// The watcher doesn't need a debugger there. With the debugger gone, the
 	// world says what it runs.

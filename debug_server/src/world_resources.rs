@@ -26,8 +26,7 @@ use crate::server_types::HotReloadRequest;
 /// load the library from their own code, after resources are available.
 static LOADED: AtomicBool = AtomicBool::new(true);
 
-/// The crc of each resource id of the world's build, read when first needed
-/// while the world loads
+/// Lazy resource CRC table from the build, refreshed after world loading.
 static BUILT: Mutex<Option<Option<Vec<u32>>>> = Mutex::new(None);
 
 /// A launched world is loading: resources resolve from its build until
@@ -54,6 +53,13 @@ pub fn built_id(path: &Path) -> Option<u32> {
 	let mut built = BUILT.lock().unwrap();
 	let crcs = built.get_or_insert_with(read_built).as_ref()?;
 	crcs.iter().position(|&built| built == crc).map(|id| id as u32)
+}
+
+/// Number of built resources; smaller IDs belong to the build.
+/// Return none if the table cannot be read reliably.
+pub fn built_count() -> Option<usize> {
+	let mut built = BUILT.lock().unwrap();
+	built.get_or_insert_with(read_built).as_ref().map(Vec::len)
 }
 
 fn read_built() -> Option<Vec<u32>> {

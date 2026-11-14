@@ -449,7 +449,10 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		line_moves,
 		removed_vars,
 		builtin_inherited,
-		reparented
+		reparented,
+		// (see `resource_reload`)
+		resources: _,
+		resource_dirs: _
 	} = request;
 	runtime_tables::available().map_err(|e| vec![format!("hot reloading isn't available on this build of BYOND: {}", e)])?;
 

@@ -7,6 +7,7 @@ mod instruction_hooking;
 mod journal;
 mod launched;
 mod macros;
+mod resource_reload;
 mod server;
 mod server_types;
 mod skin;

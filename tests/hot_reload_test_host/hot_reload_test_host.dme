@@ -15,4 +15,5 @@
 // BEGIN_INCLUDE
 #include "main.dm"
 #include "reload.dm"
+#include "resources.dm"
 // END_INCLUDE

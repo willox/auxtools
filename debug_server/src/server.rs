@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{
 	connection::{self, Connection},
-	hot_reload, journal, mem_profiler, unnamed, waker
+	hot_reload, journal, mem_profiler, resource_reload, unnamed, waker
 };
 
 mod render;
@@ -340,6 +340,11 @@ pub struct Server {
 	waiting_to_start: bool,
 	/// Skin deferred until world data loads at `world/New`.
 	pending_skin: Option<SkinRequest>,
+	/// Current resource IDs per reloaded file, used by later reloads.
+	resource_ids: HashMap<String, Vec<u32>>,
+	/// Resource IDs before each file's first reload. Restoring its original
+	/// content may safely restore these IDs without affecting other files.
+	resource_origins: HashMap<String, Vec<u32>>,
 	/// Object used as `src` for the next frameless evaluation.
 	eval_src: Option<Value>,
 	/// The number of the expression being compiled to be spawned, which is
@@ -364,8 +369,8 @@ pub struct Server {
 	moved_breakpoints: hot_reload::MovedBreakpoints<(ClientId, Placed)>,
 	/// Previously observed bytecode buffers, indexed by `CodeRef::old - 1`.
 	old_codes: RefCell<Vec<usize>>,
-	/// Reloads deferred until resources load at `world/New`, followed by
-	/// later reloads in order.
+	/// Reloads deferred until resources load at `world/New`, including all
+	/// subsequent reloads to preserve ordering.
 	waiting_reloads: Vec<HotReloadRequest>,
 	app: Command
 }
@@ -438,6 +443,8 @@ impl Server {
 			eval_warnings: vec![],
 			waiting_to_start: false,
 			pending_skin: None,
+			resource_ids: HashMap::new(),
+			resource_origins: HashMap::new(),
 			eval_src: None,
 			spawning: None,
 			spawns: VecDeque::new(),
@@ -2895,7 +2902,8 @@ impl Server {
 				applied: false,
 				errors: vec![why],
 				warnings: vec![],
-				skipped: vec![]
+				skipped: vec![],
+				resources: vec![]
 			};
 			self.send_or_disconnect(Response::HotReload(refused));
 			return;
@@ -2905,10 +2913,16 @@ impl Server {
 	}
 
 	fn hot_reload(&mut self, request: &HotReloadRequest) -> HotReloadResult {
-		// Defer reloads introducing resources until world/New loads the cache.
-		// Defer subsequent reloads too to preserve order.
+		resource_reload::use_dirs(&request.resource_dirs);
+		// Before resources load, defer reloads that introduce resource files
+		// or edit their content. Defer later reloads too to preserve order.
 		if !crate::world_resources::is_loaded() {
-			let files = crate::world_resources::not_built(request);
+			let mut files = crate::world_resources::not_built(request);
+			for resource in &request.resources {
+				if !files.contains(&resource.path) {
+					files.push(resource.path.clone());
+				}
+			}
 			if !files.is_empty() || !self.waiting_reloads.is_empty() {
 				self.waiting_reloads.push(request.clone());
 				let why = if files.is_empty() {
@@ -2923,34 +2937,86 @@ impl Server {
 					applied: true,
 					errors: vec![],
 					warnings: vec![why],
-					skipped: vec![]
+					skipped: vec![],
+					resources: vec![]
 				};
 			}
 		}
+		// Replace only each file's current resource ID, from the last reload
+		// or the client's built IDs. Held values retain older IDs; do not
+		// replace IDs shared with other files.
+		let mut id_warnings = vec![];
+		let mut with_ids;
+		let request = if request.resources.is_empty() {
+			request
+		} else {
+			with_ids = request.clone();
+			let named: Vec<(String, Vec<u32>)> = request.resources.iter().map(|r| (r.path.clone(), r.ids.clone())).collect();
+			for (path, ids) in &named {
+				if !self.resource_ids.contains_key(path) {
+					self.resource_origins.entry(path.clone()).or_insert_with(|| ids.clone());
+				}
+			}
+			for resource in &mut with_ids.resources {
+				if let Some(&last) = self.resource_ids.get(&resource.path).and_then(|ids| ids.last()) {
+					resource.ids = vec![last];
+				}
+				let path = resource.path.clone();
+				let owner = |id: u32| {
+					self.resource_ids
+						.iter()
+						.chain(named.iter().map(|(p, ids)| (p, ids)))
+						.find(|(p, ids)| **p != path && ids.contains(&id))
+						.map(|(p, _)| p.clone())
+				};
+				let mut kept = vec![];
+				for &id in &resource.ids {
+					match owner(id) {
+						Some(other) => id_warnings.push(format!(
+							"resource reload: {} and {} share an ID (same bytes); appearances are unchanged. Rebuild to separate them",
+							path, other
+						)),
+						None => kept.push(id)
+					}
+				}
+				resource.ids = kept;
+			}
+			&with_ids
+		};
 		// Assembly may evaluate DM to resolve paths and resources; treat
 		// it as debugger evaluation.
 		self.in_eval = true;
 		self.eval_error = None;
 
-		let mut warnings = vec![];
+		let mut warnings = id_warnings;
 		let mut skipped = vec![];
 		// New types come first, so the rest can be prepared against them
 		let prepared = hot_reload::add_types(&request.new_types).and_then(|added| {
-			hot_reload::prepare(request, &mut warnings, &mut skipped).map_err(|mut errors| {
-				if added > 0 {
-					errors.push(format!("{} new types remain allocated but unused", added));
-				}
-				errors
-			})
+			hot_reload::prepare(request, &mut warnings, &mut skipped)
+				.and_then(|prepared| Ok((prepared, resource_reload::prepare(&request.resources)?)))
+				.map_err(|mut errors| {
+					if added > 0 {
+						errors.push(format!("{} new types remain allocated but unused", added));
+					}
+					errors
+				})
 		});
+		// Update appearances first: this can still fail.
+		let prepared = prepared.and_then(|(prepared, resources)| Ok((prepared, resource_reload::apply(&resources).map_err(|e| vec![e])?)));
 		let result = match prepared {
-			Ok(prepared) => {
+			Ok((prepared, applied)) => {
 				hot_reload::apply(prepared, &mut self.breakpoints, &mut self.moved_breakpoints, &mut warnings);
+				warnings.extend(applied.warnings);
+				if let Err(e) = resource_reload::resend(&applied.appearances) {
+					warnings.push(format!("resource reload: could not send updated appearances to clients: {}", e));
+				}
+				self.record_resource_ids(&applied.reloaded, &mut warnings);
 				HotReloadResult {
 					applied: true,
 					errors: vec![],
 					warnings,
-					skipped
+					skipped,
+					resources: applied.reloaded
 				}
 			}
 
@@ -2958,7 +3024,8 @@ impl Server {
 				applied: false,
 				errors,
 				warnings,
-				skipped
+				skipped,
+				resources: vec![]
 			}
 		};
 
@@ -2986,6 +3053,33 @@ impl Server {
 		}
 
 		result
+	}
+
+	/// Track each file's current resource ID for later reloads. Do not
+	/// replace IDs already used by built or reloaded files with identical
+	/// content; BYOND shares their cache entry.
+	fn record_resource_ids(&mut self, reloaded: &[ReloadedResource], warnings: &mut Vec<String>) {
+		let built = crate::world_resources::built_count();
+		for resource in reloaded {
+			let own = self.resource_origins.get(&resource.path).is_some_and(|ids| ids.contains(&resource.id));
+			let shared = (!own && built.is_some_and(|count| (resource.id as usize) < count))
+				|| self
+					.resource_ids
+					.iter()
+					.any(|(path, ids)| *path != resource.path && ids.contains(&resource.id));
+			if shared {
+				self.resource_ids.remove(&resource.path);
+				warnings.push(format!(
+					"resource reload: {} shares existing resource {} (same bytes); later edits to {} will leave appearances using that shared ID \
+					 unchanged",
+					resource.path, resource.id, resource.path
+				));
+			} else {
+				let ids = self.resource_ids.entry(resource.path.clone()).or_default();
+				ids.retain(|&id| id != resource.id);
+				ids.push(resource.id);
+			}
+		}
 	}
 
 	/// Apply deferred reloads once `world/New` starts and resources are loaded.
@@ -3615,6 +3709,9 @@ impl Server {
 	/// Process requests until a debugging client finishes configuration.
 	pub fn process_until_configured(&mut self) {
 		self.waiting_to_start = true;
+		// A new world: its cache holds what it was built with
+		self.resource_ids.clear();
+		self.resource_origins.clear();
 		while let Some(request) = self.recv_request(Wait::Forever) {
 			if let Request::Configured = request {
 				self.send_or_disconnect(Response::Ack);

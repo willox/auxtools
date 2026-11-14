@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Wire protocol version. Increment for changes incompatible with older
 /// clients or servers. Including the version in endpoint names prevents
 /// connections using incompatible message layouts.
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 
 /// Shutdown notification sent before disconnecting clients; not used for
 /// reboot.
@@ -997,7 +997,33 @@ pub struct HotReloadRequest {
 	/// Inherited built-in defaults, applied after `builtin_defaults`.
 	pub builtin_inherited: Vec<dmasm::reload::BuiltinInherited>,
 	/// Parent changes, applied after new types and before other changes.
-	pub reparented: Vec<dmasm::reload::Reparented>
+	pub reparented: Vec<dmasm::reload::Reparented>,
+	/// Files in the resource cache that changed on disk
+	#[serde(default)]
+	pub resources: Vec<HotReloadResource>,
+	/// `FILE_DIR` paths, searched after the world's directory.
+	#[serde(default)]
+	pub resource_dirs: Vec<String>
+}
+
+/// Edited file, cached as a new resource. Update appearances using `ids`
+/// to reference the new resource.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct HotReloadResource {
+	/// Relative to the world's directory
+	pub path: String,
+	/// Previous resource IDs to replace.
+	pub ids: Vec<u32>
+}
+
+/// A resource file a reload put in the cache
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ReloadedResource {
+	pub path: String,
+	/// New resource ID.
+	pub id: u32,
+	/// Number of updated appearances.
+	pub appearances: u32
 }
 
 /// A type var declaration removed from source.
@@ -1023,6 +1049,7 @@ impl HotReloadRequest {
 			+ self.line_moves.len()
 			+ self.builtin_inherited.len()
 			+ self.reparented.len()
+			+ self.resources.len()
 	}
 
 	pub const fn is_empty(&self) -> bool {
@@ -1091,5 +1118,8 @@ pub struct HotReloadResult {
 	pub errors: Vec<String>,
 	pub warnings: Vec<String>,
 	/// Removed proc paths absent from the world, for which no unlink occurred.
-	pub skipped: Vec<String>
+	pub skipped: Vec<String>,
+	/// The resource files the reload put in the cache
+	#[serde(default)]
+	pub resources: Vec<ReloadedResource>
 }

@@ -861,7 +861,9 @@ pub fn reload_request(changes: &Changes) -> HotReloadRequest {
 			.collect(),
 		removed_vars: changes.warnings.iter().filter_map(|note| removed_var(note)).collect(),
 		builtin_inherited: changes.builtin_inherited.clone(),
-		reparented: changes.reparented.clone()
+		reparented: changes.reparented.clone(),
+		resources: vec![],
+		resource_dirs: vec![]
 	}
 }
 
