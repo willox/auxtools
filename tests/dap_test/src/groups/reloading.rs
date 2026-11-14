@@ -524,6 +524,43 @@ fn override_restored_before_map() {
 	let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// New FILE_DIR references use paths relative to the world directory,
+/// unlike built resource names. Watch and reload later saves too.
+fn file_named_by_a_reload() {
+	let dir = copy_of_the_world("file_named_by_a_reload");
+	std::fs::create_dir_all(dir.join("fzdir")).unwrap();
+	std::fs::copy(host_file("reload_new.dmi"), dir.join("fzdir/named.dmi")).unwrap();
+	let dme = dir.join("dap_test_host.dme");
+	let text = "#define FILE_DIR fzdir\n".to_owned() + &std::fs::read_to_string(&dme).unwrap();
+	std::fs::write(&dme, text).unwrap();
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.catch_runtimes(false);
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_built()\n",
+		"/proc/icon_named()\n\treturn 'named.dmi'\n\n/proc/icon_built()\n"
+	);
+	let shown = |world: &mut World| world.eval_global("\"[icon_named()] [jointext(icon_states(icon_named()), \",\")]\"");
+	assert_eq!(shown(&mut world), "\"fzdir/named.dmi new1\"");
+	ok("new resource lookup through FILE_DIR");
+
+	let before = world.count("Hot reload: reloaded fzdir/named.dmi");
+	// (bytes the world has no resource for)
+	std::fs::copy(host_file("lamp_edited.dmi"), dir.join("fzdir/named.dmi")).unwrap();
+	let saved = std::fs::File::options().write(true).open(dir.join("fzdir/named.dmi")).unwrap();
+	saved.set_modified(std::time::SystemTime::now()).unwrap();
+	world.wait_until("the resource reload", |output| {
+		output.matches("Hot reload: reloaded fzdir/named.dmi").count() > before
+	});
+	assert_eq!(shown(&mut world), "\"fzdir/named.dmi on,off,new\"");
+	ok("watching newly referenced resources");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Wait for a resource reload report.
 fn resource_saved(world: &mut World, dir: &std::path::Path, version: &str) {
 	let before = world.count("Hot reload: reloaded lamp.dmi");
@@ -630,6 +667,7 @@ pub fn run() {
 	parent_changed_alone();
 	types_changed_before_reboot();
 	override_restored_before_map();
+	file_named_by_a_reload();
 	resource_files();
 	nothing_to_run();
 

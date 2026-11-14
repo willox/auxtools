@@ -151,15 +151,41 @@ impl Resources {
 		}
 	}
 
-	/// A new world from the same build: it shows what it was built with
+	/// Reset to the build's resources after reboot. Files introduced by
+	/// reloads have no resource IDs in the new world yet.
 	pub fn restarted(&mut self, built: &Resources) {
 		for (path, file) in &mut self.files {
-			if let Some(original) = built.files.get(path) {
-				file.ids = original.ids.clone();
-				file.current = original.ids.clone();
+			match built.files.get(path) {
+				Some(original) => {
+					file.ids = original.ids.clone();
+					file.current = original.ids.clone();
+				}
+				None => {
+					file.ids.clear();
+					file.current.clear();
+				}
 			}
 			file.crc = file.built;
 		}
+	}
+
+	/// Register a newly referenced resource and return its file to watch.
+	/// The world tracks its resource ID until the launcher knows it.
+	pub fn named(&mut self, root: &Path, name: &str) -> Option<PathBuf> {
+		let path = resolve(root, &self.dirs, name)?;
+		if let Some(file) = self.files.get_mut(&path) {
+			if !file.names.iter().any(|had| had == name) {
+				file.names.push(name.to_owned());
+			}
+			return None;
+		}
+		let crc = byond_crc(&std::fs::read(root.join(&path)).ok()?);
+		self.files.insert(path.clone(), File {
+			names: vec![name.to_owned()],
+			crc,
+			..Default::default()
+		});
+		Some(path)
 	}
 }
 

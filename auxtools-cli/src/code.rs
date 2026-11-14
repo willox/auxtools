@@ -122,7 +122,8 @@ pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>
 				parse_started: Cell::new(SystemTime::UNIX_EPOCH),
 				macros: RefCell::new(None),
 				resource_dirs: RefCell::new(vec![]),
-				reloaded_resources: RefCell::new(vec![])
+				reloaded_resources: RefCell::new(vec![]),
+				named_resources: RefCell::new(vec![])
 			};
 			code.run();
 		})
@@ -150,7 +151,9 @@ struct Code {
 	/// `FILE_DIR` search paths for resource lookups.
 	resource_dirs: RefCell<Vec<String>>,
 	/// Resource IDs reported by the last reload.
-	reloaded_resources: RefCell<Vec<ReloadedResource>>
+	reloaded_resources: RefCell<Vec<ReloadedResource>>,
+	/// Resource names referenced by the last reload's code.
+	named_resources: RefCell<Vec<String>>
 }
 
 /// Track running source and pending disk changes.
@@ -345,6 +348,7 @@ impl Code {
 								None => &mut watching.built
 							};
 							current.keep(reload);
+							self.watch_named(watching);
 							self.send(Event::Changed);
 							true
 						}
@@ -382,6 +386,7 @@ impl Code {
 		match self.reload(&changes, &new, watching.applied.as_ref().unwrap_or(&watching.built), vec![]) {
 			None => false,
 			Some(true) => {
+				self.watch_named(watching);
 				self.send(Event::Changed);
 				watching.applied = Some(new);
 				watching.built.clear_patches();
@@ -470,6 +475,7 @@ impl Code {
 		if applied {
 			watching.applied = Some(current);
 			watching.built.clear_patches();
+			self.watch_named(watching);
 		}
 		if !self.restore_resources(watching, &resource_files) || !self.ready() {
 			return false;
@@ -559,6 +565,16 @@ impl Code {
 				self.send(Event::Changed)
 			}
 			Some(false) => true
+		}
+	}
+
+	/// Watch new resource references absent from the build. Later saves
+	/// reload those files too.
+	fn watch_named(&self, watching: &mut Watching) {
+		for name in self.named_resources.take() {
+			if let Some(file) = watching.resources.named(&self.root, &name) {
+				watching.files.add(&self.root, &file, self.parse_started.get());
+			}
 		}
 	}
 
@@ -660,6 +676,7 @@ impl Code {
 		}
 		let mut request = reload_request(changes);
 		without_existing_statics(&mut request, before);
+		*self.named_resources.borrow_mut() = resource_names(&request);
 		let files: Vec<String> = resources.iter().map(|r| r.path.clone()).collect();
 		request.resources = resources;
 		request.resource_dirs = self.resource_dirs.borrow().clone();
@@ -757,6 +774,98 @@ impl Code {
 			}
 		}
 	}
+}
+
+/// Resource literals referenced by a reload's code and defaults.
+fn resource_names(request: &HotReloadRequest) -> Vec<String> {
+	/// Collect resource names while resolving other assembly operands.
+	#[derive(Default)]
+	struct Named(Vec<String>);
+
+	impl Named {
+		fn value(&mut self, value: &dmasm::reload::ConstValue) {
+			if let dmasm::reload::ConstValue::Resource(name) = value {
+				self.add(name);
+			}
+		}
+
+		fn add(&mut self, name: &str) {
+			if !self.0.iter().any(|had| had == name) {
+				self.0.push(name.to_owned());
+			}
+		}
+
+		fn code(&mut self, nodes: &[dmasm::Node], statics: &[dmasm::reload::StaticVar]) {
+			let _ = dmasm::assembler::assemble(nodes, self);
+			for local in statics {
+				if let Some(value) = &local.value {
+					self.value(value);
+				}
+				if let Some(init) = &local.init {
+					self.code(&init.nodes, &init.statics);
+				}
+			}
+		}
+	}
+
+	impl dmasm::assembler::AssembleEnv for Named {
+		fn get_string_index(&mut self, _: &[u8]) -> Option<u32> {
+			Some(0)
+		}
+
+		fn get_variable_name_index(&mut self, _: &[u8]) -> Option<u32> {
+			Some(0)
+		}
+
+		fn get_proc_index(&mut self, _: &str) -> Option<u32> {
+			Some(0)
+		}
+
+		fn get_type(&mut self, _: &str) -> Option<(u8, u32)> {
+			Some((0x20, 0))
+		}
+
+		fn get_global_index(&mut self, _: &[u8], _: Option<&str>) -> Option<u32> {
+			Some(0)
+		}
+
+		fn get_resource_index(&mut self, path: &str) -> Option<u32> {
+			self.add(path);
+			Some(0)
+		}
+
+		fn get_instance(&mut self, _: &str, _: &[u32]) -> Option<u32> {
+			Some(0)
+		}
+	}
+
+	let mut named = Named::default();
+	for code in request.procs.iter().chain(request.new_procs.iter().map(|new| &new.code)) {
+		named.code(&code.nodes, &code.statics);
+	}
+	for code in request.init_procs.iter().filter_map(|init| init.code.as_ref()) {
+		named.code(&code.nodes, &code.statics);
+	}
+	for default in request
+		.var_defaults
+		.iter()
+		.map(|d| &d.value)
+		.chain(request.builtin_defaults.iter().map(|d| &d.value))
+	{
+		named.value(default);
+	}
+	for new in &request.new_types {
+		for (_, field) in &new.fields {
+			named.value(field);
+		}
+	}
+	for var in &request.new_vars {
+		named.value(&var.value);
+		if let Some(init) = &var.init {
+			named.code(&init.nodes, &init.statics);
+		}
+	}
+	named.0
 }
 
 /// Merge a resource file's required changes into the existing changes.

@@ -67,6 +67,43 @@ fn read_built() -> Option<Vec<u32>> {
 	crate::dmb_tables::resource_crcs(&std::fs::read(&dmb).ok()?).ok()
 }
 
+/// Lazy set of resource file names in the build.
+static BUILT_NAMES: Mutex<Option<Vec<String>>> = Mutex::new(None);
+
+/// Whether `file` is named in the build's resources, regardless of its
+/// current content. Paths are relative to the world directory.
+pub fn built_file(file: &Path) -> bool {
+	let names = BUILT_NAMES
+		.lock()
+		.unwrap()
+		.get_or_insert_with(|| read_names().unwrap_or_default())
+		.clone();
+	names.iter().any(|name| crate::assemble_env::resource_file(name).as_deref() == Some(file))
+}
+
+/// The names of the `.rsc`'s records in use: `u32 length, u8 in use, u8 type,
+/// u32 crc, u32 time, u32 time, u32 data length, name, data`
+fn read_names() -> Option<Vec<String>> {
+	let data = std::fs::read(world_dmb()?.with_extension("rsc")).ok()?;
+	let mut names = vec![];
+	let mut at = 0;
+	while at + 5 <= data.len() {
+		let length = u32::from_le_bytes(data[at..at + 4].try_into().ok()?) as usize;
+		let record = &data[at + 4..(at + 5 + length).min(data.len())];
+		at += 5 + length;
+		if record.len() < 19 || record[0] == 0 {
+			continue;
+		}
+		if let Some(end) = record[18..].iter().position(|&b| b == 0) {
+			let name = String::from_utf8_lossy(&record[18..18 + end]).replace('\\', "/");
+			if !name.is_empty() && !names.contains(&name) {
+				names.push(name);
+			}
+		}
+	}
+	Some(names)
+}
+
 /// The .dmb the world runs, from its command line
 fn world_dmb() -> Option<PathBuf> {
 	let (args, cwd) = crate::launched::command_line();

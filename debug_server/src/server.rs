@@ -3063,6 +3063,7 @@ impl Server {
 					warnings.push(format!("resource reload: could not send updated appearances to clients: {}", e));
 				}
 				self.record_resource_ids(&applied.reloaded, &mut warnings);
+				self.record_named_files(request);
 				HotReloadResult {
 					applied: true,
 					errors: vec![],
@@ -3107,9 +3108,26 @@ impl Server {
 		result
 	}
 
-	/// Track each file's current resource ID for later reloads. Do not
-	/// replace IDs already used by built or reloaded files with identical
-	/// content; BYOND shares their cache entry.
+	/// Track resource IDs for later reloads, including newly referenced files
+	/// the launcher has no IDs for. Do not replace IDs already used by another
+	/// built or reloaded file: identical content shares cache entries.
+	fn record_named_files(&mut self, request: &HotReloadRequest) {
+		use dmasm::assembler::AssembleEnv as _;
+		for name in crate::world_resources::not_built(request) {
+			let Some(file) = crate::assemble_env::resource_file(&name) else {
+				continue;
+			};
+			let path = file.to_string_lossy().replace('\\', "/");
+			// The launcher supplies replacement IDs for edited built resources.
+			if self.resource_ids.contains_key(&path) || crate::world_resources::built_file(&file) {
+				continue;
+			}
+			if let Some(id) = crate::assemble_env::AssembleEnv.get_resource_index(&name) {
+				self.resource_ids.insert(path, vec![id]);
+			}
+		}
+	}
+
 	fn record_resource_ids(&mut self, reloaded: &[ReloadedResource], warnings: &mut Vec<String>) {
 		let built = crate::world_resources::built_count();
 		for resource in reloaded {
