@@ -216,3 +216,26 @@ var/list/dozers
 
 /proc/sc_nothing_to_run()
 	nothing_to_run()
+
+// spawn(-1) runs immediately in a copy of the proc's frame.
+/proc/spawns_now()
+	var/n = 1 // @spawn_now_1
+	spawn (-1) // @spawn_now_spawn
+		n = 2 // @spawn_now_body
+	n = 3 // @spawn_now_2
+	return n
+
+/proc/sc_spawn_now()
+	spawns_now()
+
+// A final spawn(-1) whose copy outlives the original proc by sleeping.
+
+/proc/spawns_sleeping()
+	var/n = 1
+	spawn (-1) // @spawn_sleep_spawn
+		sleep(2)
+		n = 2 // @spawn_sleep_body
+
+/proc/sc_spawn_sleep()
+	spawns_sleeping() // @spawn_sleep_call
+	sleep(5)

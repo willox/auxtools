@@ -190,6 +190,25 @@ pub fn run() {
 	world.resume_through("fail_null");
 	ok("runtime error interrupts Step Over");
 
+	// spawn(-1) runs immediately in a copied frame; Step Over must skip it.
+	world.run_to("spawn_now", "/spawns_now", "spawn_now_spawn");
+	world.step_on("next", "/spawns_now", "spawn_now_2");
+	world.resume_through("spawn_now");
+	world.run_to("spawn_now", "/spawns_now", "spawn_now_spawn");
+	world.step_on("stepIn", "/spawns_now", "spawn_now_body");
+	world.resume_through("spawn_now");
+	// Either step from the spawned code returns to the original proc.
+	for command in ["next", "stepOut"] {
+		world.run_to("spawn_now", "/spawns_now", "spawn_now_body");
+		world.step_on(command, "/spawns_now", "spawn_now_2");
+		world.resume_through("spawn_now");
+	}
+	// A sleeping copy must not retain the step after the original returns.
+	world.run_to("spawn_sleep", "/spawns_sleeping", "spawn_sleep_spawn");
+	world.step_on("next", "/sc_spawn_sleep", "spawn_sleep_call");
+	world.resume_through("spawn_sleep");
+	ok("Step Over a spawn (-1)");
+
 	// VS Code takes the response to a step to mean the world is running: the
 	// stop the step makes has to come after it
 	world.run_to("deep", "/recurse", "recurse_1");
