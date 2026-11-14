@@ -1144,7 +1144,7 @@ fn attach_and_reload(server: &str, library: &Path) {
 	second.request("configurationDone", json!({}));
 	second.wait_output("Hot reload disabled: the launcher (pid ");
 	assert!(
-		second.output.contains("already hot reloads this world"),
+		second.output.contains("already owns hot reload for this world"),
 		"unexpected second-session output: {}",
 		second.output
 	);
@@ -1247,7 +1247,7 @@ fn attach_host_copy(name: &str) -> (PathBuf, PathBuf) {
 	// for this one
 	let _ = std::fs::remove_dir_all(&dir);
 	std::fs::create_dir_all(&dir).unwrap();
-	for left in ["stop", "fail", "reboot", "call", "refuse_del", "fail_del"] {
+	for left in ["stop", "fail", "reboot", "call", "refuse_del", "fail_del", "slow_del"] {
 		let _ = std::fs::remove_file(dir.join(left));
 		assert!(
 			!dir.join(left).exists(),
@@ -1741,6 +1741,7 @@ fn launch_from_the_command_line(server: &str) {
 	println!("ok: reboot throughout world execution");
 
 	let before = read_log().len();
+	std::fs::write(dir.join("slow_del"), "yes").unwrap();
 	let printed = run(&["stop"], 0);
 	assert_eq!(printed.trim(), format!("pid {}: stopped", pid));
 	assert!(!alive(pid), "world process is still running");
@@ -1759,8 +1760,9 @@ fn launch_from_the_command_line(server: &str) {
 		"the launcher took the world's end for a lost connection:\n{}",
 		said
 	);
+	let _ = std::fs::remove_file(dir.join("slow_del"));
 	drop(started);
-	println!("ok: stop shuts down world and detached launcher");
+	println!("ok: shutdown with sleeping world/Del");
 
 	// A world whose world/Del() doesn't end it
 	let mut started = Started::default();

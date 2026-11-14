@@ -15,6 +15,9 @@ use super::{args, seconds_text, Failure, Result, World, HUNG_UP, TIMED_OUT};
 /// How often to look again
 const INTERVAL: Duration = Duration::from_millis(50);
 
+/// Prefix identifying an evaluation's runtime error.
+const RUNTIME_ERROR: &str = "runtime error: ";
+
 /// Has the world evaluate `expression`, without waiting for an answer
 fn ask(world: &mut World, expression: &str) -> Result<()> {
 	let request = Request::Eval {
@@ -38,9 +41,10 @@ fn gone_by(pid: u32, until: Instant) -> bool {
 	}
 }
 
-/// Wait for process exit until `until`. Successful world.Del() closes the
-/// debugger before returning; an eval response means shutdown failed with
-/// a runtime error and the world is still running.
+/// Wait for process exit until `until`. A successful world.Del() closes
+/// the debugger without a response. A runtime-error response means the
+/// world is still running. A sleep response ends only the evaluation: keep
+/// waiting for world.Del() to finish.
 fn ended_by(world: &mut World, until: Instant) -> Result<bool> {
 	loop {
 		if !local::alive(world.pid) {
@@ -51,6 +55,10 @@ fn ended_by(world: &mut World, until: Instant) -> Result<bool> {
 			return Ok(false);
 		}
 		match world.next(Some(until.min(now + INTERVAL))) {
+			// The evaluation ended at a sleep, but world.Del() is still
+			// running.
+			Ok(Some(Response::Eval(Err(error)))) if !error.starts_with(RUNTIME_ERROR) => {}
+			// The runtime error left the world and debugger running.
 			Ok(Some(Response::Eval(_))) => {
 				return Err(format!(
 					"world.Del() failed with a runtime error (see the world's log), so the world (pid {}) is still running. Fix world/Del() or \
