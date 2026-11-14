@@ -220,11 +220,12 @@ Reloaded and evaluated code preserves DreamMaker's field caching: after
 a local when a call may replace it. Other compatibility differences and
 copied quirks are reported as warnings.
 
-Active calls finish on their original code. Existing instances retain their verbs
-and built-in values. Computed defaults apply to new instances. New computed
-variables are null on existing instances, and their `initial()` value remains null
-until restart. Existing globals retain their current values when their initializers
-change.
+Active calls finish on their original code. Existing instances retain their
+verbs and built-in values. Computed defaults apply to new instances; new
+computed vars are null on existing instances, including their `initial()`
+values, until restart. Running globals and statics keep their values when
+initializers change. Changed world settings and client settings stored in the
+world record, such as `client.control_freak`, take effect after restart.
 
 Breakpoints follow statements after edits from VS Code, other editors or checkouts.
 The VS Code extension reports unsaved files to the launcher. Other DAP clients

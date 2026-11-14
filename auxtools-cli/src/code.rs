@@ -308,6 +308,7 @@ impl Code {
 		let current = watching.applied.as_ref().unwrap_or(&watching.built);
 		let mut changes = diff(current, &new, Some(&changed));
 		refuse_hidden(current, &new, &mut changes);
+		changes.settings_as_built(&watching.built, &new);
 		watching.edited_since_built.extend(changed);
 
 		// A file the new parse includes for the first time
