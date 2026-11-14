@@ -71,6 +71,11 @@
 				"category": "auxtools"
 			},
 			{
+				"command": "auxtools.join",
+				"title": "Join with DreamSeeker",
+				"category": "auxtools"
+			},
+			{
 				"command": "auxtools.reboot",
 				"title": "Reboot world",
 				"category": "auxtools"
@@ -84,6 +89,10 @@
 				},
 				{
 					"command": "auxtools.reconnectClients",
+					"when": "debugType == auxtools"
+				},
+				{
+					"command": "auxtools.join",
 					"when": "debugType == auxtools"
 				},
 				{
@@ -115,6 +124,16 @@
 					"default": true,
 					"markdownDescription": "Add the launcher directory to VS Code terminals' `PATH` so `auxtools` commands are available."
 				},
+				"auxtools.autoJoin": {
+					"type": "boolean",
+					"default": true,
+					"markdownDescription": "Join launched worlds with DreamSeeker automatically (Windows). Clients reconnect after reboot."
+				},
+				"auxtools.closeDreamSeeker": {
+					"type": "boolean",
+					"default": true,
+					"markdownDescription": "Close clients opened by the extension when their world process exits."
+				},
 				"auxtools.notifications": {
 					"type": "object",
 					"markdownDescription": "Show notifications by category.",
@@ -122,11 +141,16 @@
 						"reconnect": {
 							"type": "boolean",
 							"description": "Offer to reconnect players after a skin or client script reload."
+						},
+						"join": {
+							"type": "boolean",
+							"description": "Offer to join when not joined automatically; offer the address if DreamSeeker is unavailable."
 						}
 					},
 					"additionalProperties": false,
 					"default": {
-						"reconnect": true
+						"reconnect": true,
+						"join": true
 					}
 				}
 			}

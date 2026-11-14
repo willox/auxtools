@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Wire protocol version. Increment for changes incompatible with older
 /// clients or servers. Including the version in endpoint names prevents
 /// connections using incompatible message layouts.
-pub const PROTOCOL_VERSION: u32 = 10;
+pub const PROTOCOL_VERSION: u32 = 11;
 
 /// Shutdown notification sent before disconnecting clients; not used for
 /// reboot.
@@ -237,7 +237,7 @@ pub enum Request {
 	/// Set the login skin from a `.dmf`. Defer until `world/New` if the world
 	/// is still loading. Respond with `Response::Skin`.
 	Skin(SkinRequest),
-	/// Request client reconnects to load the skin. Leave Dream Seeker-hosted
+	/// Request client reconnects to load the skin. Leave DreamSeeker-hosted
 	/// worlds unchanged: reconnecting the host would restart the world.
 	/// Respond with `Response::Reconnect`.
 	Reconnect,
@@ -307,7 +307,9 @@ pub enum Response {
 	HotReload(HotReloadResult),
 	WorldInfo {
 		args: Vec<String>,
-		cwd: String
+		cwd: String,
+		/// Listening port, or 0 if not listening.
+		port: u16
 	},
 	/// Another client resumed execution.
 	Resumed,
@@ -414,7 +416,7 @@ pub struct SkinRequest {
 pub struct SkinReloaded {
 	/// Connected players retaining the old skin until reconnect.
 	pub clients: u32,
-	/// Whether Dream Seeker hosts the world
+	/// Whether DreamSeeker hosts the world
 	pub hosted: bool
 }
 
@@ -433,7 +435,7 @@ pub struct ScriptRequest {
 pub struct ScriptReloaded {
 	/// Connected players retaining the old script until reconnect.
 	pub clients: u32,
-	/// Whether Dream Seeker hosts the world
+	/// Whether DreamSeeker hosts the world
 	pub hosted: bool
 }
 
@@ -441,7 +443,7 @@ pub struct ScriptReloaded {
 pub enum Reconnected {
 	/// Number of clients asked to reconnect.
 	Clients(u32),
-	/// Dream Seeker hosts this world; no reconnect was requested.
+	/// DreamSeeker hosts this world; no reconnect was requested.
 	Hosted
 }
 

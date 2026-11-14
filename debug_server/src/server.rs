@@ -3358,7 +3358,8 @@ impl Server {
 
 			Request::WorldInfo => {
 				let (args, cwd) = crate::launched::command_line();
-				self.send_or_disconnect(Response::WorldInfo { args, cwd });
+				let port = Value::WORLD.get_number(byond_string!("port")).map_or(0, |port| port as u16);
+				self.send_or_disconnect(Response::WorldInfo { args, cwd, port });
 			}
 
 			Request::StdDef => {

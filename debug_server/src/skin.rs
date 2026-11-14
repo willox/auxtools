@@ -135,7 +135,7 @@ fn field() -> Result<*mut u32, String> {
 	}
 }
 
-/// Whether Dream Seeker runs the world, rather than DreamDaemon
+/// Whether DreamSeeker runs the world, rather than DreamDaemon
 pub(crate) fn hosted() -> bool {
 	std::env::current_exe()
 		.ok()
@@ -200,7 +200,7 @@ pub fn state() -> Result<Option<(u32, String)>, String> {
 	Ok(Some((id, text.as_string().map_err(|e| e.message)?)))
 }
 
-/// Reconnect clients unless Dream Seeker hosts the world. The host's
+/// Reconnect clients unless DreamSeeker hosts the world. The host's
 /// .reconnect would restart from the .dmb outside the debugger.
 pub fn reconnect() -> Result<Reconnected, String> {
 	if hosted() {

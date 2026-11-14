@@ -15,6 +15,17 @@ fn process_id(event: &Value) -> u64 {
 		.expect("process event is missing its process ID")
 }
 
+/// Check the world-ready event, including its `started` flag.
+fn announced(world: &mut World, address: &str, started: bool) {
+	let told = world.event("auxtoolsWorld")["body"].clone();
+	assert_eq!(
+		(&told["address"], &told["started"], &told["hosted"]),
+		(&json!(address), &json!(started), &json!(false)),
+		"{}",
+		told
+	);
+}
+
 /// Check that breakpoints survive restart by stopping in leaf_1 again.
 fn breaks_at_leaf(world: &mut World) {
 	world.run("middle");
@@ -32,6 +43,11 @@ pub fn run() {
 	world.configure();
 	assert_eq!(world.eval_global("world.port"), port.to_string());
 	ok("configured listening port");
+	let address = format!("byond://127.0.0.1:{}", port);
+	announced(&mut world, &address, true);
+	let joined = world.request("auxtoolsJoin", json!({ "open": false }));
+	assert_eq!((&joined["address"], &joined["opened"]), (&json!(address), &json!(false)), "{}", joined);
+	ok("world join address");
 	world.break_on(&["leaf_1"]);
 
 	world.request("restart", json!({}));
@@ -39,6 +55,7 @@ pub fn run() {
 	assert!(!world.has_event("process"), "reboot unexpectedly replaced the process");
 	assert_eq!(client::listed_world("dap_test_host.dmb"), pid);
 	assert_eq!(world.eval_global("world.port"), port.to_string());
+	announced(&mut world, &address, false);
 	breaks_at_leaf(&mut world);
 	ok("restart preserves the process");
 
@@ -46,6 +63,7 @@ pub fn run() {
 	world.stop_on("breakpoint", "/leaf", "leaf_1");
 	world.request("restart", json!({}));
 	world.wait_count("dap: world/New", 3);
+	announced(&mut world, &address, false);
 	breaks_at_leaf(&mut world);
 	ok("restart while paused");
 
@@ -67,6 +85,7 @@ pub fn run() {
 	world.wait_count("dap: world/New", 5);
 	assert_eq!(world.eval_global("world.port"), port.to_string());
 	assert_eq!(world.eval_global("world.GetConfig(\"env\", \"AUXTOOLS_RESTART_TEST\")"), "\"1\"");
+	announced(&mut world, &address, true);
 	breaks_at_leaf(&mut world);
 	ok("relaunch after configuration changes");
 	world.break_on(&[]);

@@ -76,6 +76,8 @@ impl Adapter {
 		if let Some(mut debuggee) = self.debuggee.take() {
 			debuggee.gone();
 		}
+		// DreamSeeker cannot reconnect to a replacement process.
+		self.joined.world_ended();
 		self.pid = None;
 		self.ending = false;
 		self.unavailable = false;

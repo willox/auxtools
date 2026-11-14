@@ -198,7 +198,7 @@ fn probe(stream: Stream) -> std::sync::mpsc::Receiver<io::Result<Probed>> {
 			send(&mut stream, &Request::WorldInfo)?;
 			loop {
 				match receive(&mut stream)? {
-					Response::WorldInfo { args, cwd } => return Ok(Probed::Info(args, cwd)),
+					Response::WorldInfo { args, cwd, .. } => return Ok(Probed::Info(args, cwd)),
 					Response::Unavailable { reason } => return Ok(Probed::Unavailable(reason)),
 					Response::Disconnect => return Err(io::Error::other("it hung up")),
 					_ => {}

@@ -41,7 +41,7 @@ impl Adapter {
 		let mut notes = vec![];
 		if reloaded.clients > 0 {
 			notes.push(if reloaded.hosted {
-				"Reboot to load the new skin in Dream Seeker's host window; auxtools reconnect does this".to_owned()
+				"Reboot to load the new skin in DreamSeeker's host window; auxtools reconnect does this".to_owned()
 			} else {
 				format!(
 					"{} the old interface until {}; run auxtools reconnect to load the new skin",
@@ -73,7 +73,7 @@ impl Adapter {
 		true
 	}
 
-	/// Reconnect clients to load the skin. Reboot Dream Seeker-hosted worlds.
+	/// Reconnect clients to load the skin. Reboot DreamSeeker-hosted worlds.
 	pub(super) fn reconnect_clients(&mut self) -> Handled {
 		match self.request(&AuxRequest::Reconnect)? {
 			AuxResponse::Reconnect(Ok(aux::Reconnected::Clients(clients))) => Ok(serde_json::json!({ "reconnected": clients })),

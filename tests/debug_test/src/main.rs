@@ -267,7 +267,7 @@ fn protocol(world: &World, mut client: Client) -> Client {
 		"expected stddef.dm, got something else"
 	);
 	let response = client.request(Request::WorldInfo);
-	let Response::WorldInfo { args, cwd } = response else {
+	let Response::WorldInfo { args, cwd, .. } = response else {
 		panic!("expected WorldInfo, got {:?}", response);
 	};
 	assert!(

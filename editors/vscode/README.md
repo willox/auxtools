@@ -23,6 +23,14 @@ configurations use it too when `dmb` and `dme` are omitted.
 `${command:dreammaker.getFilenameDme}`, prefixed with `${workspaceFolder}/`.
 It also sets the language client's build task as `preLaunchTask`.
 
+On Windows, the extension opens DreamSeeker when it launches a world.
+Disable this with `auxtools.autoJoin`; **auxtools: Join with DreamSeeker**
+opens a client whenever needed. On Linux, the command offers the address
+to copy instead.
+
+Clients opened this way close with the world (`auxtools.closeDreamSeeker`).
+A reboot keeps them open to reconnect.
+
 **Run Without Debugging** (Ctrl+F5) disables breakpoints and stepping while keeping
 hot reload enabled. You can also set `"noDebug": true` in a launch configuration.
 
@@ -303,7 +311,7 @@ watched and reloaded too.
 
 Saving the last `.dmf` included by the `.dme` updates the login skin and
 preserves it after reboot. Connected players must reconnect to load it. Use the
-reload notification or **auxtools: Reconnect players**. Dream Seeker-hosted
+reload notification or **auxtools: Reconnect players**. DreamSeeker-hosted
 worlds reboot instead because the host cannot reconnect independently. New image
 references absent from the build require a rebuild.
 
@@ -349,8 +357,13 @@ for attach sessions to avoid competing with the launching session's reloads.
 - `auxtools.addToTerminalPath`: add the launcher directory to terminal `PATH`
   so commands such as `auxtools log` work there. Relaunch existing terminals
   to apply changes. Default: `true`.
+- `auxtools.autoJoin`: open DreamSeeker on a world when it starts (Windows).
+  Default: `true`.
+- `auxtools.closeDreamSeeker`: close clients opened by the extension when the
+  world process exits. Default: `true`.
 - `auxtools.notifications`: set any category to `false` to hide its notifications:
   - `reconnect`: reconnect players after a skin or script reload.
+  - `join`: join offers when not joined automatically; copy the address if DreamSeeker is unavailable.
 
 ## License
 

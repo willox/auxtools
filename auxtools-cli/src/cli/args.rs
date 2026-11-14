@@ -192,7 +192,7 @@ pub struct Reconnect {
 		long,
 		value_name = "SECONDS",
 		value_parser = seconds,
-		help = "Set the reboot deadline for Dream Seeker-hosted worlds. [default: 60]"
+		help = "Set the reboot deadline for DreamSeeker-hosted worlds. [default: 60]"
 	)]
 	pub timeout: Option<Duration>,
 	#[arg(long, help = JSON)]

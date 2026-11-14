@@ -33,6 +33,7 @@ use crate::{
 
 mod data;
 mod files;
+mod join;
 mod journal;
 mod restart;
 mod script;
@@ -374,6 +375,8 @@ pub struct Adapter {
 	relaunching: Option<(LaunchArguments, Prepared)>,
 	/// Session-requested reboot; suppress its expected disconnect message.
 	rebooting: bool,
+	/// DreamSeeker processes opened for this world.
+	joined: join::Joined,
 
 	/// Parse options retained until the first connection.
 	code_settings: Option<CodeSettings>,
@@ -497,6 +500,7 @@ pub fn serve(out: Output, inputs: mpsc::Sender<Input>, receiver: &mpsc::Receiver
 		launched: None,
 		relaunching: None,
 		rebooting: false,
+		joined: join::Joined::default(),
 		code_settings: None,
 		code: None,
 		code_worker: 0,
@@ -555,6 +559,7 @@ pub fn serve(out: Output, inputs: mpsc::Sender<Input>, receiver: &mpsc::Receiver
 	if let Some(game) = adapter.game.take() {
 		game.kill();
 	}
+	adapter.joined.world_ended();
 }
 
 fn arguments<T: for<'de> Deserialize<'de>>(arguments: Option<Value>) -> Result<T, String> {
@@ -658,6 +663,7 @@ impl Adapter {
 	/// Report the world's exit before closing the launcher.
 	fn ended(&mut self, exit_code: i32) {
 		self.pid = None;
+		self.joined.world_ended();
 		if let Some(mut debuggee) = self.debuggee.take() {
 			debuggee.gone();
 		}
@@ -697,6 +703,7 @@ impl Adapter {
 			"setBreakpoints" => arguments(args).and_then(|args| self.set_breakpoints(args)),
 			"auxtoolsUnsaved" => arguments(args).and_then(|args| self.unsaved_changed(args)),
 			"auxtoolsReconnect" => self.reconnect_clients(),
+			"auxtoolsJoin" => arguments(args).and_then(|args| self.join(args)),
 			"auxtoolsReboot" => self.reboot(),
 			"restart" => arguments(args).and_then(|args| self.restart(args)),
 			"setFunctionBreakpoints" => arguments(args).and_then(|args| self.set_function_breakpoints(args)),
@@ -1113,7 +1120,7 @@ impl Adapter {
 	fn start_code(&mut self, settings: CodeSettings) {
 		// The world's command line says which .dmb it runs
 		let dmb = match self.request(&AuxRequest::WorldInfo) {
-			Ok(AuxResponse::WorldInfo { args, cwd }) => local::world_dmb(&args, &cwd),
+			Ok(AuxResponse::WorldInfo { args, cwd, .. }) => local::world_dmb(&args, &cwd),
 			_ => None
 		};
 		let dme = settings.dme.or_else(|| Some(dmb.as_ref()?.with_extension("dme")));
@@ -1342,6 +1349,7 @@ impl Adapter {
 		let _ = self.ack(&AuxRequest::Configured);
 		self.catch_up_on_pause();
 		self.configured = true;
+		self.announce_world();
 		self.say_ready();
 	}
 
@@ -1591,6 +1599,9 @@ impl Adapter {
 			// filter's default, here as in the worlds after a reboot
 			self.catch_runtimes()?;
 			self.ack(&AuxRequest::Configured)?;
+			self.catch_up_on_pause();
+			self.announce_world();
+			return Ok(Value::Null);
 		}
 		self.catch_up_on_pause();
 		Ok(Value::Null)

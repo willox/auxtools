@@ -302,7 +302,7 @@ function trackUnsavedFiles(context) {
 }
 
 // Reconnect players to load an interface update.
-// Dream Seeker-hosted worlds must reboot instead.
+// DreamSeeker-hosted worlds must reboot instead.
 async function reconnectClients(session) {
 	session = session || vscode.debug.activeDebugSession;
 	if (!session || session.type !== DEBUG_TYPE) {
@@ -312,7 +312,7 @@ async function reconnectClients(session) {
 	try {
 		const done = await session.customRequest("auxtoolsReconnect");
 		if (done && done.rebooted) {
-			vscode.window.showInformationMessage("Rebooting the Dream Seeker-hosted world.");
+			vscode.window.showInformationMessage("Rebooting the DreamSeeker-hosted world.");
 		} else if (done) {
 			vscode.window.showInformationMessage(`Asked ${done.reconnected} ${done.reconnected === 1 ? "player" : "players"} to reconnect.`);
 		}
@@ -332,6 +332,51 @@ async function reboot() {
 		await session.customRequest("auxtoolsReboot");
 	} catch (e) {
 		vscode.window.showErrorMessage(`Could not reboot the world: ${e.message}`);
+	}
+}
+
+// Offer the address when DreamSeeker is unavailable.
+async function offerAddress(address, started) {
+	const message = started ? `The world started at ${address}.` : `The world is at ${address}.`;
+	if ((await vscode.window.showInformationMessage(message, "Copy Address")) === "Copy Address") {
+		await vscode.env.clipboard.writeText(address);
+	}
+}
+
+// Join with DreamSeeker on Windows; otherwise offer the address.
+async function join(session) {
+	session = session || vscode.debug.activeDebugSession;
+	if (!session || session.type !== DEBUG_TYPE) {
+		vscode.window.showErrorMessage("No active auxtools debug session.");
+		return;
+	}
+	try {
+		const joined = await session.customRequest("auxtoolsJoin", { closeWithWorld: settings().get("closeDreamSeeker") });
+		if (!joined.opened) {
+			await offerAddress(joined.address, false);
+		}
+	} catch (e) {
+		vscode.window.showErrorMessage(`Could not join the world: ${e.message}`);
+	}
+}
+
+// Join newly launched worlds, or offer the join action.
+async function worldStarted(event) {
+	const { address, started, canJoin, hosted } = event.body;
+	if (!started || !address || hosted || event.session.configuration.request !== "launch") {
+		return;
+	}
+	if (canJoin && settings().get("autoJoin")) {
+		await join(event.session);
+		return;
+	}
+	if (!notifies("join")) {
+		return;
+	}
+	if (!canJoin) {
+		await offerAddress(address, true);
+	} else if ((await vscode.window.showInformationMessage(`The world started at ${address}.`, "Join with DreamSeeker")) === "Join with DreamSeeker") {
+		await join(event.session);
 	}
 }
 
@@ -376,6 +421,7 @@ function activate(context) {
 		vscode.commands.registerCommand("auxtools.debugDreamDaemon", debugInDreamDaemon),
 		vscode.commands.registerCommand("auxtools.attach", attach),
 		vscode.commands.registerCommand("auxtools.reconnectClients", () => reconnectClients()),
+		vscode.commands.registerCommand("auxtools.join", () => join()),
 		vscode.commands.registerCommand("auxtools.reboot", reboot),
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration("auxtools.launcherPath") || event.affectsConfiguration("auxtools.addToTerminalPath")) {
@@ -387,6 +433,8 @@ function activate(context) {
 				skinReloaded(event);
 			} else if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsScript") {
 				scriptReloaded(event);
+			} else if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsWorld") {
+				worldStarted(event);
 			}
 		}),
 		// For `${command:auxtools.pickWorld}` in attach configurations
