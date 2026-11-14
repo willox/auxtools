@@ -117,3 +117,14 @@ var/datum/declared/declared_one = new
 
 /proc/keyed(a, b)
 	return b
+
+// Static sharing a built-in sound var name absent from the build.
+
+/datum/hr_named
+	var/static/falloff = 9
+
+/proc/hr_named_falloff(sound/s)
+	var/datum/hr_named/named = new
+	. = "[s.falloff] "
+	s.falloff = 7
+	. += "[s.falloff] [named.falloff]"

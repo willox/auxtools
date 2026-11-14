@@ -1151,6 +1151,31 @@ fn main() {
 	assert_eq!(eval(&mut client, "(new /area).layer"), "9");
 	println!("ok: built-in type default reset rejection");
 
+	// Cover var-table built-ins and record-list bounds.
+	let changes = source.edit(
+		"reload.dm",
+		"/proc/first_def()\n",
+		"/exception/hot_reload\n\tname = \"one\"\n\n/sound/hot_reload\n\trepeat = 1\n\n/obj/crate/bounded\n\tbounds = \"1,1 to \
+		 16,16\"\n\n/proc/first_def()\n"
+	);
+	reload(&mut watcher, &changes);
+	let changes = source.edit_many("reload.dm", &[
+		("\tname = \"one\"\n", "\tname = \"two\"\n"),
+		("\trepeat = 1\n", "\trepeat = 1\n\tchannel = 5\n\tfalloff = 2\n"),
+		("\"1,1 to 16,16\"", "\"1,1 to 8,24\"")
+	]);
+	assert_eq!(changes.var_defaults.len(), 3, "{:?}", changes.var_defaults);
+	reload(&mut watcher, &changes);
+	// Check the type's name; new() replaces it on exceptions in 515.1637.
+	assert_eq!(eval(&mut client, "initial(/exception/hot_reload::name)"), "\"two\"");
+	assert_eq!(eval(&mut client, "initial(/sound/hot_reload::channel)"), "5");
+	// A static sharing a built-in's name on another type is a distinct var.
+	assert_eq!(eval(&mut client, "initial(/sound/hot_reload::falloff)"), "2");
+	assert_eq!(eval(&mut client, "hr_named_falloff(new /sound/hot_reload)"), "\"2 7 9\"");
+	assert_eq!(eval(&mut client, "(new /obj/crate/bounded).bound_width"), "8");
+	assert_eq!(eval(&mut client, "(new /obj/crate/bounded).bound_height"), "24");
+	println!("ok: var-table built-ins and bounds");
+
 	// A type's const: the code that uses it is compiled again
 	assert_eq!(eval(&mut client, "kept_limits.max_doubled()"), "6");
 	let changes = source.edit("main.dm", "\tvar/const/MAX = 3\n", "\tvar/const/MAX = 7\n");

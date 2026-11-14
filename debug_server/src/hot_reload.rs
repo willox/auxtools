@@ -596,7 +596,7 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 	}
 
 	for default in var_defaults {
-		if let Err(e) = prepare_var_default(default, &mut type_vars) {
+		if let Err(e) = prepare_var_default(default, &mut type_vars, &mut added) {
 			errors.push(e);
 		}
 	}
@@ -1571,9 +1571,43 @@ fn builtin_writes(var: &str, value: &ConstValue) -> Result<Vec<BuiltinWrite>, St
 				Bits(type_fields::FLAGS_HIGH, 1, flags >> 11),
 			]
 		}
-		"alpha" | "blend_mode" | "color" | "invisibility" | "infra_luminosity" | "luminosity" | "pixel_x" | "pixel_y" | "pixel_w" | "pixel_z"
-		| "plane" | "render_source" | "render_target" | "bound_x" | "bound_y" | "bound_width" | "bound_height" | "step_size" | "step_x"
-		| "step_y" | "glide_size" | "screen_loc" | "vis_flags" | "mouse_drag_pointer" | "mouse_drop_pointer" | "mouse_over_pointer" | "override" => {
+		"alpha"
+		| "blend_mode"
+		| "color"
+		| "invisibility"
+		| "infra_luminosity"
+		| "luminosity"
+		| "pixel_x"
+		| "pixel_y"
+		| "pixel_w"
+		| "pixel_z"
+		| "plane"
+		| "render_source"
+		| "render_target"
+		| "bound_x"
+		| "bound_y"
+		| "bound_width"
+		| "bound_height"
+		| "step_size"
+		| "step_x"
+		| "step_y"
+		| "glide_size"
+		| "screen_loc"
+		| "vis_flags"
+		| "mouse_drag_pointer"
+		| "mouse_drop_pointer"
+		| "mouse_over_pointer"
+		| "override"
+		| "icon_w"
+		| "icon_z"
+		| "bounds"
+		| "fps"
+		| "view"
+		| "perspective"
+		| "tick_lag"
+		| "default_verb_category"
+		| "edge_limit"
+		| "mouse_pointer_icon" => {
 			let (tag, data) = const_value(value)?;
 			// As `PushVal` has it: a number's two halves after its tag, or
 			// the top byte of the data in the tag word
@@ -1807,7 +1841,7 @@ fn prepare_redeclared(
 	Ok(())
 }
 
-fn prepare_var_default(default: &HotReloadVarDefault, type_vars: &mut TypeVars) -> Result<(), String> {
+fn prepare_var_default(default: &HotReloadVarDefault, type_vars: &mut TypeVars, added: &mut AddedVars) -> Result<(), String> {
 	let fail = |e: String| format!("var {}: {}", default.var, e);
 
 	let value = const_value(&default.value).map_err(fail)?;
@@ -1819,11 +1853,23 @@ fn prepare_var_default(default: &HotReloadVarDefault, type_vars: &mut TypeVars) 
 	for path in &default.types {
 		let type_id = find_type(path).map_err(fail)?;
 		let table = type_vars.table(type_id).map_err(fail)?;
-		let Some(entry) = table.chunks_mut(4).find(|entry| entry[0] == key) else {
-			return Err(fail(format!("variable not found on runtime type {}", path)));
-		};
-		entry[2] = value.0;
-		entry[3] = value.1;
+		match table.chunks_mut(4).find(|entry| entry[0] == key) {
+			Some(entry) => {
+				entry[2] = value.0;
+				entry[3] = value.1;
+			}
+			// Sound and similar built-in vars acquire a var-table entry only
+			// when the type sets them.
+			None if inherit::builtin_in_table(type_id, &default.var) => {
+				let id = match variable_ids(default.var.as_bytes()).first() {
+					Some(&id) => id,
+					None => added.add(leaked_string(&default.var).map_err(fail)?, (0, 0))
+				};
+				let at = table.chunks(4).position(|entry| entry[0] > key).unwrap_or(table.len() / 4);
+				table.splice(at * 4..at * 4, [key, id, value.0, value.1]);
+			}
+			None => return Err(fail(format!("variable not found on runtime type {}", path)))
+		}
 	}
 	Ok(())
 }

@@ -66,10 +66,37 @@ fn keep_string(id: u32) {
 	}
 }
 
+/// Built-in types whose built-ins use var-table entries, not record fields.
+const VAR_TABLE_BUILTINS: &[&str] = &["/sound", "/particles", "/exception", "/regex", "/icon"];
+
+/// Whether `type_id` inherits built-ins stored in a var table.
+pub(super) fn builtin_in_table(type_id: u32, _var: &str) -> bool {
+	type_and_ancestors(type_id)
+		.into_iter()
+		.any(|t| VAR_TABLE_BUILTINS.contains(&type_path(t).as_str()))
+}
+
+/// Copy a built-in var-table entry from `from`, or remove it if absent.
+fn copy_table_entry(type_id: u32, from: u32, var: &str) -> Result<(), String> {
+	let key = leaked_string(var)?;
+	let table = |t: u32| -> Result<Vec<u32>, String> {
+		Ok(runtime_tables::misc_words(runtime_tables::type_field(t, type_fields::VAR_TABLE)?).unwrap_or_default())
+	};
+	let mut entries: Vec<Vec<u32>> = table(type_id)?.chunks(4).filter(|e| e[0] != key).map(<[u32]>::to_vec).collect();
+	entries.extend(table(from)?.chunks(4).filter(|e| e[0] == key).map(<[u32]>::to_vec));
+	entries.sort_by_key(|e| e[0]);
+	let words: Vec<u32> = entries.into_iter().flatten().collect();
+	let id = if words.is_empty() { NONE } else { runtime_tables::intern_misc(&words)? };
+	runtime_tables::set_type_field(type_id, type_fields::VAR_TABLE, id)
+}
+
 /// Gives `type_id` the value `from` has for a built-in var.
 pub(super) fn copy_builtin(type_id: u32, from: u32, var: &str) -> Result<(), String> {
 	use runtime_tables::{set_type_field, type_field};
 	use BuiltinWrite::*;
+	if builtin_in_table(type_id, var) {
+		return copy_table_entry(type_id, from, var);
+	}
 	for place in places(var)? {
 		match place {
 			Word(offset, _) => {
@@ -126,15 +153,13 @@ pub(super) fn copy_builtin(type_id: u32, from: u32, var: &str) -> Result<(), Str
 pub(super) fn prepare(inherited: &[BuiltinInherited], prepared: &mut Prepared, errors: &mut Vec<String>) {
 	let mut out = vec![];
 	for i in inherited {
-		if let Err(e) = places(&i.var) {
-			errors.push(e);
-			continue;
-		}
 		for path in &i.types {
 			match find_type(path) {
 				Ok(type_id) => {
 					out.push((type_and_ancestors(type_id).len(), type_id, i.var.clone()));
-					prepared.appearances.insert(type_id);
+					if !builtin_in_table(type_id, &i.var) {
+						prepared.appearances.insert(type_id);
+					}
 				}
 				Err(e) => errors.push(e)
 			}
