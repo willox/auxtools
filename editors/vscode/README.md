@@ -43,7 +43,7 @@ provides templates:
 | `port` | Listening port. If omitted, DreamDaemon chooses a free port when the process starts. |
 | `args` | Arguments after the `.dmb`, replacing the defaults: `-trusted`, plus `-close` for `dreamdaemon-gui` on Windows. |
 | `env` | Environment variables for the world. |
-| `debugLibrary` | Path to a custom debug library. |
+| `debugLibrary` | Override `auxtools.debugLibrary` for this launch. If neither is set, use the library bundled with the extension. |
 
 DreamDaemon sends output to the Debug Console. DreamSeeker and `dreamdaemon-gui`
 display output in their own windows.
@@ -320,8 +320,11 @@ for attach sessions to avoid competing with the launching session's reloads.
 
 - `auxtools.byondPath`: BYOND installation directory. Discovery checks
   `BYOND_SYSTEM`, the registry, `Program Files`, `~/byond` and `/usr/local/byond`.
-- `auxtools.launcherPath`: custom launcher path.
-- `auxtools.debugLibrary`: custom debug library path.
+- `auxtools.launcherPath`: optional launcher override. Leave empty to use the
+  bundled launcher.
+- `auxtools.debugLibrary`: optional debug library override (`debug_server.dll`
+  or `libdebug_server.so`). Leave empty to use the library bundled with the
+  extension.
 
 ## License
 

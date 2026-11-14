@@ -94,12 +94,12 @@
 				"auxtools.launcherPath": {
 					"type": "string",
 					"default": "",
-					"markdownDescription": "Path to a custom `auxtools` launcher."
+					"markdownDescription": "Optional launcher override. Leave empty to use the bundled `auxtools` launcher."
 				},
 				"auxtools.debugLibrary": {
 					"type": "string",
 					"default": "",
-					"markdownDescription": "Path to a custom `debug_server.dll` or `libdebug_server.so`."
+					"markdownDescription": "Optional `debug_server.dll` or `libdebug_server.so` override. Leave empty to use the library bundled with the extension."
 				}
 			}
 		},
@@ -189,7 +189,7 @@
 							},
 							"debugLibrary": {
 								"type": "string",
-								"description": "Path to a custom debug library."
+								"description": "Override auxtools.debugLibrary for this launch. If neither is set, use the library bundled with the extension."
 							}
 						}
 					},
