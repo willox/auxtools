@@ -438,6 +438,49 @@ fn parent_changed_alone() {
 	let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Restore added types and a parent change after reboot. Wait until
+/// InitVarRecorder calls release their type entries, then restore before
+/// global initialization and map creation. Restoring too early crashed
+/// or made a new ancestor's New() recurse through ..().
+fn types_changed_before_reboot() {
+	let (mut world, dir) = watched_world("types_changed_before_reboot");
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_built()\n",
+		"/datum/rb_base\n\tvar/list/held = list(3)\n\tvar/x = 5\n\n/datum/rb_base/kid\n\n/datum/rb_base/New()\n\tx += \
+		 1\n\t..()\n\n/proc/icon_built()\n"
+	);
+	edit(
+		&mut world,
+		"stepping.dm",
+		"/datum/made\n",
+		"/datum/made\n\tparent_type = /datum/rb_base\n"
+	);
+	// New() calls the override added on its ancestor.
+	edit(
+		&mut world,
+		"stepping.dm",
+		"\tsize = n // @made_new\n",
+		"\tsize = n // @made_new\n\t..()\n"
+	);
+	let check = |world: &mut World| {
+		assert_eq!(world.eval_global("var/datum/rb_base/kid/k = new\n\"[k.x] [length(k.held)]\""), "\"6 1\"");
+		assert_eq!(
+			world.eval_global("var/datum/made/m = new(2)\n\"[istype(m, /datum/rb_base)] [m:x] [m.size]\""),
+			"\"1 6 2\""
+		);
+	};
+	check(&mut world);
+	for count in 2..=4 {
+		reboot(&mut world, count);
+		check(&mut world);
+	}
+	ok("type and parent restoration after reboot");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Wait for a resource reload report.
 fn resource_saved(world: &mut World, dir: &std::path::Path, version: &str) {
 	let before = world.count("Hot reload: reloaded lamp.dmi");
@@ -542,6 +585,7 @@ pub fn run() {
 	behind_the_clients_back();
 	starting_at_world_new();
 	parent_changed_alone();
+	types_changed_before_reboot();
 	resource_files();
 	nothing_to_run();
 

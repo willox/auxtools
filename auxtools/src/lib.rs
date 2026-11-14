@@ -248,9 +248,9 @@ pub fn at_proc_calls(work: fn() -> bool) {
 	PROC_CALL_WORK_PENDING.store(true, Ordering::Relaxed);
 }
 
-/// Every DM proc call comes here first. The first of a world finishes the init
-/// `init_on_world_load` started.
-pub(crate) fn on_proc_call() {
+/// Entry point for every DM proc call, with its `src` tag. The first
+/// call completes `init_on_world_load`.
+pub(crate) fn on_proc_call(src: raw_types::values::ValueTag) {
 	if PROC_CALL_WORK_PENDING.load(Ordering::Relaxed) {
 		// Taken out first: the work can make proc calls of its own
 		let work = std::mem::take(&mut *PROC_CALL_WORK.lock().unwrap());
@@ -261,6 +261,13 @@ pub(crate) fn on_proc_call() {
 	}
 
 	if !WORLD_LOAD_PENDING.load(Ordering::Relaxed) {
+		return;
+	}
+	// During loading, BYOND holds type entries while running init procs on
+	// InitVarRecorders. Wait until these calls finish before changing types.
+	// The next call still precedes global initialization, map atom creation
+	// and world/New.
+	if src == raw_types::values::ValueTag::InitVarRecorder {
 		return;
 	}
 	// Still the world that's ending, if it has what only that one was given
