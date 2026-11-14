@@ -83,6 +83,14 @@ const HELPER_PROCS: &str = r#"
 	auxtools_launched_world_reboot()
 	return ..()
 
+/proc/auxtools_launched_world_new()
+	CRASH("the debugger's library isn't loaded")
+
+// Runs once the world has read its data, before any client logs in
+/world/New()
+	auxtools_launched_world_new()
+	return ..()
+
 /world/Del()
 	try
 		..()
@@ -94,7 +102,7 @@ const HELPER_PROCS: &str = r#"
 
 /// Helper overrides excluded from source override numbering
 /// (see `Proc::set_apart`). Keep them above reloaded world definitions.
-const HELPER_OVERRIDES: [&str; 2] = ["/world/Del", "/world/Reboot"];
+const HELPER_OVERRIDES: [&str; 3] = ["/world/Del", "/world/Reboot", "/world/New"];
 
 /// Set by `world/Reboot` so `world/Del` can distinguish reboot from shutdown.
 static REBOOTING: AtomicBool = AtomicBool::new(false);
@@ -176,6 +184,7 @@ fn attach() {
 
 /// Adds the procs in [`HELPER_PROCS`] the world doesn't have
 fn prepare() -> Result<(), String> {
+	crate::world_resources::loading();
 	let request = helper_procs()?;
 	KEEPALIVE_OURS.store(
 		request
@@ -254,6 +263,10 @@ fn ready() {
 	if let Some(proc) = Proc::find("/proc/auxtools_launched_world_reboot") {
 		let _ = proc.hook(world_reboot);
 	}
+	// Without the hook nothing would say the world has read its resources
+	if !Proc::find("/proc/auxtools_launched_world_new").is_some_and(|proc| proc.hook(world_new).is_ok()) {
+		crate::world_resources::loaded();
+	}
 	REBOOTING.store(false, Ordering::Relaxed);
 	let hooked =
 		|path: &str, hook: fn(&Value, &Value, Vec<Value>) -> auxtools::DMResult| Proc::find(path).is_some_and(|proc| proc.hook(hook).is_ok());
@@ -296,6 +309,15 @@ fn ready() {
 	if let Some(proc) = Proc::find("/proc/auxtools_keepalive") {
 		let _ = proc.call(&[]);
 	}
+}
+
+/// The world has read its data: resources get their own ids from here on
+fn world_new(_: &Value, _: &Value, _: Vec<Value>) -> auxtools::DMResult {
+	crate::world_resources::loaded();
+	if let Some(server) = unsafe { &mut *crate::DEBUG_SERVER.get() } {
+		server.world_data_loaded();
+	}
+	Ok(Value::NULL)
 }
 
 /// Handle world/Del completion; `failed` indicates a runtime error.

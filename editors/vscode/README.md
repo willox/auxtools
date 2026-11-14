@@ -196,7 +196,10 @@ instruction, entering a callee if needed. **Step Out** returns to the caller.
 
 Saving a source file reloads supported changes, including during **Run Without
 Debugging**. The Debug Console reports results and changes requiring a rebuild.
-Reloads are restored after reboot.
+
+After reboot, reloads are restored before world code runs. Reloads introducing
+resources absent from the build wait until `world/New`, so map atoms run the
+built code.
 
 Supported changes include proc bodies, new procs and verbs, removals, new types
 (including mobs), new variables and static locals, variable types and defaults,

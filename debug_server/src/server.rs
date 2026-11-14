@@ -362,6 +362,9 @@ pub struct Server {
 	moved_breakpoints: hot_reload::MovedBreakpoints<(ClientId, Placed)>,
 	/// Previously observed bytecode buffers, indexed by `CodeRef::old - 1`.
 	old_codes: RefCell<Vec<usize>>,
+	/// Reloads deferred until resources load at `world/New`, followed by
+	/// later reloads in order.
+	waiting_reloads: Vec<HotReloadRequest>,
 	app: Command
 }
 
@@ -441,6 +444,7 @@ impl Server {
 			stepper: None,
 			procs_by_file: None,
 			old_codes: RefCell::new(vec![]),
+			waiting_reloads: vec![],
 			app: Self::setup_app()
 		})
 	}
@@ -2867,6 +2871,28 @@ impl Server {
 	}
 
 	fn hot_reload(&mut self, request: &HotReloadRequest) -> HotReloadResult {
+		// Defer reloads introducing resources until world/New loads the cache.
+		// Defer subsequent reloads too to preserve order.
+		if !crate::world_resources::is_loaded() {
+			let files = crate::world_resources::not_built(request);
+			if !files.is_empty() || !self.waiting_reloads.is_empty() {
+				self.waiting_reloads.push(request.clone());
+				let why = if files.is_empty() {
+					"queued behind an earlier reload; applies as world/New starts".to_owned()
+				} else {
+					format!(
+						"resource files need the loaded cache ({}); reload applies as world/New starts. Map atoms use the built code until then",
+						files.join(", ")
+					)
+				};
+				return HotReloadResult {
+					applied: true,
+					errors: vec![],
+					warnings: vec![why],
+					skipped: vec![]
+				};
+			}
+		}
 		// Assembly may evaluate DM to resolve paths and resources; treat
 		// it as debugger evaluation.
 		self.in_eval = true;
@@ -2926,6 +2952,19 @@ impl Server {
 		}
 
 		result
+	}
+
+	/// Apply deferred reloads once `world/New` starts and resources are loaded.
+	pub fn world_data_loaded(&mut self) {
+		for request in std::mem::take(&mut self.waiting_reloads) {
+			let result = self.hot_reload(&request);
+			if !result.applied {
+				self.notify(format!("Hot reload failed as world/New started: {}", result.errors.join("; ")));
+			}
+			for warning in result.warnings {
+				self.notify(format!("Hot reload: {}", warning));
+			}
+		}
 	}
 
 	fn handle_disassemble(&mut self, path: &str, id: u32) -> String {

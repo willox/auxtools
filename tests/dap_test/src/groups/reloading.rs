@@ -1,12 +1,13 @@
 //! Debugging a world while its code is hot reloaded
 
-use std::path::PathBuf;
+use std::{path::PathBuf, process::Command};
 
 use serde_json::json;
 
 use crate::{
 	client::value_of,
 	ok,
+	paths::ByondCommand,
 	world::{host_file, World}
 };
 
@@ -19,7 +20,10 @@ pub fn copy_of_the_world(name: &str) -> PathBuf {
 			let copy_to = to.join(path.file_name().unwrap());
 			if path.is_dir() {
 				copy(&path, &copy_to);
-			} else if path.extension().is_some_and(|e| e == "dm" || e == "dme" || e == "dmb" || e == "rsc") {
+			} else if path
+				.extension()
+				.is_some_and(|e| e == "dm" || e == "dme" || e == "dmb" || e == "rsc" || e == "dmi")
+			{
 				std::fs::copy(&path, copy_to).unwrap();
 			}
 		}
@@ -52,6 +56,17 @@ fn moved(world: &mut World) -> (u64, bool) {
 	assert_eq!(event["body"]["reason"], "changed", "{}", event);
 	let breakpoint = &event["body"]["breakpoint"];
 	(breakpoint["line"].as_u64().unwrap(), breakpoint["verified"].as_bool().unwrap())
+}
+
+/// Reboot and wait for the `count`th world/New and restored reloads.
+fn reboot(world: &mut World, count: usize) {
+	let restarts = world.output.matches("The world restarted").count();
+	world.run("reboot");
+	world.wait_count("dap: world/New", count);
+	world.wait_until("the reloads again", |output| {
+		output.matches("The world restarted").count() > restarts
+			&& output.rsplit("The world restarted").next().is_some_and(|after| reloads(after) > 0)
+	});
 }
 
 /// Edits the client has no part in: an agent's, another editor's, a checkout
@@ -315,9 +330,46 @@ fn saved_without_reloading() {
 	world.end();
 }
 
+/// With no global init proc or map, startup still precedes world/New
+/// at an internal call. Reloads introducing resources must apply at once
+/// after world/New has loaded the world data.
+fn starting_at_world_new() {
+	let dir = std::env::temp_dir().join(format!("dap_test_world_new-{}", std::process::id()));
+	let _ = std::fs::remove_dir_all(&dir);
+	std::fs::create_dir_all(&dir).unwrap();
+	std::fs::write(dir.join("dap_test_host.dme"), "#include \"bare.dm\"\n").unwrap();
+	std::fs::write(
+		dir.join("bare.dm"),
+		"/world/New()\n\tworld.log << \"dap: world/New\"\n\n/proc/icon_new()\n\treturn null\n"
+	)
+	.unwrap();
+	std::fs::copy(host_file("reload_new.dmi"), dir.join("reload_new.dmi")).unwrap();
+	let built = Command::new(crate::paths::find_dm())
+		.with_byond_paths()
+		.arg(dir.join("dap_test_host.dme"))
+		.status()
+		.unwrap();
+	assert!(built.success(), "dreammaker build of {} failed", dir.display());
+
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	edit(&mut world, "bare.dm", "\treturn null\n", "\treturn 'reload_new.dmi'\n");
+	assert_eq!(world.eval_global("jointext(icon_states(icon_new()), \",\")"), "\"new1\"");
+	assert!(
+		!world.output.contains("applies as world/New starts"),
+		"the reload waited for world/New:\n{}",
+		world.output
+	);
+	ok("resource reload after world/New startup");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
 pub fn run() {
 	saved_without_reloading();
 	behind_the_clients_back();
+	starting_at_world_new();
 
 	let dir = copy_of_the_world("reloading");
 	let mut world = World::launch_as(json!({ "supportsInvalidatedEvent": true }), dir.clone(), json!({ "hotReload": true }));
@@ -590,6 +642,46 @@ pub fn run() {
 	world.break_on(&[]);
 	world.resume_through("middle");
 	ok("restore reloads and breakpoints after reboot");
+
+	// Before resources load, restored code must use the build's resource ID
+	// (the first cache ID belongs to reload_built.dmi).
+	let states = |world: &mut World, proc: &str| world.eval_global(&format!("jointext(icon_states({}()), \",\")", proc));
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_reloaded()\n\treturn null\n",
+		"/proc/icon_reloaded()\n\treturn 'reload_built_2.dmi'\n"
+	);
+	assert_eq!(states(&mut world, "icon_reloaded"), "\"second1\"");
+	reboot(&mut world, 3);
+	assert_eq!(states(&mut world, "icon_reloaded"), "\"second1\"");
+	let after = world.output.rsplit("The world restarted").next().unwrap_or_default().to_owned();
+	assert!(
+		!after.contains("applies as world/New starts"),
+		"the reload waited for world/New:\n{}",
+		after
+	);
+	ok("restored reload names a built resource");
+
+	// A resource absent from the build must wait for world/New to get an ID.
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_built()\n",
+		"/proc/icon_new()\n\treturn 'reload_new.dmi'\n\n/proc/icon_built()\n"
+	);
+	assert_eq!(states(&mut world, "icon_new"), "\"new1\"");
+	reboot(&mut world, 4);
+	let after = world.output.rsplit("The world restarted").next().unwrap_or_default().to_owned();
+	assert!(
+		after.contains("resource files need the loaded cache (reload_new.dmi); reload applies as world/New starts"),
+		"the launcher said:\n{}",
+		after
+	);
+	assert_eq!(states(&mut world, "icon_new"), "\"new1\"");
+	assert_eq!(states(&mut world, "icon_reloaded"), "\"second1\"");
+	assert_eq!(states(&mut world, "icon_built"), "\"built1,built2\"");
+	ok("restored reload naming a new resource waits for world/New");
 	world.end();
 	let _ = std::fs::remove_dir_all(&dir);
 }

@@ -174,6 +174,11 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 	// fcopy_rsc() hands back the cache entry a file already has, and adds the
 	// file to the cache if it isn't there yet
 	fn get_resource_index(&mut self, path: &str) -> Option<u32> {
+		// Before resources load, fcopy_rsc() allocates IDs the build later
+		// reuses for other files (see `world_resources`).
+		if !crate::world_resources::is_loaded() {
+			return crate::world_resources::built_id(&resource_file(path)?);
+		}
 		let res = Self::eval_with_name("fcopy_rsc(name)", path).or_else(|| Self::eval_with_name("fcopy_rsc(name)", &case_insensitive_path(path)?))?;
 
 		if res.raw.tag != raw_types::values::ValueTag::Resource {
@@ -182,6 +187,16 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 
 		Some(unsafe { res.raw.data.id })
 	}
+}
+
+/// Resolve a resource path relative to the world's directory, matching
+/// `get_resource_index`.
+pub(crate) fn resource_file(path: &str) -> Option<std::path::PathBuf> {
+	let file = std::path::Path::new(path);
+	if file.is_file() {
+		return Some(file.to_owned());
+	}
+	case_insensitive_path(path).map(Into::into)
 }
 
 /// Resolve resource paths case-insensitively, matching DreamMaker on Linux.

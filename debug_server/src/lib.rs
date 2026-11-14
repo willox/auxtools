@@ -1,6 +1,7 @@
 mod assemble_env;
 mod ckey_override;
 mod connection;
+mod dmb_tables;
 mod hot_reload;
 mod instruction_hooking;
 mod journal;
@@ -11,6 +12,7 @@ mod server_types;
 mod stddef;
 mod unnamed;
 mod waker;
+mod world_resources;
 
 #[cfg(windows)]
 mod crash_handler_windows;
