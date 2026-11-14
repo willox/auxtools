@@ -11,6 +11,7 @@ const path = require("path");
 const vscode = require("vscode");
 const { expressionAt } = require("./expression");
 const { UnsavedFiles } = require("./unsaved");
+const langclient = require("./langclient");
 
 const DEBUG_TYPE = "auxtools";
 
@@ -60,8 +61,12 @@ async function findFiles(extension, folder) {
 	});
 }
 
-// One built world (.dmb) to run, asking when there's a choice
+// Choose the language client's world, falling back to workspace .dmb files.
 async function pickWorldFile(folder) {
+	const current = await langclient.environment(vscode, folder);
+	if (current && fs.existsSync(current.dmb)) {
+		return vscode.Uri.file(current.dmb);
+	}
 	const found = await findFiles(".dmb", folder);
 	if (found.length === 0) {
 		vscode.window.showErrorMessage("No .dmb found in the workspace. Build the world first (Tasks: Run Build Task).");
@@ -139,6 +144,17 @@ class ConfigurationProvider {
 	}
 
 	async provideDebugConfigurations(folder) {
+		// Use the language client's commands and build task. Its CurrentDME
+		// and CurrentDMB variables belong to its own debugger.
+		if (langclient.installed(vscode)) {
+			return [
+				{
+					...launchConfiguration("${workspaceFolder}/${command:dreammaker.getFilenameDmb}", "Debug in DreamDaemon"),
+					dme: "${workspaceFolder}/${command:dreammaker.getFilenameDme}",
+					preLaunchTask: "dm: build - ${command:dreammaker.getFilenameDme}",
+				},
+			];
+		}
 		const found = await findFiles(".dmb", folder);
 		const dmb = found.length > 0 ? found[0].fsPath : "${workspaceFolder}/${workspaceFolderBasename}.dmb";
 		return [launchConfiguration(dmb, "Debug in DreamDaemon")];
@@ -152,6 +168,14 @@ class ConfigurationProvider {
 				return undefined;
 			}
 			config = launchConfiguration(dmb.fsPath);
+		}
+		// Use the language client's environment when no world is specified.
+		if (config.request === "launch" && !config.dmb && !config.dme) {
+			const current = await langclient.environment(vscode, folder);
+			if (current) {
+				config.dmb = current.dmb;
+				config.dme = current.dme;
+			}
 		}
 		if (config.request === "attach" && !config.processId) {
 			config.processId = await pickWorld(this.context);

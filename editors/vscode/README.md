@@ -14,6 +14,15 @@ Build your world, then press F5 or use **auxtools: Debug in DreamDaemon**.
 The extension runs the `.dmb` in DreamDaemon and asks you to select a world
 when needed.
 
+With the [DM language client](https://github.com/SpaceManiac/vscode-dm-langclient),
+F5 and **Debug in DreamDaemon** use its selected environment. Launch
+configurations use it too when `dmb` and `dme` are omitted.
+
+**Add Configuration...** uses the language client's full commands:
+`${command:dreammaker.getFilenameDmb}` and
+`${command:dreammaker.getFilenameDme}`, prefixed with `${workspaceFolder}/`.
+It also sets the language client's build task as `preLaunchTask`.
+
 **Run Without Debugging** (Ctrl+F5) disables breakpoints and stepping while keeping
 hot reload enabled. You can also set `"noDebug": true` in a launch configuration.
 
