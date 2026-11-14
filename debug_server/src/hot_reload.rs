@@ -37,9 +37,8 @@ use crate::{
 #[derive(Default)]
 pub struct Prepared {
 	new_vars: Vec<PreparedNewVar>,
-	/// New globals indexed by name; BYOND's original global list excludes them
-	/// (see `added_global`).
-	new_globals: Vec<(String, u32)>,
+	/// New globals: name, var id and declaration flags
+	new_globals: Vec<(String, u32, u32)>,
 	removed_procs: Vec<PreparedRemoval>,
 	new_procs: Vec<PreparedNewProc>,
 	init_procs: Vec<PreparedInitProc>,
@@ -639,7 +638,15 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		.globals
 		.iter()
 		.filter(|((scope, _), _)| scope.is_empty())
-		.map(|((_, name), id)| (String::from_utf8_lossy(name).into_owned(), *id))
+		.map(|((_, name), id)| {
+			let name = String::from_utf8_lossy(name).into_owned();
+			let flags = request
+				.new_vars
+				.iter()
+				.find(|new| new.type_path.is_empty() && new.var == name)
+				.map_or(0, |new| new.flags);
+			(name, *id, flags)
+		})
 		.collect();
 	prepared.in_lists = added.in_lists;
 	let first_instance = added.instances.existing.as_ref().map_or(0, Vec::len) as u32;
@@ -1838,13 +1845,20 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 		};
 		got.insert(new.id, id);
 	}
-	// Register new globals by their actual IDs for expression lookup.
-	// Existing globals retain their IDs.
-	let globals = prepared
+	// Register globals under their allocated IDs for global.vars and
+	// evaluation. Preserve IDs of existing globals.
+	let globals: Vec<(String, u32, u32)> = prepared
 		.new_globals
 		.iter()
-		.filter_map(|(name, id)| Some((name.clone(), got.get(id).copied().unwrap_or(Some(*id))?)));
-	ADDED_GLOBALS.lock().unwrap().extend(globals);
+		.filter_map(|(name, id, flags)| Some((name.clone(), got.get(id).copied().unwrap_or(Some(*id))?, *flags)))
+		.collect();
+	if !globals.is_empty() {
+		let pairs: Vec<(u32, u32)> = globals.iter().map(|&(_, id, flags)| (id, flags)).collect();
+		if let Err(e) = runtime_tables::add_global_vars(&pairs) {
+			warnings.push(format!("the new global vars are missing from global.vars: {}", e));
+		}
+	}
+	ADDED_GLOBALS.lock().unwrap().extend(globals.into_iter().map(|(name, id, _)| (name, id)));
 
 	let procs_before = runtime_tables::proc_count();
 
@@ -2178,8 +2192,7 @@ pub fn code_generation() -> u32 {
 /// their var ids
 static ADDED_GLOBALS: Mutex<BTreeMap<String, u32>> = Mutex::new(BTreeMap::new());
 
-/// Look up globals added by reload. They are absent from `global.vars`,
-/// which BYOND constructs at load time, so expressions use their IDs.
+/// Look up a newly added global's var ID for expression evaluation.
 pub fn added_global(name: &str) -> Option<u32> {
 	ADDED_GLOBALS.lock().unwrap().get(name).copied()
 }

@@ -182,7 +182,11 @@ struct Functions {
 
 	/// Global slot for each variable ID: global/static values and declared
 	/// variable defaults. New locals start with their ID's slot value.
-	global_values: *const *const crate::raw_types::values::Value
+	global_values: *const *const crate::raw_types::values::Value,
+	/// Misc entry of (var ID, flags) pairs, sorted by name string ID.
+	/// `global.vars` enumerates it and binary-searches it for name lookups.
+	/// Reloads can proceed without it, but new globals will be absent there.
+	global_vars: Result<*mut u32, String>
 }
 
 #[derive(Clone, Copy)]
@@ -266,6 +270,19 @@ mod recipes {
 		),
 		hops: &[],
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
+	};
+
+	// Loader store of the sorted, interned global (var ID, flags) list.
+	// The destination address is operand 0.
+	pub const GLOBAL_VARS: Recipe = Recipe {
+		name: "global_vars",
+		versions: CHECKED,
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"0F B7 07 50 53 E8 ?? ?? ?? ?? 53 A3 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? FF 35"
+		),
+		hops: &[],
+		extract: Extract::AbsMem(OperandSelect::NthAbsMem(0))
 	};
 
 	pub const ALLOC_SHARED: Recipe = Recipe {
@@ -493,7 +510,8 @@ fn resolve() -> Result<Functions, String> {
 			mobs: find(&MOBS)? as *const *mut MobType,
 			// The code holds the map's address
 			world_name_map: (find(&WORLD_NAME_MAP)? as *const *mut ProcNameMap).read_unaligned(),
-			global_values: find(&GLOBAL_VALUES)? as *const *const crate::raw_types::values::Value
+			global_values: find(&GLOBAL_VALUES)? as *const *const crate::raw_types::values::Value,
+			global_vars: find(&GLOBAL_VARS).map(|address| address as *mut u32)
 		})
 	}
 }
@@ -563,6 +581,19 @@ mod recipes {
 		),
 		hops: &[],
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
+	};
+
+	// Loader store of the sorted, interned global (var ID, flags) list.
+	// The destination address is operand 0.
+	pub const GLOBAL_VARS: Recipe = Recipe {
+		name: "global_vars",
+		versions: CHECKED,
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"66 D1 EA 0F B7 D2 E8 ?? ?? ?? ?? 59 58 0F B7 07 50 53 E8 ?? ?? ?? ?? 89 C7 89 1C 24 A3 ?? ?? ?? ??"
+		),
+		hops: &[],
+		extract: Extract::AbsMem(OperandSelect::NthAbsMem(0))
 	};
 
 	pub const ALLOC_SHARED: Recipe = Recipe {
@@ -788,6 +819,16 @@ mod recipes {
 		hops: &[],
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(3))
 	};
+	pub const GLOBAL_VARS_EARLY: Recipe = Recipe {
+		name: "global_vars",
+		versions: EARLY,
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"66 D1 E8 0F B7 C0 89 44 24 04 E8 ?? ?? ?? ?? 0F B7 06 89 3C 24 89 44 24 04 E8 ?? ?? ?? ?? 89 3C 24 A3 ?? ?? ?? ??"
+		),
+		hops: &[],
+		extract: Extract::AbsMem(OperandSelect::NthAbsMem(0))
+	};
 	pub const IN_LIST_COUNT_EARLY: Recipe = Recipe {
 		name: "in_list_count",
 		versions: EARLY,
@@ -904,7 +945,8 @@ fn resolve() -> Result<Functions, String> {
 			mobs: crate::find_recipe_of(&[MOBS, MOBS_EARLY])? as *const *mut MobType,
 			// The code holds the map's address
 			world_name_map: (crate::find_recipe_of(&[WORLD_NAME_MAP, WORLD_NAME_MAP_EARLY])? as *const *mut ProcNameMap).read_unaligned(),
-			global_values: crate::find_recipe_of(&[GLOBAL_VALUES, GLOBAL_VALUES_EARLY])? as *const *const crate::raw_types::values::Value
+			global_values: crate::find_recipe_of(&[GLOBAL_VALUES, GLOBAL_VALUES_EARLY])? as *const *const crate::raw_types::values::Value,
+			global_vars: crate::find_recipe_of(&[GLOBAL_VARS, GLOBAL_VARS_EARLY]).map(|address| address as *mut u32)
 		})
 	}
 }
@@ -1311,7 +1353,7 @@ pub fn set_global_value(var_id: u32, value: crate::Value) -> Result<(), String> 
 	let functions = functions()?;
 	unsafe {
 		if var_id >= variable_count() {
-			return Err(format!("there's no var id {}", var_id));
+			return Err(format!("var ID {} does not exist", var_id));
 		}
 		let slot = (*functions.global_values as *mut crate::raw_types::values::Value).add(var_id as usize);
 		drop(crate::Value::from_raw_owned(*slot));
@@ -1327,7 +1369,7 @@ pub fn set_global_words(var_id: u32, tag: u8, data: u32) -> Result<(), String> {
 	let functions = functions()?;
 	unsafe {
 		if var_id >= variable_count() {
-			return Err(format!("there's no var id {}", var_id));
+			return Err(format!("var ID {} does not exist", var_id));
 		}
 		let slot = (*functions.global_values as *mut [u32; 2]).add(var_id as usize);
 		drop(crate::Value::from_raw_owned(*(slot as *const crate::raw_types::values::Value)));
@@ -1341,10 +1383,38 @@ pub fn global_value(var_id: u32) -> Result<crate::raw_types::values::Value, Stri
 	let functions = functions()?;
 	unsafe {
 		if var_id >= variable_count() {
-			return Err(format!("there's no var id {}", var_id));
+			return Err(format!("var ID {} does not exist", var_id));
 		}
 		Ok(*(*functions.global_values).add(var_id as usize))
 	}
+}
+
+/// Add globals to `global.vars`, sorted by name string ID.
+/// Leave existing (var ID, flags) pairs unchanged.
+pub fn add_global_vars(vars: &[(u32, u32)]) -> Result<(), String> {
+	let global_vars = functions()?.global_vars.clone()?;
+	let current = unsafe { *global_vars };
+	let mut words = misc_words(current).ok_or_else(|| format!("global-var misc entry {} is missing", current))?;
+	let name = |var_id: u32| variable_name(var_id).ok_or_else(|| format!("var ID {} does not exist", var_id));
+	for &(var_id, flags) in vars {
+		if words.chunks(2).any(|pair| pair[0] == var_id) {
+			continue;
+		}
+		let key = name(var_id)?;
+		let mut at = 0;
+		for pair in words.chunks(2) {
+			if name(pair[0])? > key {
+				break;
+			}
+			at += 2;
+		}
+		words.splice(at..at, [var_id, flags]);
+	}
+	let id = intern_misc(&words)?;
+	unsafe {
+		*global_vars = id;
+	}
+	Ok(())
 }
 
 /// How many var ids there are.

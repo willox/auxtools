@@ -743,6 +743,14 @@ fn main() {
 	assert_eq!(eval(&mut client, "(\"tail\" in old_dog.vars)"), "1");
 	println!("ok: new variables");
 
+	// global.vars lists the new global, and finds it by name
+	assert_eq!(eval(&mut client, "(\"flock_size\" in global.vars)"), "1");
+	assert_eq!(eval(&mut client, "global.vars[\"flock_size\"]"), "12");
+	assert_eq!(eval(&mut client, "global.vars[\"flock_size\"] = 13"), "13");
+	assert_eq!(eval(&mut client, "flock_size"), "13");
+	assert_eq!(eval(&mut client, "(\"herd\" in global.vars)"), "0");
+	println!("ok: new global in global.vars");
+
 	// The default of a var a reload added
 	let changes = source.edit("reload.dm", "\tvar/tail = 1\n", "\tvar/tail = 2\n");
 	reload(&mut watcher, &changes);

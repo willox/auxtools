@@ -2453,7 +2453,8 @@ impl Server {
 		let scope = dmasm::compiler::ExprScope {
 			has_src_var: &|name| src.as_ref().is_some_and(|src| has_var(src, name)),
 			has_src_proc: &|name| src.as_ref().is_some_and(|src| crate::assemble_env::AssembleEnv::has_proc(src, name)),
-			// One a hot reload added isn't on the world's list of them
+			// New globals can be absent from global.vars when its table is
+			// unavailable.
 			global: &|name| {
 				if has_var(&Value::GLOBAL, name) {
 					Some(dmasm::compiler::ExprGlobal::Listed)
@@ -2837,7 +2838,7 @@ impl Server {
 		let id = self.current.ok_or("no client")?;
 		match &self.reloader {
 			Some((holder, theirs)) if *holder != id && self.clients.contains_key(holder) => Err(format!(
-				"{} already hot reloads this world; two watchers would apply each change twice",
+				"{} already owns hot reload for this world; two watchers would apply each change twice",
 				theirs
 			)),
 			_ => {
@@ -2853,7 +2854,7 @@ impl Server {
 			if Some(*holder) != self.current && self.clients.contains_key(holder) {
 				let refused = HotReloadResult {
 					applied: false,
-					errors: vec![format!("{} already hot reloads this world", who)],
+					errors: vec![format!("{} already owns hot reload for this world", who)],
 					warnings: vec![],
 					skipped: vec![]
 				};
