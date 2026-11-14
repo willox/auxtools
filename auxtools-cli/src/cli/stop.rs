@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use auxtools_cli::{
 	local,
-	server_types::{Request, Response}
+	server_types::{Reconnected, Request, Response}
 };
 use serde_json::json;
 
@@ -145,6 +145,35 @@ pub fn stop(world: &mut World, args: &args::Stop) -> Result<()> {
 				pid
 			)
 		))
+	}
+}
+
+pub fn reconnect(world: &mut World, args: &args::Reconnect) -> Result<()> {
+	match world.request(Request::Reconnect)? {
+		Response::Reconnect(Ok(Reconnected::Clients(clients))) => {
+			done(
+				args.json,
+				json!({ "pid": world.pid, "reconnected": clients }),
+				format!(
+					"pid {}: asked {} {} to reconnect",
+					world.pid,
+					clients,
+					if clients == 1 { "client" } else { "clients" }
+				)
+			);
+			Ok(())
+		}
+		Response::Reconnect(Ok(Reconnected::Hosted)) => {
+			if !args.json {
+				eprintln!("Dream Seeker hosts the world: rebooting it instead.");
+			}
+			reboot(world, &args::Reboot {
+				timeout: args.timeout,
+				json: args.json
+			})
+		}
+		Response::Reconnect(Err(e)) => Err(format!("cannot reconnect the clients: {}.", e).into()),
+		other => Err(format!("unexpected response: {:?}", other).into())
 	}
 }
 

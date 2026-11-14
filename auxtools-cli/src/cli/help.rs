@@ -24,7 +24,7 @@ pub struct Page {
 
 /// The commands in the order and the groups the first page lists them in
 const GROUPS: &[(&str, &[&str])] = &[
-	("World management", &["launch", "list", "status", "stop", "reboot", "log"]),
+	("World management", &["launch", "list", "status", "stop", "reboot", "reconnect", "log"]),
 	("Inspection", &["stack", "vars", "eval", "proc", "disassemble"]),
 	("Execution", &["pause", "continue", "step-over", "step-in", "step-out", "wait", "trace"]),
 	("Integration", &["dap", "help", "version"])
@@ -159,6 +159,30 @@ Output:
 Exit codes:
   0  World rebooted and started running.
   1  Reboot request failed.
+  2  Reboot timed out.
+  3  World process exited instead of rebooting."
+	},
+	Page {
+		path: &["reconnect"],
+		brief: "Reconnect clients to load a changed skin",
+		summary: "Have the world's clients log in again, so they load its skin.",
+		usage: "auxtools [--pid PID] reconnect [--timeout SECONDS] [--json]",
+		arguments: "",
+		sections: "Behavior:
+  Hot reload gives a changed .dmf skin to clients when they log in; connected
+  clients keep the interface they have. This command asks each one to
+  reconnect, as Dream Seeker's .reconnect does. The world sees each client log
+  out and in again. A world Dream Seeker hosts is rebooted instead, since its
+  own window can't reconnect without restarting the world; the command then
+  returns when the new world starts running.
+
+Output:
+  JSON contains pid and either reconnected, the number of clients asked, or
+  rebooted.
+
+Exit codes:
+  0  Clients asked to reconnect, or the world rebooted and started running.
+  1  Request failed.
   2  Reboot timed out.
   3  World process exited instead of rebooting."
 	},
@@ -846,6 +870,7 @@ mod tests {
 			"status",
 			"stop",
 			"reboot",
+			"reconnect",
 			"log",
 			"stack",
 			"vars",

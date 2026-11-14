@@ -13,7 +13,7 @@ use auxtools::{
 	Proc, Value
 };
 
-use crate::server_types::{SkinReloaded, SkinRequest};
+use crate::server_types::{Reconnected, SkinReloaded, SkinRequest};
 
 /// The skin field holds this when the world has no skin
 const NO_SKIN: u32 = 0xFFFF;
@@ -198,4 +198,17 @@ pub fn state() -> Result<Option<(u32, String)>, String> {
 	let resource = unsafe { Value::new(ValueTag::Resource, ValueData { id }) };
 	let text = run("file2text(skin)", &[("skin", &resource)])?;
 	Ok(Some((id, text.as_string().map_err(|e| e.message)?)))
+}
+
+/// Reconnect clients unless Dream Seeker hosts the world. The host's
+/// .reconnect would restart from the .dmb outside the debugger.
+pub fn reconnect() -> Result<Reconnected, String> {
+	if hosted() {
+		return Ok(Reconnected::Hosted);
+	}
+	let count = run(
+		"var/n = 0\nfor(var/client/C)\n\tif(C.key)\n\t\twinset(C, null, \"command=.reconnect\")\n\t\tn++\nn\n",
+		&[]
+	)?;
+	count.as_number().map(|n| Reconnected::Clients(n as u32)).map_err(|e| e.message)
 }

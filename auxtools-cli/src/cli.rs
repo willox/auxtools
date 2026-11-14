@@ -404,6 +404,7 @@ impl World {
 			}
 			Command::Stop(args) => stop::stop(self, &args),
 			Command::Reboot(args) => stop::reboot(self, &args),
+			Command::Reconnect(args) => stop::reconnect(self, &args),
 			Command::Log(args) => log::log(self, &args),
 			Command::Stack(args) => {
 				self.json = output(args.json, None);

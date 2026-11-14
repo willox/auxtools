@@ -1,4 +1,4 @@
-//! Giving the world a changed skin
+//! Skin reloads and client reconnects.
 
 use super::*;
 
@@ -41,10 +41,10 @@ impl Adapter {
 		let mut notes = vec![];
 		if reloaded.clients > 0 {
 			notes.push(if reloaded.hosted {
-				"Dream Seeker's own window keeps the old interface until the world reboots".to_owned()
+				"Reboot to load the new skin in Dream Seeker's host window; auxtools reconnect does this".to_owned()
 			} else {
 				format!(
-					"{} the old interface until {} or the world reboots",
+					"{} the old interface until {}; run auxtools reconnect to load the new skin",
 					if reloaded.clients == 1 {
 						"1 connected client keeps".to_owned()
 					} else {
@@ -71,5 +71,20 @@ impl Adapter {
 			hosted: reloaded.hosted
 		});
 		true
+	}
+
+	/// Reconnect clients to load the skin. Reboot Dream Seeker-hosted worlds.
+	pub(super) fn reconnect_clients(&mut self) -> Handled {
+		match self.request(&AuxRequest::Reconnect)? {
+			AuxResponse::Reconnect(Ok(aux::Reconnected::Clients(clients))) => Ok(serde_json::json!({ "reconnected": clients })),
+			AuxResponse::Reconnect(Ok(aux::Reconnected::Hosted)) => {
+				self.out.console("Rebooting the Dream Seeker-hosted world to load the update");
+				// Reboot closes the connection without a response.
+				self.debuggee()?.eval_unanswered("world.Reboot()".to_owned())?;
+				Ok(serde_json::json!({ "rebooted": true }))
+			}
+			AuxResponse::Reconnect(Err(e)) => Err(e),
+			other => Err(unexpected(other))
+		}
 	}
 }

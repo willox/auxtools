@@ -40,6 +40,7 @@ pub enum Command {
 	Status(Status),
 	Stop(Stop),
 	Reboot(Reboot),
+	Reconnect(Reconnect),
 	Log(Log),
 	Stack(Stack),
 	Vars(Vars),
@@ -67,6 +68,7 @@ impl Command {
 			Self::Status(_) => "status",
 			Self::Stop(_) => "stop",
 			Self::Reboot(_) => "reboot",
+			Self::Reconnect(_) => "reconnect",
 			Self::Log(_) => "log",
 			Self::Stack(_) => "stack",
 			Self::Vars(_) => "vars",
@@ -178,6 +180,19 @@ pub struct Stop {
 #[derive(Args)]
 pub struct Reboot {
 	#[arg(long, value_name = "SECONDS", value_parser = seconds, help = "Set the reboot deadline. [default: 60]")]
+	pub timeout: Option<Duration>,
+	#[arg(long, help = JSON)]
+	pub json: bool
+}
+
+#[derive(Args)]
+pub struct Reconnect {
+	#[arg(
+		long,
+		value_name = "SECONDS",
+		value_parser = seconds,
+		help = "Set the reboot deadline for Dream Seeker-hosted worlds. [default: 60]"
+	)]
 	pub timeout: Option<Duration>,
 	#[arg(long, help = JSON)]
 	pub json: bool

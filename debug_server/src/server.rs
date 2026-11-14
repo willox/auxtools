@@ -3098,6 +3098,10 @@ impl Server {
 				};
 				self.send_or_disconnect(Response::Skin(result));
 			}
+			Request::Reconnect => {
+				let reconnected = self.evaluating(crate::skin::reconnect);
+				self.send_or_disconnect(Response::Reconnect(reconnected));
+			}
 
 			Request::Status => {
 				let paused = self.paused.clone();

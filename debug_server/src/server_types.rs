@@ -236,7 +236,11 @@ pub enum Request {
 	},
 	/// Set the login skin from a `.dmf`. Defer until `world/New` if the world
 	/// is still loading. Respond with `Response::Skin`.
-	Skin(SkinRequest)
+	Skin(SkinRequest),
+	/// Request client reconnects to load the skin. Leave Dream Seeker-hosted
+	/// worlds unchanged: reconnecting the host would restart the world.
+	/// Respond with `Response::Reconnect`.
+	Reconnect
 }
 
 /// A `#define` of the world's code, as its preprocessor has it
@@ -386,6 +390,7 @@ pub enum Response {
 	/// owner.
 	Reloader(Result<(), String>),
 	Skin(Result<SkinReloaded, String>),
+	Reconnect(Result<Reconnected, String>),
 	/// Permanent initialization failure, sent on connection instead of a
 	/// response, followed by `Disconnect`. The world continues without
 	/// the debugger for the lifetime of the process.
@@ -407,6 +412,14 @@ pub struct SkinReloaded {
 	pub clients: u32,
 	/// Whether Dream Seeker hosts the world
 	pub hosted: bool
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum Reconnected {
+	/// Number of clients asked to reconnect.
+	Clients(u32),
+	/// Dream Seeker hosts this world; no reconnect was requested.
+	Hosted
 }
 
 /// Journal entry retained across reboots for the process lifetime.

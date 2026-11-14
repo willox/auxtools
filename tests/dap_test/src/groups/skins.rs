@@ -64,6 +64,10 @@ pub fn run() {
 	world.wait_output("'new.png': new skin resources; rebuild to display it");
 	ok("new skin image warnings");
 
+	let reconnected = world.request("auxtoolsReconnect", json!({}));
+	assert_eq!(reconnected, json!({ "reconnected": 0 }));
+	ok("reconnect skips unlogged connections");
+
 	world.run("reboot");
 	world.wait_count("dap: world/New", 2);
 	world.wait_output("Hot reload: skin skin.dmf restored after reboot");

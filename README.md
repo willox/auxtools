@@ -51,7 +51,7 @@ Existing calls finish on their original bytecode. Existing instances retain thei
 
 After reboot, reloads are restored before world code runs. Reloads introducing resources absent from the build wait until `world/New`, so global initializers and map atoms run the built code.
 
-Saving the `.dmf` skin updates the interface sent at login. Connected clients retain theirs until reconnect or reboot.
+Saving the `.dmf` skin updates the interface sent at login. Connected clients need to reconnect; `auxtools reconnect` requests this, or reboots Dream Seeker-hosted worlds.
 
 Proc-body edits can use a single-file parse. Other edits trigger a full project parse. See the [extension documentation](editors/vscode/README.md#hot-reload-experimental) for reload limits and the [hot reload tests](tests/hot_reload_test) for supported cases.
 

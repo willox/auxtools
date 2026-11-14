@@ -235,8 +235,10 @@ that do not report this state use on-disk line numbers for new breakpoints.
 ### Skins
 
 Saving the last `.dmf` included by the `.dme` updates the login skin and
-preserves it after reboot. Connected players need to reconnect or reboot to load
-it. New image references absent from the build require a rebuild.
+preserves it after reboot. Connected players must reconnect to load it. Use the
+reload notification or **auxtools: Reconnect players to load the skin**. Dream
+Seeker-hosted worlds reboot instead because the host cannot reconnect
+independently. New image references absent from the build require a rebuild.
 
 ## Attach to a running world
 
