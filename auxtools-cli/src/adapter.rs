@@ -64,6 +64,7 @@ const FUNCTION_BREAKPOINTS: &str = "<functions>";
 const STARTING: &str = "starting";
 const READING: &str = "reading";
 const RESTARTING: &str = "restarting";
+const RELOADING: &str = "reloading";
 /// Response to requests when debugger initialization failed.
 const UNAVAILABLE: &str = "debugger initialization failed";
 /// Retry interval while waiting for the debug server to listen.
@@ -378,6 +379,8 @@ pub struct Adapter {
 	rebooting: bool,
 	/// DreamSeeker processes opened for this world.
 	joined: join::Joined,
+	/// Last hot reload state reported to the client.
+	reload_status: status::ReloadStatus,
 
 	/// Parse options retained until the first connection.
 	code_settings: Option<CodeSettings>,
@@ -502,6 +505,7 @@ pub fn serve(out: Output, inputs: mpsc::Sender<Input>, receiver: &mpsc::Receiver
 		relaunching: None,
 		rebooting: false,
 		joined: join::Joined::default(),
+		reload_status: status::ReloadStatus::default(),
 		code_settings: None,
 		code: None,
 		code_worker: 0,
@@ -1103,6 +1107,7 @@ impl Adapter {
 		match self.request(&AuxRequest::Reloader { who }) {
 			Ok(AuxResponse::Reloader(Err(why))) => {
 				self.out.console(format!("Hot reload disabled: {}", why));
+				self.reload_state("off", Some(why));
 				false
 			}
 			_ => true
@@ -1114,6 +1119,8 @@ impl Adapter {
 		self.code = None;
 		self.code_worker += 1;
 		self.progress_end(READING);
+		self.progress_end(RELOADING);
+		self.forget_refusals();
 	}
 
 	/// Resolve and parse the project source for hot reload.
@@ -1133,6 +1140,7 @@ impl Adapter {
 		}
 		let Some(dme) = dme.filter(|dme| dme.is_file()) else {
 			self.out.console("Hot reload disabled: project .dme not found");
+			self.reload_state("off", Some("project .dme not found".to_owned()));
 			self.code_read = true;
 			return;
 		};
@@ -1145,7 +1153,8 @@ impl Adapter {
 			defines: settings.defines.iter().map(|define| code::parse_define(define)).collect(),
 			hot_reload: settings.hot_reload
 		};
-		self.progress_start(READING, "Parsing project source".to_owned());
+		self.progress_start(READING, "Reading source for hot reload".to_owned());
+		self.reload_state("reading", None);
 		self.code_worker += 1;
 		self.code = Some(code::start(options, self.out.clone(), self.inputs.clone(), self.code_worker));
 	}
@@ -1168,6 +1177,7 @@ impl Adapter {
 			}
 			code::Event::Failed(e) => {
 				self.out.console(format!("Hot reload disabled: could not parse source: {}", e));
+				self.reload_state("off", Some(format!("could not parse source: {}", e)));
 				self.code_read = true;
 				self.code = None;
 				self.say_ready();
@@ -1184,8 +1194,12 @@ impl Adapter {
 			}
 			code::Event::Watching => {
 				self.watching = true;
+				self.reload_state("active", None);
 				self.say_ready();
 			}
+			code::Event::Reloading => self.reloading(),
+			code::Event::Looked => self.looked(),
+			code::Event::Refusals(refusals) => self.outstanding(refusals),
 			code::Event::Reload {
 				request,
 				summary,
@@ -1211,8 +1225,14 @@ impl Adapter {
 			code::Event::NotReloaded { refused, warnings, .. } if !refused.is_empty() => self.refused(refused, warnings),
 			code::Event::NotReloaded {
 				summary, errors, warnings, ..
-			} => self.journal_reload(false, summary, errors, warnings),
-			code::Event::NothingChanged { warnings } => self.journal_reload(true, "no runtime changes".to_owned(), vec![], warnings),
+			} => {
+				self.reload_state("failed", Some(summary.clone()));
+				self.journal_reload(false, summary, errors, warnings);
+			}
+			code::Event::NothingChanged { warnings } => {
+				self.reload_state("reloaded", Some("no changes to the running code".to_owned()));
+				self.journal_reload(true, "no runtime changes".to_owned(), vec![], warnings);
+			}
 			code::Event::Macros(macros) => {
 				self.macros = Some(macros);
 				self.give_macros();
@@ -1225,12 +1245,20 @@ impl Adapter {
 				world
 			} => {
 				let applied = self.debuggee.as_ref().is_some_and(|d| d.generation == world) && self.reload_skin(request, &file, &images, restored);
+				match applied {
+					true => self.reload_state("reloaded", Some(format!("skin {}", file.display()))),
+					false => self.reload_state("failed", Some(format!("skin {}", file.display())))
+				}
 				if let Some(code) = &self.code {
 					let _ = code.send(code::Command::Reloaded(applied));
 				}
 			}
 			code::Event::Script { request, restored, world } => {
 				let applied = self.debuggee.as_ref().is_some_and(|d| d.generation == world) && self.reload_script(request, restored);
+				match applied {
+					true => self.reload_state("reloaded", Some("client script".to_owned())),
+					false => self.reload_state("failed", Some("client script".to_owned()))
+				}
 				if let Some(code) = &self.code {
 					let _ = code.send(code::Command::Reloaded(applied));
 				}
@@ -1255,12 +1283,14 @@ impl Adapter {
 				let why = unexpected(other);
 				self.notes(&notes);
 				self.out.console(format!("Hot reload failed: {}", why));
+				self.reload_state("failed", Some(why.clone()));
 				self.journal_reload(false, "reload failed".to_owned(), vec![why], notes);
 				return false;
 			}
 			Err(e) => {
 				self.notes(&notes);
 				self.out.console(format!("Hot reload failed: {}", e));
+				self.reload_state("failed", Some(e.clone()));
 				self.journal_reload(false, "reload failed".to_owned(), vec![e], notes);
 				return false;
 			}
@@ -1303,8 +1333,10 @@ impl Adapter {
 		let took = self.reload_started.take().map_or(0, |started| started.elapsed().as_millis());
 		if result.applied {
 			self.out.console(format!("Hot reload: {} in {} ms", summary, took));
+			self.reload_state("reloaded", Some(summary.clone()));
 		} else {
 			self.out.console("Hot reload failed:");
+			self.reload_state("failed", Some(result.errors.first().cloned().unwrap_or_default()));
 		}
 		for e in &result.errors {
 			self.out.console(format!("    {}", e));

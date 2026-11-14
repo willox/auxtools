@@ -380,6 +380,150 @@ async function worldStarted(event) {
 	}
 }
 
+// Status bar labels and tooltips by reload state.
+const STATES = {
+	reading: { text: "$(sync~spin) Reading source", tooltip: "Reading source for hot reload." },
+	active: { text: "$(check) Hot reload", tooltip: "Save files to reload supported changes." },
+	reloading: { text: "$(sync~spin) Reloading", tooltip: "Applying saved changes." },
+	reloaded: { text: "$(check) Hot reload", tooltip: "Last reload: " },
+	refused: {
+		text: "$(warning) Rebuild needed",
+		tooltip: "Rebuild required. See the Problems panel, then rebuild and restart.",
+		background: "statusBarItem.warningBackground",
+	},
+	failed: { text: "$(error) Hot reload failed", tooltip: "The last hot reload failed: ", background: "statusBarItem.errorBackground" },
+	off: { text: "$(circle-slash) Hot reload off", tooltip: "Hot reload is off: " },
+};
+
+// Track reload state per session. Show the active session in the status
+// bar and refused changes in the Problems panel.
+class ReloadStatus {
+	constructor(context) {
+		this.sessions = new Map();
+		this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
+		this.item.command = "auxtools.menu";
+		this.problems = vscode.languages.createDiagnosticCollection("auxtools");
+		context.subscriptions.push(
+			this.item,
+			this.problems,
+			vscode.debug.onDidStartDebugSession((session) => {
+				if (session.type === DEBUG_TYPE) {
+					this.sessions.set(session.id, {});
+					this.show();
+				}
+			}),
+			vscode.debug.onDidTerminateDebugSession((session) => {
+				if (this.sessions.delete(session.id)) {
+					this.problems.clear();
+					this.show();
+				}
+			}),
+			vscode.debug.onDidChangeActiveDebugSession(() => this.show())
+		);
+	}
+
+	// Update the session's reload state and its outstanding refusals.
+	changed(event) {
+		const { state, summary, problems } = event.body;
+		const known = this.sessions.get(event.session.id) || {};
+		this.sessions.set(event.session.id, { state, summary, said: known.said, shown: known.shown });
+		this.refused(event.session, problems || []);
+		this.show();
+	}
+
+	// Show outstanding refusals in Problems, and notify once per distinct set.
+	refused(session, problems) {
+		const known = this.sessions.get(session.id);
+		if (!problems.length) {
+			// Leave other sessions' entries alone.
+			if (known.shown) {
+				this.problems.clear();
+			}
+			known.shown = false;
+			known.said = undefined;
+			return;
+		}
+		this.problems.clear();
+		known.shown = true;
+		const byFile = new Map();
+		for (const problem of problems) {
+			if (!problem.file) {
+				continue;
+			}
+			const line = Math.max((problem.line || 1) - 1, 0);
+			const diagnostic = new vscode.Diagnostic(
+				new vscode.Range(line, 0, line, 1000),
+				`${problem.message}. Rebuild required.`,
+				vscode.DiagnosticSeverity.Warning
+			);
+			diagnostic.source = "hot reload";
+			const uri = vscode.Uri.file(problem.file);
+			const entry = byFile.get(uri.toString()) || [uri, []];
+			entry[1].push(diagnostic);
+			byFile.set(uri.toString(), entry);
+		}
+		for (const [uri, diagnostics] of byFile.values()) {
+			this.problems.set(uri, diagnostics);
+		}
+
+		const said = problems.map((problem) => problem.message).join("\n");
+		if (!notifies("rebuild") || known.said === said) {
+			return;
+		}
+		known.said = said;
+		const more = problems.length > 1 ? ` (and ${problems.length - 1} more)` : "";
+		vscode.window
+			.showWarningMessage(`Rebuild required: ${problems[0].message}${more}. Restart after rebuilding.`, "Restart", "Show Problems")
+			.then((action) => {
+				if (action === "Restart") {
+					vscode.commands.executeCommand("workbench.action.debug.restart");
+				} else if (action === "Show Problems") {
+					vscode.commands.executeCommand("workbench.actions.view.problems");
+				}
+			});
+	}
+
+	show() {
+		const session = vscode.debug.activeDebugSession;
+		const known = session && this.sessions.get(session.id);
+		if (!known) {
+			this.item.hide();
+			return;
+		}
+		const shown = STATES[known.state] || { text: "$(debug-alt) auxtools", tooltip: "" };
+		this.item.text = shown.text;
+		this.item.tooltip = `${shown.tooltip}${shown.tooltip.endsWith(": ") ? known.summary || "" : ""}\nClick for world actions.`.trim();
+		this.item.backgroundColor = shown.background ? new vscode.ThemeColor(shown.background) : undefined;
+		this.item.show();
+	}
+
+	state(session) {
+		return (session && this.sessions.get(session.id)) || {};
+	}
+}
+
+// World actions for the active session.
+async function worldMenu(status) {
+	const session = vscode.debug.activeDebugSession;
+	if (!session || session.type !== DEBUG_TYPE) {
+		return;
+	}
+	const items = [
+		{ label: "$(person-add) Join with DreamSeeker", run: () => join(session) },
+		{ label: "$(plug) Reconnect players", run: () => reconnectClients(session) },
+		{ label: "$(debug-restart) Restart", detail: "Run preLaunchTask, then restart the world", run: () => vscode.commands.executeCommand("workbench.action.debug.restart") },
+		{ label: "$(refresh) Reboot world", run: () => reboot() },
+		{ label: "$(debug-stop) Stop", run: () => vscode.commands.executeCommand("workbench.action.debug.stop") },
+	];
+	if (status.state(session).state === "refused") {
+		items.unshift({ label: "$(warning) Show Problems", run: () => vscode.commands.executeCommand("workbench.actions.view.problems") });
+	}
+	const picked = await vscode.window.showQuickPick(items, { placeHolder: session.name });
+	if (picked) {
+		await picked.run();
+	}
+}
+
 // Offer reconnect after a skin reload.
 async function skinReloaded(event) {
 	const { file, clients, hosted } = event.body;
@@ -412,6 +556,7 @@ async function scriptReloaded(event) {
 
 function activate(context) {
 	const provider = new ConfigurationProvider(context);
+	const status = new ReloadStatus(context);
 	trackUnsavedFiles(context);
 	exposeLauncher(context);
 	context.subscriptions.push(
@@ -423,6 +568,7 @@ function activate(context) {
 		vscode.commands.registerCommand("auxtools.reconnectClients", () => reconnectClients()),
 		vscode.commands.registerCommand("auxtools.join", () => join()),
 		vscode.commands.registerCommand("auxtools.reboot", reboot),
+		vscode.commands.registerCommand("auxtools.menu", () => worldMenu(status)),
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration("auxtools.launcherPath") || event.affectsConfiguration("auxtools.addToTerminalPath")) {
 				exposeLauncher(context);
@@ -435,6 +581,8 @@ function activate(context) {
 				scriptReloaded(event);
 			} else if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsWorld") {
 				worldStarted(event);
+			} else if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsReload") {
+				status.changed(event);
 			}
 		}),
 		// For `${command:auxtools.pickWorld}` in attach configurations

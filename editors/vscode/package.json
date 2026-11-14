@@ -79,6 +79,11 @@
 				"command": "auxtools.reboot",
 				"title": "Reboot world",
 				"category": "auxtools"
+			},
+			{
+				"command": "auxtools.menu",
+				"title": "Show world actions",
+				"category": "auxtools"
 			}
 		],
 		"menus": {
@@ -97,6 +102,10 @@
 				},
 				{
 					"command": "auxtools.reboot",
+					"when": "debugType == auxtools"
+				},
+				{
+					"command": "auxtools.menu",
 					"when": "debugType == auxtools"
 				}
 			]
@@ -145,12 +154,17 @@
 						"join": {
 							"type": "boolean",
 							"description": "Offer to join when not joined automatically; offer the address if DreamSeeker is unavailable."
+						},
+						"rebuild": {
+							"type": "boolean",
+							"description": "Warn when hot reload cannot apply a change."
 						}
 					},
 					"additionalProperties": false,
 					"default": {
 						"reconnect": true,
-						"join": true
+						"join": true,
+						"rebuild": true
 					}
 				}
 			}

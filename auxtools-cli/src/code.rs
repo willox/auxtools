@@ -46,6 +46,13 @@ pub enum Event {
 	Ready,
 	/// The files are being watched: a change from now on is reloaded
 	Watching,
+	/// Changed files are being prepared for reload.
+	Reloading,
+	/// Reload processing finished, whether applied or not.
+	Looked,
+	/// Refused changes still missing from the world, with absolute paths.
+	/// Sent whenever the set changes.
+	Refusals(Vec<Refusal>),
 	/// Changes prepared for `world`, identified by `Command::Connected`.
 	/// The adapter replies with `Command::Reloaded`. `notes` become journal
 	/// warnings.
@@ -127,7 +134,8 @@ pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>
 				macros: RefCell::new(None),
 				resource_dirs: RefCell::new(vec![]),
 				reloaded_resources: RefCell::new(vec![]),
-				named_resources: RefCell::new(vec![])
+				named_resources: RefCell::new(vec![]),
+				refusals: RefCell::new(vec![])
 			};
 			code.run();
 		})
@@ -159,7 +167,9 @@ struct Code {
 	/// Resource IDs reported by the last reload.
 	reloaded_resources: RefCell<Vec<ReloadedResource>>,
 	/// Resource names referenced by the last reload's code.
-	named_resources: RefCell<Vec<String>>
+	named_resources: RefCell<Vec<String>>,
+	/// Refused changes still missing from the world, with absolute paths.
+	refusals: RefCell<Vec<Refusal>>
 }
 
 /// Track running source and pending disk changes.
@@ -314,10 +324,9 @@ impl Code {
 			changed.extend(more);
 		}
 
-		let mut shown: Vec<String> = changed.iter().map(|f| f.display().to_string()).collect();
-		shown.sort();
-		self.log(format!("changed: {}", shown.join(", ")));
-
+		if !self.send(Event::Reloading) {
+			return false;
+		}
 		watching.skin.take_edit(&mut changed);
 		// Resource files, then code, then the skin and the client script
 		let resource_files: Vec<PathBuf> = changed.iter().filter(|f| watching.resources.files.contains_key(*f)).cloned().collect();
@@ -330,7 +339,7 @@ impl Code {
 		if !changed.is_empty() && !self.reload_code(watching, changed) {
 			return false;
 		}
-		self.reload_skin(watching, false) && self.reload_script(watching, false)
+		self.reload_skin(watching, false) && self.reload_script(watching, false) && self.send(Event::Looked)
 	}
 
 	/// Reload the changed DM files. Return false on adapter disconnect.
@@ -346,7 +355,7 @@ impl Code {
 			match current.reload_file(&self.root, &file) {
 				Ok(reload) => {
 					watching.edited_since_built.insert(file);
-					return match self.reload(&reload.changes, current, vec![], false) {
+					return match self.reload(&reload.changes, current, vec![], false, &changed) {
 						None => false,
 						Some(true) => {
 							let current = match watching.applied.as_mut() {
@@ -382,14 +391,14 @@ impl Code {
 		let mut changes = diff(current, &new, Some(&changed));
 		refuse_hidden(current, &new, &mut changes);
 		changes.settings_as_built(&watching.built, &new);
-		watching.edited_since_built.extend(changed);
+		watching.edited_since_built.extend(changed.iter().cloned());
 
 		// A file the new parse includes for the first time
 		for file in files(&new, &self.options.dme) {
 			watching.files.add(&self.root, &file, self.parse_started.get());
 		}
 
-		match self.reload(&changes, watching.applied.as_ref().unwrap_or(&watching.built), vec![], false) {
+		match self.reload(&changes, watching.applied.as_ref().unwrap_or(&watching.built), vec![], false, &changed) {
 			None => false,
 			Some(true) => {
 				self.watch_named(watching);
@@ -433,6 +442,9 @@ impl Code {
 					};
 					watching.resources = resources;
 					watching.built = built;
+					if !self.rebuilt() {
+						return false;
+					}
 				}
 				Err(e) => self.log(format!("couldn't read the code: {}", e))
 			}
@@ -476,7 +488,7 @@ impl Code {
 		let mut changes = diff(&watching.built, &current, Some(&watching.edited_since_built));
 		refuse_hidden(&watching.built, &current, &mut changes);
 		restarted(&mut changes);
-		let Some(applied) = self.reload(&changes, &watching.built, vec![], true) else {
+		let Some(applied) = self.reload(&changes, &watching.built, vec![], true, &watching.edited_since_built) else {
 			return false;
 		};
 		if applied {
@@ -556,7 +568,8 @@ impl Code {
 			});
 		}
 		self.reloaded_resources.borrow_mut().clear();
-		match self.reload(&changes, current, resources, false) {
+		let files: HashSet<PathBuf> = changed.iter().map(|(path, _)| path.clone()).collect();
+		match self.reload(&changes, current, resources, false, &files) {
 			None => false,
 			Some(true) => {
 				let reloaded = self.reloaded_resources.take();
@@ -674,7 +687,16 @@ impl Code {
 	/// Apply `changes` from runtime snapshot `before` through the adapter.
 	/// Return `None` on disconnect. After reboot, install the replacement
 	/// global init proc before global initialization.
-	fn reload(&self, changes: &Changes, before: &Snapshot, resources: Vec<HotReloadResource>, restarted: bool) -> Option<bool> {
+	/// `changed` are the edited files whose changes these are: refusals
+	/// placed in them are replaced by this reload's result.
+	fn reload(
+		&self,
+		changes: &Changes,
+		before: &Snapshot,
+		resources: Vec<HotReloadResource>,
+		restarted: bool,
+		changed: &HashSet<PathBuf>
+	) -> Option<bool> {
 		if !changes.refused.is_empty() {
 			// Clients use absolute source paths.
 			let refused = changes
@@ -684,14 +706,14 @@ impl Code {
 					file: refusal.file.as_ref().map(|file| self.root.join(file).display().to_string()),
 					..refusal.clone()
 				})
-				.collect();
-			let refused = Event::NotReloaded {
+				.collect::<Vec<_>>();
+			let event = Event::NotReloaded {
 				summary: "rebuild required".to_owned(),
 				errors: vec![],
-				refused,
+				refused: refused.clone(),
 				warnings: changes.warnings.clone()
 			};
-			return self.send(refused).then_some(false);
+			return (self.send(event) && self.refused_by(changed, refused)).then_some(false);
 		}
 		let mut request = reload_request(changes);
 		if restarted {
@@ -709,11 +731,10 @@ impl Code {
 				self.out.console(format!("    note: {}", why));
 			}
 			self.log("no runtime changes");
-			return self
-				.send(Event::NothingChanged {
-					warnings: changes.warnings.clone()
-				})
-				.then_some(true);
+			let sent = self.send(Event::NothingChanged {
+				warnings: changes.warnings.clone()
+			});
+			return (sent && self.refused_by(changed, vec![])).then_some(true);
 		}
 
 		if !self.send(Event::Reload {
@@ -724,16 +745,57 @@ impl Code {
 		}) {
 			return None;
 		}
-		loop {
+		let applied = loop {
 			match self.commands.recv() {
-				Ok(Command::Reloaded(applied)) => return Some(applied),
+				Ok(Command::Reloaded(applied)) => break applied,
 				Ok(Command::Resources(reloaded)) => *self.reloaded_resources.borrow_mut() = reloaded,
 				// The adapter rejects reloads prepared before a reboot;
 				// `catch_up` will prepare them for the new world.
 				Ok(Command::Connected { world, .. }) => self.connected(world),
 				Err(_) => return None
 			}
+		};
+		if applied && !self.refused_by(changed, vec![]) {
+			return None;
 		}
+		Some(applied)
+	}
+
+	/// Update the outstanding refusals after a reload of `changed`: drop
+	/// those placed in its files (and, if it was applied, those placed
+	/// nowhere), add `refused`, and send the set if it changed. Return false
+	/// on disconnect.
+	fn refused_by(&self, changed: &HashSet<PathBuf>, refused: Vec<Refusal>) -> bool {
+		let before = self.outstanding();
+		{
+			let files: HashSet<String> = changed.iter().map(|file| self.root.join(file).display().to_string()).collect();
+			let applied = refused.is_empty();
+			let mut refusals = self.refusals.borrow_mut();
+			refusals.retain(|refusal| match &refusal.file {
+				Some(file) => !files.contains(file),
+				None => !applied
+			});
+			for refusal in refused {
+				if !refusals.contains(&refusal) {
+					refusals.push(refusal);
+				}
+			}
+		}
+		let now = self.outstanding();
+		now == before || self.send(Event::Refusals(now))
+	}
+
+	/// Forget all refusals: a rebuilt `.dmb` includes or replaces their
+	/// changes. Return false on disconnect.
+	fn rebuilt(&self) -> bool {
+		let had = !self.refusals.borrow().is_empty();
+		self.refusals.borrow_mut().clear();
+		(!had || self.send(Event::Refusals(vec![]))) && self.send(Event::Watching)
+	}
+
+	/// Refused changes still missing from the world.
+	fn outstanding(&self) -> Vec<Refusal> {
+		self.refusals.borrow().clone()
 	}
 
 	/// Update the skin if it differs from the world's. Return false on

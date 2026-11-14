@@ -29,6 +29,11 @@ impl WorldFiles {
 		WorldFiles { dme, names: None }
 	}
 
+	/// Project `.dme`, if known.
+	pub fn dme(&self) -> Option<&Path> {
+		self.dme.as_deref()
+	}
+
 	/// The `.dme`'s directory
 	fn root(&self) -> Option<&Path> {
 		self.dme.as_deref()?.parent()

@@ -1,6 +1,6 @@
 //! Debugging a world while its code is hot reloaded
 
-use std::{path::PathBuf, process::Command};
+use std::{path::PathBuf, process::Command, time::Duration};
 
 use serde_json::{json, Value};
 
@@ -66,6 +66,15 @@ fn reloads(output: &str) -> usize {
 		.lines()
 		.filter(|line| line.starts_with("Hot reload: ") && line.ends_with(" ms"))
 		.count()
+}
+
+/// Return the last reload state the launcher reported.
+fn last_reload_state(world: &mut World) -> Value {
+	let mut last = world.event("auxtoolsReload");
+	while let Some(next) = world.event_within("auxtoolsReload", Duration::from_millis(500)) {
+		last = next;
+	}
+	last["body"].clone()
 }
 
 /// Changes a file, and waits for the world to have the change
@@ -1079,8 +1088,12 @@ pub fn run() {
 
 	// An edit the world can't take: nothing changes, breakpoints included
 	world.break_on(&["leaf_2"]);
+	world.drop_events("auxtoolsReload");
 	world.marks.edit("stepping.dm", "\tvar/n = 1\n", "\tvar/n = 1\n\tvar/list/broken = (\n");
 	world.wait_output("Hot reload requires a rebuild");
+	let refused = last_reload_state(&mut world);
+	assert_eq!(refused["state"], "refused", "{}", refused);
+	assert!(!refused["problems"].as_array().unwrap().is_empty(), "{}", refused);
 	world.drop_events("breakpoint");
 	world.run("middle");
 	world.stop_on("breakpoint", "/leaf", "leaf_2");
@@ -1088,8 +1101,34 @@ pub fn run() {
 	world.resume_through("middle");
 	world.marks.edit("stepping.dm", "\tvar/list/broken = (\n", "");
 	world.wait_output("Hot reload: no runtime changes");
+	let fixed = last_reload_state(&mut world);
+	assert_eq!((&fixed["state"], &fixed["problems"]), (&json!("reloaded"), &json!([])), "{}", fixed);
 	world.drop_events("breakpoint");
 	ok("rejected reload preserves code and breakpoints");
+
+	// A refusal outlasts reloads of other files, until its own file reloads.
+	let before = world.count("Hot reload requires a rebuild");
+	world.drop_events("auxtoolsReload");
+	world
+		.marks
+		.edit("stepping.dm", "/mob/player\n", "/mob/refused\n\tckey = \"someone\"\n\n/mob/player\n");
+	world.wait_count("Hot reload requires a rebuild", before + 1);
+	let refused = last_reload_state(&mut world);
+	assert_eq!(refused["state"], "refused", "{}", refused);
+	// A proc body edit reloads only its file.
+	edit(&mut world, "errors.dm", "return fail_null() + 1", "return fail_null() + 2");
+	let still = last_reload_state(&mut world);
+	assert_eq!(
+		(&still["state"], &still["problems"]),
+		(&refused["state"], &refused["problems"]),
+		"{}",
+		still
+	);
+	world.marks.edit("stepping.dm", "/mob/refused\n\tckey = \"someone\"\n\n", "");
+	let fixed = last_reload_state(&mut world);
+	assert_eq!(fixed["problems"], json!([]), "{}", fixed);
+	edit(&mut world, "errors.dm", "return fail_null() + 2", "return fail_null() + 1");
+	ok("refusal outlasts unrelated reloads");
 
 	// The next world is loaded from the .dmb, and gets the reloads again
 	world.break_on(&["leaf_2"]);

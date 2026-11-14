@@ -144,6 +144,9 @@ fn told_along_the_way() {
 	world.catch_runtimes(false);
 	world.configure();
 	world.wait_output("Hot reload: watching");
+	// The source worker prints that itself; the adapter reports `active` after
+	// handling the worker's earlier events, which end the parse's progress.
+	while world.event("auxtoolsReload")["body"]["state"] != "active" {}
 	let events = progress(&mut world);
 	for id in ["starting", "reading"] {
 		let (start, end) = (

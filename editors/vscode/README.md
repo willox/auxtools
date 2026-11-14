@@ -233,7 +233,14 @@ instruction, entering a callee if needed. **Step Out** returns to the caller.
 ## Hot reload (experimental)
 
 Saving a source file reloads supported changes, including during **Run Without
-Debugging**. The Debug Console reports results and changes requiring a rebuild.
+Debugging**. The status bar shows reload progress and results; click it for
+join, reconnect, restart, reboot and stop actions. The Debug Console reports
+each reload.
+
+Unsupported changes appear at their source lines in the Problems panel.
+The notification offers **Restart**, which runs `preLaunchTask` before
+restarting. The launcher does not build the world itself: configure a
+build task or rebuild manually.
 
 After reboot, reloads are restored before world code runs. Reloads introducing
 resources absent from the build wait until `world/New`, so map atoms run the
@@ -364,6 +371,7 @@ for attach sessions to avoid competing with the launching session's reloads.
 - `auxtools.notifications`: set any category to `false` to hide its notifications:
   - `reconnect`: reconnect players after a skin or script reload.
   - `join`: join offers when not joined automatically; copy the address if DreamSeeker is unavailable.
+  - `rebuild` says when hot reload can't apply a change.
 
 ## License
 
