@@ -647,6 +647,11 @@ impl Summary {
 				"vars"
 			),
 			(
+				"restored inherited defaults for",
+				named(changes.builtin_inherited.iter().map(|d| var(&d.types[0], &d.var)).collect()),
+				"vars"
+			),
+			(
 				"rebuilt the init procs of",
 				named(changes.init_procs.iter().map(|i| i.type_path.clone()).collect()),
 				"types"
@@ -783,7 +788,8 @@ pub fn reload_request(changes: &Changes) -> HotReloadRequest {
 				lines: m.lines.clone()
 			})
 			.collect(),
-		removed_vars: changes.warnings.iter().filter_map(|note| removed_var(note)).collect()
+		removed_vars: changes.warnings.iter().filter_map(|note| removed_var(note)).collect(),
+		builtin_inherited: changes.builtin_inherited.clone()
 	}
 }
 

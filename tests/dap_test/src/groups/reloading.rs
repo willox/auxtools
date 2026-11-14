@@ -69,6 +69,34 @@ fn reboot(world: &mut World, count: usize) {
 	});
 }
 
+/// Launch a separate world with hot reload and source watching.
+fn watched_world(name: &str) -> (World, PathBuf) {
+	let dir = copy_of_the_world(name);
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.catch_runtimes(false);
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	(world, dir)
+}
+
+/// Removing only a built-in override must still produce a reload.
+fn built_in_taken_away() {
+	let (mut world, dir) = watched_world("built_in_taken_away");
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_built()\n",
+		"/obj/layered\n\tlayer = 7\n\n/proc/icon_built()\n"
+	);
+	assert_eq!(world.eval_global("(new /obj/layered).layer"), "7");
+	// Keep source lines unchanged so the override is the only difference.
+	edit(&mut world, "main.dm", "\tlayer = 7\n", "\t// layer = 7\n");
+	assert_eq!(world.eval_global("(new /obj/layered).layer"), "3");
+	ok("built-in-only override removal");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Edits the client has no part in: an agent's, another editor's, a checkout
 fn behind_the_clients_back() {
 	let dir = copy_of_the_world("reloading");
@@ -368,6 +396,7 @@ fn starting_at_world_new() {
 
 pub fn run() {
 	saved_without_reloading();
+	built_in_taken_away();
 	behind_the_clients_back();
 	starting_at_world_new();
 

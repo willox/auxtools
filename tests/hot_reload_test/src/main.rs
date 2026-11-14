@@ -206,7 +206,8 @@ fn reload_request(changes: &Changes) -> Request {
 				lines: m.lines.clone()
 			})
 			.collect(),
-		removed_vars: vec![]
+		removed_vars: vec![],
+		builtin_inherited: changes.builtin_inherited.clone()
 	})
 }
 
@@ -1113,6 +1114,42 @@ fn main() {
 		"\"huge crate 255 0 3  32 neuter 0 1 \""
 	);
 	println!("ok: built-in variable defaults");
+
+	// Removing an override inherits the runtime parent's built-in default.
+	let changes = source.edit(
+		"reload.dm",
+		"\tname = \"box\"\n\tpixel_y = 3\n",
+		"\tname = \"box\"\n\tpixel_y = 3\n\tlayer = 7\n"
+	);
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /obj/crate/big_crate).layer"), "7");
+	let changes = source.edit("reload.dm", "\tpixel_y = 3\n\tlayer = 7\n", "");
+	assert_eq!(changes.builtin_inherited.len(), 2, "{:?}", changes.builtin_inherited);
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /obj/crate).layer"), "3");
+	assert_eq!(eval(&mut client, "(new /obj/crate/big_crate).layer"), "3");
+	assert_eq!(eval(&mut client, "(new /obj/crate/big_crate).pixel_y"), "0");
+	assert_eq!(eval(&mut client, "(new /obj/crate/fancy).pixel_y"), "0");
+	println!("ok: built-in override removal");
+
+	// Removing a built-in type's override needs a rebuild: parent defaults
+	// can differ (area layer 1, atom layer 2).
+	let changes = source.edit("reload.dm", "/proc/first_def()\n", "/area\n\tlayer = 9\n\n/proc/first_def()\n");
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /area).layer"), "9");
+	let refused = source.edit_refused("reload.dm", "/area\n\tlayer = 9\n\n", "");
+	assert!(
+		refused
+			.iter()
+			.any(|why| why.starts_with("/area: layer: cannot restore this built-in type's original default")),
+		"{:?}",
+		refused
+	);
+	// Restore agreement between runtime and source.
+	let changes = source.edit("reload.dm", "/proc/first_def()\n", "/area\n\tlayer = 9\n\n/proc/first_def()\n");
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /area).layer"), "9");
+	println!("ok: built-in type default reset rejection");
 
 	// A type's const: the code that uses it is compiled again
 	assert_eq!(eval(&mut client, "kept_limits.max_doubled()"), "6");

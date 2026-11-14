@@ -209,8 +209,10 @@ Proc, verb, world proc and global proc definitions can be inserted or removed
 between existing overrides.
 
 Changes requiring a rebuild include parent types; proc declaration changes,
-such as switching between proc and verb or adding `final`; and unsupported
-built-in defaults such as `ckey`.
+such as switching between proc and verb or adding `final`; unsupported
+built-ins such as `ckey`; and removing a built-in type's own override
+(such as `/mob/layer`). The running world no longer stores the original
+built-in default needed for that reset.
 
 Reloaded and evaluated code preserves DreamMaker's field caching: after
 `a.b.f()`, a later `a.b.x` in the same flow can use the old object even if

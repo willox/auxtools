@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Wire protocol version. Increment for changes incompatible with older
 /// clients or servers. Including the version in endpoint names prevents
 /// connections using incompatible message layouts.
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
 
 /// Shutdown notification sent before disconnecting clients; not used for
 /// reboot.
@@ -961,7 +961,9 @@ pub struct HotReloadRequest {
 	pub line_moves: Vec<HotReloadLines>,
 	/// Removed type vars; the world reports whether it retains each
 	/// declaration.
-	pub removed_vars: Vec<RemovedVar>
+	pub removed_vars: Vec<RemovedVar>,
+	/// Inherited built-in defaults, applied after `builtin_defaults`.
+	pub builtin_inherited: Vec<dmasm::reload::BuiltinInherited>
 }
 
 /// A type var declaration removed from source.
@@ -985,6 +987,7 @@ impl HotReloadRequest {
 			+ self.builtin_defaults.len()
 			+ self.init_procs.len()
 			+ self.line_moves.len()
+			+ self.builtin_inherited.len()
 	}
 
 	pub const fn is_empty(&self) -> bool {

@@ -23,7 +23,7 @@ use auxtools::{
 };
 use dmasm::{
 	assembler::AssembleEnv as _,
-	reload::{ConstValue, InList, NewType, NewVar, ProcSettings, Redeclared, RemovedProc},
+	reload::{BuiltinInherited, ConstValue, InList, NewType, NewVar, ProcSettings, Redeclared, RemovedProc},
 	Instruction, Node, Opcode
 };
 
@@ -32,6 +32,9 @@ use crate::{
 	instruction_hooking::{hook_instruction, hooked_offsets, original_bytecode, unhook_instruction},
 	server_types::{HotReloadInitProc, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, ProcRef, Reloaded, RemovedVar}
 };
+
+#[path = "reload_inherit.rs"]
+mod inherit;
 
 /// A reload, checked and assembled, ready to apply.
 #[derive(Default)]
@@ -62,7 +65,9 @@ pub struct Prepared {
 	/// Procs that return parameters' `in` lists, by the index each gets
 	in_lists: Vec<(u32, ProcEntryWords)>,
 	/// New prefab instances and init proc entries, in ID allocation order.
-	instances: Vec<(u32, runtime_tables::Instance, ProcEntryWords)>
+	instances: Vec<(u32, runtime_tables::Instance, ProcEntryWords)>,
+	/// Inherited built-in defaults as (type ID, var), parents first.
+	builtin_inherits: Vec<(u32, String)>
 }
 
 /// Variable to append: name string ID and initial global-slot value.
@@ -439,7 +444,8 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		builtin_defaults,
 		init_procs,
 		line_moves,
-		removed_vars
+		removed_vars,
+		builtin_inherited
 	} = request;
 	runtime_tables::available().map_err(|e| vec![format!("hot reloading isn't available on this build of BYOND: {}", e)])?;
 
@@ -611,6 +617,8 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 			Err(e) => errors.push(e)
 		}
 	}
+
+	inherit::prepare(builtin_inherited, &mut prepared, &mut errors);
 
 	// Computed initializers may use other additions in this reload.
 	for (id, name, init) in std::mem::take(&mut added.run_once) {
@@ -2012,6 +2020,7 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 			warnings.push(format!("couldn't set a built-in var: {}", e));
 		}
 	}
+	inherit::apply(&prepared.builtin_inherits, warnings);
 	for &type_id in &prepared.appearances {
 		let _ = runtime_tables::forget_type_appearance(type_id);
 	}
