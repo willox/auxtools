@@ -502,6 +502,19 @@ class ReloadStatus {
 	}
 }
 
+// Warn about edits that may be missing from the build.
+async function outdated(event) {
+	const { files } = event.body;
+	if (!files || !files.length || !notifies("outdated")) {
+		return;
+	}
+	const named = files.slice(0, 3).join(", ") + (files.length > 3 ? ` and ${files.length - 3} more` : "");
+	const message = `Files changed since the build: ${named}. Rebuild and restart to include any missing edits.`;
+	if ((await vscode.window.showWarningMessage(message, "Restart")) === "Restart") {
+		await vscode.commands.executeCommand("workbench.action.debug.restart");
+	}
+}
+
 // World actions for the active session.
 async function worldMenu(status) {
 	const session = vscode.debug.activeDebugSession;
@@ -583,6 +596,8 @@ function activate(context) {
 				worldStarted(event);
 			} else if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsReload") {
 				status.changed(event);
+			} else if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsOutdated") {
+				outdated(event);
 			}
 		}),
 		// For `${command:auxtools.pickWorld}` in attach configurations

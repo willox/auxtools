@@ -158,13 +158,18 @@
 						"rebuild": {
 							"type": "boolean",
 							"description": "Warn when hot reload cannot apply a change."
+						},
+						"outdated": {
+							"type": "boolean",
+							"description": "Warn about edits that may be missing from the build."
 						}
 					},
 					"additionalProperties": false,
 					"default": {
 						"reconnect": true,
 						"join": true,
-						"rebuild": true
+						"rebuild": true,
+						"outdated": true
 					}
 				}
 			}

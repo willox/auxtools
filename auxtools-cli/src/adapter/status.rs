@@ -1,4 +1,5 @@
-//! Client reload state and refused changes.
+//! Client events for reload state, refused changes and potentially unapplied
+//! edits.
 
 use dmasm::reload::Refusal;
 
@@ -25,6 +26,16 @@ struct Problem {
 	file: Option<String>,
 	line: Option<u32>,
 	message: String
+}
+
+/// Files newer than the build whose edits may be missing from the world.
+#[derive(serde::Serialize)]
+struct OutdatedEvent {
+	files: Vec<String>
+}
+
+impl Event for OutdatedEvent {
+	const EVENT: &'static str = "auxtoolsOutdated";
 }
 
 /// Current reload state, the last state before `reloading`, and refused
@@ -118,6 +129,17 @@ impl Adapter {
 			refused.iter().map(ToString::to_string).collect(),
 			warnings
 		);
+	}
+
+	/// Report files edited after the build.
+	pub(super) fn outdated(&mut self, files: Vec<String>) {
+		let mut named = files.iter().take(5).cloned().collect::<Vec<_>>().join(", ");
+		if files.len() > 5 {
+			named += &format!(" and {} more", files.len() - 5);
+		}
+		self.out
+			.console(format!("Hot reload: files newer than the .dmb may have unapplied changes: {}", named));
+		self.out.event(OutdatedEvent { files });
 	}
 }
 

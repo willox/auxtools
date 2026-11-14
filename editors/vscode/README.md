@@ -239,8 +239,9 @@ each reload.
 
 Unsupported changes appear at their source lines in the Problems panel.
 The notification offers **Restart**, which runs `preLaunchTask` before
-restarting. The launcher does not build the world itself: configure a
-build task or rebuild manually.
+restarting. The launcher does not build the world itself: configure a build
+task or rebuild manually. Startup warnings also identify files newer than
+the `.dmb`, whose edits may be missing from the world.
 
 After reboot, reloads are restored before world code runs. Reloads introducing
 resources absent from the build wait until `world/New`, so map atoms run the
@@ -371,7 +372,8 @@ for attach sessions to avoid competing with the launching session's reloads.
 - `auxtools.notifications`: set any category to `false` to hide its notifications:
   - `reconnect`: reconnect players after a skin or script reload.
   - `join`: join offers when not joined automatically; copy the address if DreamSeeker is unavailable.
-  - `rebuild` says when hot reload can't apply a change.
+  - `rebuild`: changes that hot reload cannot apply.
+  - `outdated`: edits that may be missing from the build.
 
 ## License
 

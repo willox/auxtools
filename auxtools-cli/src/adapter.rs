@@ -1200,6 +1200,7 @@ impl Adapter {
 			code::Event::Reloading => self.reloading(),
 			code::Event::Looked => self.looked(),
 			code::Event::Refusals(refusals) => self.outstanding(refusals),
+			code::Event::Outdated(files) => self.outdated(files),
 			code::Event::Reload {
 				request,
 				summary,

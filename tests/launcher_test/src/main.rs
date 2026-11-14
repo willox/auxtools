@@ -1151,7 +1151,7 @@ fn edited_after_build(server: &str) {
 	started.pids.extend([pid, launcher]);
 	let log = PathBuf::from(up["log"].as_str().unwrap());
 	let read_log = || std::fs::read_to_string(&log).unwrap_or_default();
-	let said = "Hot reload: changed since the .dmb was built: attach_host.dm. These edits may be missing from the world";
+	let said = "Hot reload: files newer than the .dmb may have unapplied changes: attach_host.dm";
 	assert!(read_log().contains(said), "launch said:\n{}", read_log());
 
 	// Reload an edit saved after rebuilding but before rebooting into that

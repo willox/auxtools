@@ -53,6 +53,9 @@ pub enum Event {
 	/// Refused changes still missing from the world, with absolute paths.
 	/// Sent whenever the set changes.
 	Refusals(Vec<Refusal>),
+	/// Files newer than the `.dmb`, relative to the `.dme` directory.
+	/// The world may not include their edits.
+	Outdated(Vec<String>),
 	/// Changes prepared for `world`, identified by `Command::Connected`.
 	/// The adapter replies with `Command::Reloaded`. `notes` become journal
 	/// warnings.
@@ -243,8 +246,10 @@ impl Code {
 
 		self.warn_of_errors(&built);
 		let files = files(&built, &self.options.dme);
-		self.warn_of_later_edits(&files, dmb_modified);
 		let resources = self.read_resources(&files);
+		if !self.warn_of_later_edits(&files, &resources, dmb_modified) {
+			return;
+		}
 		let script = Script::built(built.client_script());
 		let mut watched = files.clone();
 		watched.extend(resources.files.keys().cloned());
@@ -429,8 +434,10 @@ impl Code {
 				Ok(built) => {
 					self.warn_of_errors(&built);
 					let files = files(&built, &self.options.dme);
-					self.warn_of_later_edits(&files, dmb_modified);
 					let resources = self.read_resources(&files);
+					if !self.warn_of_later_edits(&files, &resources, dmb_modified) {
+						return false;
+					}
 					for file in files.iter().chain(resources.files.keys()) {
 						watching.files.add(&self.root, file, self.parse_started.get());
 					}
@@ -514,18 +521,6 @@ impl Code {
 			}
 		};
 		*self.resource_dirs.borrow_mut() = resources.dirs.clone();
-		let mut edited: Vec<String> = resources
-			.edited_since_built(&self.root)
-			.iter()
-			.map(|(path, _)| path.display().to_string())
-			.collect();
-		if !edited.is_empty() {
-			edited.sort();
-			self.log(format!(
-				"resource files changed before launch: {}. The world uses the built versions; rebuild or save the files again to apply edits",
-				edited.join(", ")
-			));
-		}
 		resources
 	}
 
@@ -618,32 +613,30 @@ impl Code {
 		}
 	}
 
-	/// Warn about files saved after the build. Hot reload assumes the initial
-	/// source matches the world and only applies subsequent edits.
-	fn warn_of_later_edits(&self, files: &[PathBuf], built: Option<SystemTime>) {
-		let Some(built) = built else {
-			return;
-		};
-		let mut later: Vec<String> = files
-			.iter()
-			.filter(|file| modified_time(&self.root, file).is_some_and(|time| time > built))
-			.map(|file| file.display().to_string())
+	/// Warn about source and resource files edited after the build. Source
+	/// watching assumes the initial files match the build and applies later
+	/// edits only. Resources keep their built content until the next save.
+	/// Return false on disconnect.
+	fn warn_of_later_edits(&self, files: &[PathBuf], resources: &Resources, built: Option<SystemTime>) -> bool {
+		let mut later: Vec<String> = resources
+			.edited_since_built(&self.root)
+			.into_iter()
+			.map(|(path, _)| path.display().to_string())
 			.collect();
+		if let Some(built) = built {
+			later.extend(
+				files
+					.iter()
+					.filter(|file| modified_time(&self.root, file).is_some_and(|time| time > built))
+					.map(|file| file.display().to_string())
+			);
+		}
 		if later.is_empty() {
-			return;
+			return true;
 		}
 		later.sort();
-		let more = later.len().saturating_sub(5);
-		later.truncate(5);
-		let mut named = later.join(", ");
-		if more > 0 {
-			named += &format!(" and {} more", more);
-		}
-		self.log(format!(
-			"changed since the .dmb was built: {}. These edits may be missing from the world; rebuild to include them. Hot reload only applies \
-			 later edits",
-			named
-		));
+		later.dedup();
+		self.send(Event::Outdated(later))
 	}
 
 	/// Release the world unless a newer connection needs synchronization first.
