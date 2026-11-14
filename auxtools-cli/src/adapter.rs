@@ -1537,7 +1537,7 @@ impl Adapter {
 			.as_mut()
 			.is_some_and(|debuggee| debuggee.eval_unanswered("world.Del()".to_owned()).is_ok());
 		if asked {
-			self.out.console("Requested shutdown through world/Del()");
+			self.out.console("Stopping the world");
 			let inputs = self.inputs.clone();
 			let launched = self.game.is_some();
 			std::thread::spawn(move || {

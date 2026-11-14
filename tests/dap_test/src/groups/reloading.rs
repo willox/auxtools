@@ -864,12 +864,8 @@ pub fn run() {
 	assert_eq!(world.local("y"), "4");
 	ok("client-remapped breakpoint stays on its statement");
 
-	// What the debug server has to say comes once, as the launcher's words
-	assert_eq!(
-		world.count("[auxtools] Hot reload: new code for"),
-		1,
-		"expected exactly one reload notification"
-	);
+	// Only the launcher should summarize its reload.
+	assert_eq!(world.count("new code for"), 0, "duplicate reload summary from the debug server");
 	assert!(
 		!world.output.contains("Debug Server:"),
 		"the debug server's own output was passed on as well"

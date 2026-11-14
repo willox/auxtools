@@ -45,7 +45,7 @@ fn asked_to_end() {
 		"expected one world/Del() call; output:\n{}",
 		world.output
 	);
-	assert!(world.output.contains("Requested shutdown"), "missing shutdown diagnostic");
+	assert!(world.output.contains("Stopping the world"), "missing shutdown diagnostic");
 	assert!(
 		took < grace && !world.output.contains("Shutdown timed out"),
 		"the world was ended, {:?} on",
