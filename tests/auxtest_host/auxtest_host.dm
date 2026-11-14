@@ -38,6 +38,9 @@
 /proc/concat_strings(a, b)
 	return addtext(a, b)
 
+/proc/text_lengths(t)
+	return list(length(t), length_char(t), text2ascii_char(t, 2))
+
 /proc/del_value(v)
 	del v
 

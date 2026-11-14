@@ -192,9 +192,16 @@ pub unsafe fn proc_starting(ctx: *mut raw_types::procs::ExecutionContext) {
 	if std::ptr::eq(*(*ctx).bytecode() as *const u32, RETURN_DOT.as_ptr()) {
 		return;
 	}
-	crate::on_proc_call();
-
 	let instance = *(*ctx).proc_instance();
+	// The startup call can run code replaced during WorldLoad::ready
+	// (see `start_runs_new_code`).
+	if crate::on_proc_call((*instance).proc, (*instance).src.tag) && *(*ctx).bytecode_offset() == 0 {
+		if let Some(proc) = Proc::from_id((*instance).proc) {
+			let (now, _) = proc.bytecode_mut_ptr();
+			*(*ctx).bytecode_mut() = now;
+		}
+	}
+
 	let proc_id = (*instance).proc;
 	let Some(hook) = PROC_HOOKS.0.borrow().get(&proc_id).map(|(hook, _)| *hook) else {
 		return;
@@ -240,7 +247,7 @@ extern "C" fn call_proc_by_id_hook(
 	_callback: u32,
 	_callback_value: u32
 ) -> u8 {
-	crate::on_proc_call();
+	crate::on_proc_call(proc_id, src_raw.tag);
 
 	// copy the fn out so no borrow is held while the hook runs DM code, which
 	// can call back into here or register hooks

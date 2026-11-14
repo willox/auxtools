@@ -434,7 +434,7 @@ pub fn run() {
 	assert_eq!(local("overlays"), "/list {len = 0}");
 	let inside = world.children(&variable("verbs"));
 	assert_eq!(inside, [("[1]".to_owned(), "/mob/player/verb/shout".to_owned())]);
-	assert_eq!(local("world_contents"), "/list {len = 12}");
+	assert_eq!(local("world_contents"), "/list {len = 13}");
 	ok("BYOND built-in lists");
 
 	let inside = world.children(&variable("mx"));

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Wire protocol version. Increment for changes incompatible with older
 /// clients or servers. Including the version in endpoint names prevents
 /// connections using incompatible message layouts.
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 10;
 
 /// Shutdown notification sent before disconnecting clients; not used for
 /// reboot.
@@ -233,7 +233,17 @@ pub enum Request {
 	/// `Response::Reloader`.
 	Reloader {
 		who: String
-	}
+	},
+	/// Set the login skin from a `.dmf`. Defer until `world/New` if the world
+	/// is still loading. Respond with `Response::Skin`.
+	Skin(SkinRequest),
+	/// Request client reconnects to load the skin. Leave Dream Seeker-hosted
+	/// worlds unchanged: reconnecting the host would restart the world.
+	/// Respond with `Response::Reconnect`.
+	Reconnect,
+	/// Set `client/script` text for future logins. Defer until `world/New`
+	/// if the world is still loading. Respond with `Response::Script`.
+	Script(ScriptRequest)
 }
 
 /// A `#define` of the world's code, as its preprocessor has it
@@ -381,7 +391,58 @@ pub enum Response {
 	StepEnded,
 	/// Whether ownership was granted, or a diagnostic identifying the existing
 	/// owner.
-	Reloader(Result<(), String>)
+	Reloader(Result<(), String>),
+	Skin(Result<SkinReloaded, String>),
+	Reconnect(Result<Reconnected, String>),
+	Script(Result<ScriptReloaded, String>),
+	/// Permanent initialization failure, sent on connection instead of a
+	/// response, followed by `Disconnect`. The world continues without
+	/// the debugger for the lifetime of the process.
+	Unavailable {
+		reason: String
+	}
+}
+
+/// A new skin for the world (see `Request::Skin`)
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct SkinRequest {
+	/// The `.dmf`, as the world's process can open it
+	pub path: String
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct SkinReloaded {
+	/// Connected players retaining the old skin until reconnect.
+	pub clients: u32,
+	/// Whether Dream Seeker hosts the world
+	pub hosted: bool
+}
+
+/// Client script text or none (see `Request::Script`). Included `.dms`
+/// files remain as built.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ScriptRequest {
+	/// Its text, `None` for no script
+	pub text: Option<String>,
+	/// Built text (`None` for none), used to validate the field before
+	/// the first change.
+	pub built: Option<String>
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ScriptReloaded {
+	/// Connected players retaining the old script until reconnect.
+	pub clients: u32,
+	/// Whether Dream Seeker hosts the world
+	pub hosted: bool
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum Reconnected {
+	/// Number of clients asked to reconnect.
+	Clients(u32),
+	/// Dream Seeker hosts this world; no reconnect was requested.
+	Hosted
 }
 
 /// Journal entry retained across reboots for the process lifetime.
@@ -955,7 +1016,41 @@ pub struct HotReloadRequest {
 	pub line_moves: Vec<HotReloadLines>,
 	/// Removed type vars; the world reports whether it retains each
 	/// declaration.
-	pub removed_vars: Vec<RemovedVar>
+	pub removed_vars: Vec<RemovedVar>,
+	/// Inherited built-in defaults, applied after `builtin_defaults`.
+	pub builtin_inherited: Vec<dmasm::reload::BuiltinInherited>,
+	/// Parent changes, applied after new types and before other changes.
+	pub reparented: Vec<dmasm::reload::Reparented>,
+	/// Files in the resource cache that changed on disk
+	#[serde(default)]
+	pub resources: Vec<HotReloadResource>,
+	/// `FILE_DIR` paths, searched after the world's directory.
+	#[serde(default)]
+	pub resource_dirs: Vec<String>,
+	/// Replacement global initialization for rebooted worlds, applied before
+	/// the original global init proc runs.
+	#[serde(default)]
+	pub global_init: Option<dmasm::reload::GlobalInit>
+}
+
+/// Edited file, cached as a new resource. Update appearances using `ids`
+/// to reference the new resource.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct HotReloadResource {
+	/// Relative to the world's directory
+	pub path: String,
+	/// Previous resource IDs to replace.
+	pub ids: Vec<u32>
+}
+
+/// A resource file a reload put in the cache
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ReloadedResource {
+	pub path: String,
+	/// New resource ID.
+	pub id: u32,
+	/// Number of updated appearances.
+	pub appearances: u32
 }
 
 /// A type var declaration removed from source.
@@ -979,6 +1074,10 @@ impl HotReloadRequest {
 			+ self.builtin_defaults.len()
 			+ self.init_procs.len()
 			+ self.line_moves.len()
+			+ self.builtin_inherited.len()
+			+ self.reparented.len()
+			+ self.resources.len()
+			+ self.global_init.is_some() as usize
 	}
 
 	pub const fn is_empty(&self) -> bool {
@@ -1047,5 +1146,8 @@ pub struct HotReloadResult {
 	pub errors: Vec<String>,
 	pub warnings: Vec<String>,
 	/// Removed proc paths absent from the world, for which no unlink occurred.
-	pub skipped: Vec<String>
+	pub skipped: Vec<String>,
+	/// The resource files the reload put in the cache
+	#[serde(default)]
+	pub resources: Vec<ReloadedResource>
 }

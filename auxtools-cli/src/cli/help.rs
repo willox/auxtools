@@ -24,7 +24,7 @@ pub struct Page {
 
 /// The commands in the order and the groups the first page lists them in
 const GROUPS: &[(&str, &[&str])] = &[
-	("World management", &["launch", "list", "status", "stop", "reboot", "log"]),
+	("World management", &["launch", "list", "status", "stop", "reboot", "reconnect", "log"]),
 	("Inspection", &["stack", "vars", "eval", "proc", "disassemble"]),
 	("Execution", &["pause", "continue", "step-over", "step-in", "step-out", "wait", "trace"]),
 	("Integration", &["dap", "help", "version"])
@@ -63,10 +63,13 @@ ARGS  Arguments passed to the BYOND program. Replace the
   Interrupt once to request graceful shutdown; interrupt again to force exit.
   The launcher does not compile the DMB or pause execution. Other CLI commands
   and editors can attach to the world. Use reboot to load a rebuilt DMB.
+  If the debug library cannot start in the world (an unsupported BYOND
+  build), the launcher says why and the world runs without it until stopped.
 
 Output:
   Detached mode reports the world's process ID, the launcher's process ID, and
-  the launcher's log file. JSON contains pid, launcher, and log.
+  the launcher's log file. JSON contains pid, launcher, log, and unavailable:
+  why the debug library could not start, or null.
 
 Exit codes:
   0  Startup completed in detached mode, or the foreground world exited with 0.
@@ -86,9 +89,11 @@ Exit codes:
   protocol compatibility, and responsiveness. An empty JSON array means no
   worlds were found. Worlds with compatible=false require a matching CLI version.
   A world record contains pid, program, dmb, args, cwd, protocol, compatible,
-  and responsive. responsive is false if the world did not answer within
-  5 seconds; its dmb, args, and cwd are then unknown. Incompatible worlds
-  are not queried and have responsive=null."
+  responsive, and unavailable. responsive is false if the world did not answer
+  within 5 seconds; its dmb, args, and cwd are then unknown. Incompatible
+  worlds are not queried and have responsive=null. unavailable says why the
+  debug library could not start in the world, which can then only be stopped,
+  and is null otherwise."
 	},
 	Page {
 		path: &["status"],
@@ -123,7 +128,8 @@ Exit codes:
   the debugger available, and stop reports the failure.
   Include --kill in the initial request for a forced fallback.
   With --kill, forced termination starts when the graceful deadline passes,
-  or at once when world.Del() fails.
+  or at once when world.Del() fails. A world the debug library could not
+  start in cannot call world.Del(), and is terminated at once.
   Success depends on the process exiting within the additional kill timeout.
 
 Output:
@@ -153,6 +159,30 @@ Output:
 Exit codes:
   0  World rebooted and started running.
   1  Reboot request failed.
+  2  Reboot timed out.
+  3  World process exited instead of rebooting."
+	},
+	Page {
+		path: &["reconnect"],
+		brief: "Reconnect clients to load a changed skin or client script",
+		summary: "Reconnect clients to load the current skin and client script.",
+		usage: "auxtools [--pid PID] reconnect [--timeout SECONDS] [--json]",
+		arguments: "",
+		sections: "Behavior:
+  Hot reload gives a changed .dmf skin or client script to clients when they
+  log in; connected clients keep what they have. This command asks each one
+  to reconnect, as Dream Seeker's .reconnect does. The world sees each client log
+  out and in again. A world Dream Seeker hosts is rebooted instead, since its
+  own window can't reconnect without restarting the world; the command then
+  returns when the new world starts running.
+
+Output:
+  JSON contains pid and either reconnected, the number of clients asked, or
+  rebooted.
+
+Exit codes:
+  0  Clients asked to reconnect, or the world rebooted and started running.
+  1  Request failed.
   2  Reboot timed out.
   3  World process exited instead of rebooting."
 	},
@@ -840,6 +870,7 @@ mod tests {
 			"status",
 			"stop",
 			"reboot",
+			"reconnect",
 			"log",
 			"stack",
 			"vars",

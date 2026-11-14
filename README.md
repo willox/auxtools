@@ -45,9 +45,19 @@ Editors use `auxtools dap` as the debug adapter.
 
 The launcher watches source files and reloads changes when they are saved. Hot reload is enabled by default for launched worlds, including **Run Without Debugging**. Supply the same `defines` used to build the `.dmb`.
 
-Hot reload supports proc bodies, proc and verb additions, proc removals, new types and variables, variable types and defaults, `static`, `const` and `tmp` declarations, parameters and `set` statements. Changes to parent types or proc declarations, such as converting a proc to a verb, require a rebuild.
+Hot reload supports proc bodies, proc and verb additions, proc removals, new types and variables, variable types and defaults, `static`, `const` and `tmp` declarations, parameters, `set` statements and parent types. Changes to proc declarations, such as converting a proc to a verb, require a rebuild.
 
-Existing calls finish on their original bytecode. Existing instances retain their verbs and built-in values; computed defaults apply to new instances. Worlds launched with hot reload wait for reloads to be restored after reboot before running any code.
+Existing calls finish on their original bytecode. Existing instances retain their verbs and built-in values; computed defaults apply to new instances. Changed world settings and client settings stored in the world record, such as `client.control_freak`, take effect after restart.
+
+After reboot, the launcher restores reloads before the world runs its code. Reloads introducing resource files absent from the build wait until `world/New`, so map atoms run the built code.
+
+Running globals and statics keep their values when their initializers change. After reboot, updated initializers run once before map creation. Existing initializers keep the build's order; additions follow their preceding var in dmasm's order, which does not yet match DreamMaker exactly. New statics in deferred reloads initialize at `world/New`.
+
+Saving an icon, sound or other referenced resource reloads it, including files found through `FILE_DIR`. Existing appearances redraw with the new file; recompiled code and defaults use it too. Stored values and generated assets keep their old resources. Shared resources need a rebuild to separate them. After reboot, resource edits are restored at `world/New`. Reloaded `FILE_DIR` resources use paths relative to the world directory rather than their source spelling. See the [extension documentation](editors/vscode/README.md#icons-sounds-and-other-files) for details and limits.
+
+Saving the `.dmf` skin updates the interface sent at login. Connected clients need to reconnect; `auxtools reconnect` requests this, or reboots Dream Seeker-hosted worlds.
+
+Changes to `client/script` text also apply at login. Resource-file scripts and included `.dms` files require a rebuild.
 
 Proc-body edits can use a single-file parse. Other edits trigger a full project parse. See the [extension documentation](editors/vscode/README.md#hot-reload-experimental) for reload limits and the [hot reload tests](tests/hot_reload_test) for supported cases.
 
@@ -55,7 +65,7 @@ Proc-body edits can use a single-file parse. Other edits trigger a full project 
 
 Windows and Linux: 515.1637–515.1647 and 516.1648–516.1688.
 
-Symbol patterns were checked throughout these ranges. Newer builds are attempted but may fail initialization if a pattern no longer matches. Older builds and unsupported major versions are rejected with a version error.
+Symbol patterns were checked throughout these ranges. Newer builds are attempted but may fail initialization if a pattern no longer matches. Older builds and unsupported major versions are rejected with a version error. If debugger initialization fails, the world keeps running. The launcher, VS Code and CLI report the reason; `auxtools stop` can terminate the world.
 
 The patterns use [byond-scan](https://github.com/Absolucy/byond-scan) and are stored in `auxtools/src/symbols/`.
 

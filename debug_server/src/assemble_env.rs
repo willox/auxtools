@@ -174,7 +174,14 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 	// fcopy_rsc() hands back the cache entry a file already has, and adds the
 	// file to the cache if it isn't there yet
 	fn get_resource_index(&mut self, path: &str) -> Option<u32> {
-		let res = Self::eval_with_name("fcopy_rsc(name)", path).or_else(|| Self::eval_with_name("fcopy_rsc(name)", &case_insensitive_path(path)?))?;
+		// Before resources load, fcopy_rsc() allocates IDs the build later
+		// reuses for other files (see `world_resources`).
+		if !crate::world_resources::is_loaded() {
+			return crate::world_resources::built_id(&resource_file(path)?);
+		}
+		let res = resource_paths(path).find_map(|path| {
+			Self::eval_with_name("fcopy_rsc(name)", &path).or_else(|| Self::eval_with_name("fcopy_rsc(name)", &case_insensitive_path(&path)?))
+		})?;
 
 		if res.raw.tag != raw_types::values::ValueTag::Resource {
 			return None;
@@ -182,6 +189,28 @@ impl dmasm::assembler::AssembleEnv for AssembleEnv {
 
 		Some(unsafe { res.raw.data.id })
 	}
+}
+
+/// The `FILE_DIR` directories of the code being reloaded (see
+/// `HotReloadRequest::resource_dirs`)
+pub(crate) static RESOURCE_DIRS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(vec![]);
+
+/// Search for resources in the world's directory, then in `FILE_DIR` order.
+fn resource_paths(path: &str) -> impl Iterator<Item = String> + '_ {
+	let dirs = RESOURCE_DIRS.lock().map(|dirs| dirs.clone()).unwrap_or_default();
+	std::iter::once(path.to_owned()).chain(dirs.into_iter().map(move |dir| format!("{}/{}", dir.trim_end_matches('/'), path)))
+}
+
+/// Resolve a resource path relative to the world's directory, matching
+/// `get_resource_index`.
+pub(crate) fn resource_file(path: &str) -> Option<std::path::PathBuf> {
+	resource_paths(path).find_map(|path| {
+		let file = std::path::Path::new(&path);
+		if file.is_file() {
+			return Some(file.to_owned());
+		}
+		case_insensitive_path(&path).map(Into::into)
+	})
 }
 
 /// Resolve resource paths case-insensitively, matching DreamMaker on Linux.

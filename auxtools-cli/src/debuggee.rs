@@ -197,6 +197,13 @@ impl Debuggee {
 					match response {
 						Response::Disconnect => break "the debug server disconnected".to_owned(),
 
+						// Initialization failed permanently; reconnecting
+						// cannot help.
+						Response::Unavailable { reason } => {
+							let _ = inputs.send(Input::Unavailable { generation, reason });
+							break "debugger initialization failed".to_owned();
+						}
+
 						// A shutdown notification suppresses reconnect messages
 						// after disconnection.
 						Response::Notification { message } if message == WORLD_SHUTTING_DOWN => {

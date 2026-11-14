@@ -51,7 +51,20 @@ impl Source {
 
 	fn copy_files(&self) {
 		let host = std::env::current_dir().unwrap().join("tests/hot_reload_test_host");
-		for file in ["hot_reload_test_host.dme", "main.dm", "reload.dm"] {
+		for file in [
+			"hot_reload_test_host.dme",
+			"main.dm",
+			"reload.dm",
+			"resources.dm",
+			"lamp.dmi",
+			"lamp_edited.dmi",
+			"lamp_third.dmi",
+			"lamp_built.dmi",
+			"crate.dmi",
+			"crate_edited.dmi",
+			"beep.wav",
+			"beep_edited.wav"
+		] {
 			std::fs::copy(host.join(file), self.dir.join(file)).unwrap();
 		}
 	}
@@ -206,8 +219,48 @@ fn reload_request(changes: &Changes) -> Request {
 				lines: m.lines.clone()
 			})
 			.collect(),
-		removed_vars: vec![]
+		removed_vars: vec![],
+		builtin_inherited: changes.builtin_inherited.clone(),
+		reparented: changes.reparented.clone(),
+		resources: vec![],
+		resource_dirs: vec![],
+		global_init: None
 	})
+}
+
+/// Resource ID from a resource `\ref`, such as `[0xc000003]`.
+fn resource_id(reference: &str) -> u32 {
+	let hex = reference.trim_matches('"').trim_start_matches("[0x").trim_end_matches(']');
+	u32::from_str_radix(hex, 16).unwrap_or_else(|_| panic!("{} isn't a resource reference", reference)) & 0xFF_FFFF
+}
+
+/// Replace and reload a resource file as the watcher does, recompiling
+/// its code/default users and updating appearances using `ids`.
+fn reload_resource(client: &mut Client, source: &Source, file: &str, edited: &str, ids: Vec<u32>) -> HotReloadResult {
+	reload_resources(client, source, &[(file, edited, ids)])
+}
+
+/// Reload several (file, edited, ids) replacements together.
+fn reload_resources(client: &mut Client, source: &Source, files: &[(&str, &str, Vec<u32>)]) -> HotReloadResult {
+	for (file, edited, _) in files {
+		std::fs::copy(source.dir.join(edited), source.dir.join(file)).unwrap();
+	}
+	let names: Vec<String> = files.iter().map(|(file, ..)| file.to_string()).collect();
+	let changes = source.snapshot.as_ref().unwrap().resource_users(&names);
+	assert!(changes.refused.is_empty(), "the resource reload was refused: {:?}", changes.refused);
+	let Request::HotReload(mut request) = reload_request(&changes) else {
+		unreachable!()
+	};
+	request.resources = files
+		.iter()
+		.map(|(file, _, ids)| HotReloadResource {
+			path: file.to_string(),
+			ids: ids.clone()
+		})
+		.collect();
+	let result = expect_reload_result(client.request(Request::HotReload(request)));
+	assert!(result.applied, "resource reload rejected: {:?}", result.errors);
+	result
 }
 
 fn expect_reload_result(response: Response) -> HotReloadResult {
@@ -431,6 +484,40 @@ fn main() {
 	eval(&mut client, "arm_breakpoint()");
 	wait_for(&mut client, "breakpoint_armed", "0");
 	println!("ok: remove remapped breakpoint by original offset");
+
+	// An initializer failure during a paused reload must not reach the
+	// caller's catch when execution resumes.
+	let line = source.line_of("reload.dm", "\ty += 1");
+	let offset = offset_of(&mut client, "/caught_target", line);
+	let at = InstructionRef {
+		proc: ProcRef {
+			path: "/caught_target".to_owned(),
+			override_id: 0
+		},
+		offset
+	};
+	let response = client.request(Request::BreakpointSet {
+		instruction: at.clone(),
+		condition: None,
+		hit: None,
+		log: None
+	});
+	assert!(matches!(response, Response::BreakpointSet { .. }), "{:?}", response);
+	eval(&mut client, "caught_armed = TRUE");
+	assert_eq!(client.expect_pause(), BreakpointReason::Breakpoint);
+	let changes = source.edit(
+		"reload.dm",
+		"var/caught_done = 0",
+		"var/caught_done = 0\nvar/init_fails = fails_now()\n\n/proc/fails_now()\n\tCRASH(\"initializer failed\")"
+	);
+	let result = reload(&mut watcher, &changes);
+	assert!(result.applied, "{:?}", result);
+	let response = client.request(Request::BreakpointUnset { instruction: at });
+	assert!(matches!(response, Response::BreakpointUnset { success: true, .. }), "{:?}", response);
+	client.resume();
+	wait_for(&mut client, "caught_done", "2");
+	assert_eq!(eval(&mut client, "caught_by_tick"), "null");
+	println!("ok: initializer error isolation");
 
 	// Moving a proc between files must preserve its statement breakpoints.
 	let line = source.line_of("reload.dm", "\tx += 1");
@@ -742,6 +829,14 @@ fn main() {
 	assert_eq!(eval(&mut client, "flock_size"), "12");
 	assert_eq!(eval(&mut client, "(\"tail\" in old_dog.vars)"), "1");
 	println!("ok: new variables");
+
+	// global.vars lists the new global, and finds it by name
+	assert_eq!(eval(&mut client, "(\"flock_size\" in global.vars)"), "1");
+	assert_eq!(eval(&mut client, "global.vars[\"flock_size\"]"), "12");
+	assert_eq!(eval(&mut client, "global.vars[\"flock_size\"] = 13"), "13");
+	assert_eq!(eval(&mut client, "flock_size"), "13");
+	assert_eq!(eval(&mut client, "(\"herd\" in global.vars)"), "0");
+	println!("ok: new global in global.vars");
 
 	// The default of a var a reload added
 	let changes = source.edit("reload.dm", "\tvar/tail = 1\n", "\tvar/tail = 2\n");
@@ -1106,6 +1201,193 @@ fn main() {
 	);
 	println!("ok: built-in variable defaults");
 
+	// Removing an override inherits the runtime parent's built-in default.
+	let changes = source.edit(
+		"reload.dm",
+		"\tname = \"box\"\n\tpixel_y = 3\n",
+		"\tname = \"box\"\n\tpixel_y = 3\n\tlayer = 7\n"
+	);
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /obj/crate/big_crate).layer"), "7");
+	let changes = source.edit("reload.dm", "\tpixel_y = 3\n\tlayer = 7\n", "");
+	assert_eq!(changes.builtin_inherited.len(), 2, "{:?}", changes.builtin_inherited);
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /obj/crate).layer"), "3");
+	assert_eq!(eval(&mut client, "(new /obj/crate/big_crate).layer"), "3");
+	assert_eq!(eval(&mut client, "(new /obj/crate/big_crate).pixel_y"), "0");
+	assert_eq!(eval(&mut client, "(new /obj/crate/fancy).pixel_y"), "0");
+	println!("ok: built-in override removal");
+
+	// Removing a built-in type's override needs a rebuild: parent defaults
+	// can differ (area layer 1, atom layer 2).
+	let changes = source.edit("reload.dm", "/proc/first_def()\n", "/area\n\tlayer = 9\n\n/proc/first_def()\n");
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /area).layer"), "9");
+	let refused = source.edit_refused("reload.dm", "/area\n\tlayer = 9\n\n", "");
+	assert!(
+		refused
+			.iter()
+			.any(|why| why.starts_with("/area: layer: cannot restore this built-in type's original default")),
+		"{:?}",
+		refused
+	);
+	// Restore agreement between runtime and source.
+	let changes = source.edit("reload.dm", "/proc/first_def()\n", "/area\n\tlayer = 9\n\n/proc/first_def()\n");
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /area).layer"), "9");
+	println!("ok: built-in type default reset rejection");
+
+	// Cover var-table built-ins and record-list bounds.
+	let changes = source.edit(
+		"reload.dm",
+		"/proc/first_def()\n",
+		"/exception/hot_reload\n\tname = \"one\"\n\n/sound/hot_reload\n\trepeat = 1\n\n/obj/crate/bounded\n\tbounds = \"1,1 to \
+		 16,16\"\n\n/proc/first_def()\n"
+	);
+	reload(&mut watcher, &changes);
+	let changes = source.edit_many("reload.dm", &[
+		("\tname = \"one\"\n", "\tname = \"two\"\n"),
+		("\trepeat = 1\n", "\trepeat = 1\n\tchannel = 5\n\tfalloff = 2\n"),
+		("\"1,1 to 16,16\"", "\"1,1 to 8,24\"")
+	]);
+	assert_eq!(changes.var_defaults.len(), 3, "{:?}", changes.var_defaults);
+	reload(&mut watcher, &changes);
+	// Check the type's name; new() replaces it on exceptions in 515.1637.
+	assert_eq!(eval(&mut client, "initial(/exception/hot_reload::name)"), "\"two\"");
+	assert_eq!(eval(&mut client, "initial(/sound/hot_reload::channel)"), "5");
+	// A static sharing a built-in's name on another type is a distinct var.
+	assert_eq!(eval(&mut client, "initial(/sound/hot_reload::falloff)"), "2");
+	assert_eq!(eval(&mut client, "hr_named_falloff(new /sound/hot_reload)"), "\"2 7 9\"");
+	assert_eq!(eval(&mut client, "(new /obj/crate/bounded).bound_width"), "8");
+	assert_eq!(eval(&mut client, "(new /obj/crate/bounded).bound_height"), "24");
+	println!("ok: var-table built-ins and bounds");
+
+	// Reparent procs, ..(), vars, New(), built-ins and type queries.
+	// Existing instances receive new procs and defaults.
+	let changes = source.edit(
+		"reload.dm",
+		"/proc/first_def()\n",
+		"/datum/hr_a\n\tvar/x = 1\n\n/datum/hr_a/proc/f()\n\treturn \"a\"\n\n/datum/hr_b\n\tvar/x = 2\n\tvar/y = 3\n\n/datum/hr_b/New()\n\ty = \
+		 4\n\n/datum/hr_b/proc/f()\n\treturn \"b\"\n\n/datum/hr_t\n\tparent_type = /datum/hr_a\n\n/datum/hr_t/f()\n\treturn \"t\" + \
+		 ..()\n\n/datum/hr_t/sub\n\n/obj/hr_oa\n\ticon_state = \"a\"\n\tlayer = 7\n\n/obj/hr_ob\n\tpixel_x = 2\n\tbound_width = 16\n\tbound_height \
+		 = 48\n\n/obj/hr_ot\n\tparent_type = /obj/hr_oa\n\tbound_width = 8\n\tstep_x = \
+		 2\n\nvar/datum/hr_t/sub/hr_kept\n\n/proc/hr_keep()\n\thr_kept = new\n\n/proc/first_def()\n"
+	);
+	reload(&mut watcher, &changes);
+	eval(&mut client, "hr_keep()");
+	assert_eq!(eval(&mut client, "hr_kept.f()"), "\"ta\"");
+	let changes = source.edit_many("reload.dm", &[
+		("\tparent_type = /datum/hr_a\n", "\tparent_type = /datum/hr_b\n"),
+		("\tparent_type = /obj/hr_oa\n", "\tparent_type = /obj/hr_ob\n")
+	]);
+	assert_eq!(changes.reparented.len(), 2, "{:?}", changes.reparented);
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /datum/hr_t/sub).f()"), "\"tb\"");
+	assert_eq!(eval(&mut client, "istype(new /datum/hr_t/sub, /datum/hr_b)"), "1");
+	assert_eq!(eval(&mut client, "istype(new /datum/hr_t/sub, /datum/hr_a)"), "0");
+	assert_eq!(eval(&mut client, "length(typesof(/datum/hr_b))"), "3");
+	assert_eq!(eval(&mut client, "length(typesof(/datum/hr_a))"), "1");
+	assert_eq!(eval(&mut client, "(new /datum/hr_t).y"), "4");
+	assert_eq!(eval(&mut client, "(new /datum/hr_t).x"), "2");
+	assert_eq!(
+		eval(
+			&mut client,
+			"\"[(new /obj/hr_ot).icon_state] [(new /obj/hr_ot).layer] [(new /obj/hr_ot).pixel_x]\""
+		),
+		"\" 3 2\""
+	);
+	// Explicit bounds and steps override the new parent's.
+	assert_eq!(
+		eval(
+			&mut client,
+			"\"[(new /obj/hr_ot).bound_width] [(new /obj/hr_ot).bound_height] [(new /obj/hr_ot).step_x]\""
+		),
+		"\"8 48 2\""
+	);
+	// Existing instances use new procs and defaults but ran the old New().
+	assert_eq!(eval(&mut client, "hr_kept.f()"), "\"tb\"");
+	assert_eq!(
+		eval(&mut client, "\"[istype(hr_kept, /datum/hr_b)] [hr_kept.x] [hr_kept.y]\""),
+		"\"1 2 3\""
+	);
+	// and back again
+	let changes = source.edit("reload.dm", "\tparent_type = /datum/hr_b\n", "\tparent_type = /datum/hr_a\n");
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /datum/hr_t/sub).f()"), "\"ta\"");
+	assert_eq!(eval(&mut client, "length(typesof(/datum/hr_a))"), "3");
+	assert_eq!(eval(&mut client, "(new /datum/hr_t).x"), "1");
+	println!("ok: parent type change");
+
+	// Move var/proc declarations to an ancestor. Existing subtypes retain
+	// their declarations; the proc becomes an override of the new ancestor's.
+	let changes = source.edit(
+		"reload.dm",
+		"/proc/first_def()\n",
+		"/datum/mv_hud\n\n/datum/mv_hud/human\n\tvar/tmp/list/sue = list(\"human\")\n\n/datum/mv_hud/human/sub\n\n/datum/mv_hud/robot\n\tvar/sue = \
+		 2\n\n/datum/mv_hud/plain\n\n/datum/mv_hud/human/proc/upd()\n\treturn \
+		 \"human\"\n\nvar/datum/mv_hud/human/mv_kept\n\n/proc/mv_keep()\n\tmv_kept = new\n\n/proc/first_def()\n"
+	);
+	reload(&mut watcher, &changes);
+	eval(&mut client, "mv_keep()");
+	let changes = source.edit_many("reload.dm", &[
+		(
+			"/datum/mv_hud\n\n",
+			"/datum/mv_hud\n\tvar/sue = 5\n\n/datum/mv_hud/proc/upd()\n\treturn \"hud\"\n\n/proc/mv_error()\n\ttry\n\t\t(new \
+			 /datum/mv_hud/human).upd(TRUE)\n\tcatch(var/exception/e)\n\t\treturn e.desc\n\n"
+		),
+		("\tvar/tmp/list/sue = list(\"human\")\n", ""),
+		("\tvar/sue = 2\n", "\tsue = 3\n"),
+		(
+			"/datum/mv_hud/human/proc/upd()\n\treturn \"human\"\n",
+			"/datum/mv_hud/human/upd(fail)\n\tif(fail)\n\t\tvar/list/nothing\n\t\treturn nothing.len\n\treturn \"human>\" + ..()\n"
+		)
+	]);
+	assert!(changes.refused.is_empty(), "{:?}", changes.refused);
+	// A redeclaration not listed as moved-from must still be rejected.
+	let mut unmarked = reload_request(&changes);
+	if let Request::HotReload(request) = &mut unmarked {
+		for var in &mut request.new_vars {
+			var.moved_from.clear();
+		}
+	}
+	let refused = expect_reload_result(watcher.request(unmarked));
+	assert!(!refused.applied, "duplicate var was accepted: {:?}", refused);
+	assert!(refused.errors.iter().any(|e| e.contains("duplicate definition")), "{:?}", refused.errors);
+	let result = reload(&mut watcher, &changes);
+	assert!(
+		result
+			.warnings
+			.iter()
+			.any(|w| w.contains("retain runtime declarations, values and var IDs")),
+		"{:?}",
+		result.warnings
+	);
+	let report = "\"[(new /datum/mv_hud).sue] [(new /datum/mv_hud/human).sue] [(new /datum/mv_hud/human/sub).sue] [(new /datum/mv_hud/robot).sue] \
+	              [(new /datum/mv_hud/plain).sue]\"";
+	assert_eq!(eval(&mut client, report), "\"5 5 5 3 5\"");
+	assert_eq!(eval(&mut client, "issaved((new /datum/mv_hud/human).sue)"), "1");
+	assert_eq!(eval(&mut client, "initial((new /datum/mv_hud/human/sub).sue)"), "5");
+	assert_eq!(eval(&mut client, "(new /datum/mv_hud/human/sub).upd()"), "\"human>hud\"");
+	assert_eq!(eval(&mut client, "(new /datum/mv_hud/plain).upd()"), "\"hud\"");
+	assert_eq!(eval(&mut client, "hascall(new /datum/mv_hud/robot, \"upd\")"), "1");
+	// Runtime errors must use the proc's new override path.
+	let error = eval(&mut client, "mv_error()");
+	assert!(error.contains("proc name: upd (/datum/mv_hud/human/upd)"), "{}", error);
+	// Existing instances retain their values and use the new code.
+	assert_eq!(eval(&mut client, "json_encode(mv_kept.sue)"), "\"[\\\"human\\\"]\"");
+	assert_eq!(eval(&mut client, "mv_kept.upd()"), "\"human>hud\"");
+	println!("ok: declarations moved to an ancestor");
+
+	// Reparent sound types: retain explicit var-table built-ins and copy
+	// inherited defaults from the new parent.
+	let sound = "\"[(new /sound/hr_st).pan] [(new /sound/hr_st).frequency] [(new /sound/hr_st).priority]\"";
+	assert_eq!(eval(&mut client, sound), "\"10 3 0\"");
+	let changes = source.edit("main.dm", "\tparent_type = /sound/hr_sa\n", "\tparent_type = /sound/hr_sb\n");
+	assert_eq!(changes.reparented.len(), 1, "{:?}", changes.reparented);
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, sound), "\"0 3 5\"");
+	println!("ok: sound parent change");
+
 	// A type's const: the code that uses it is compiled again
 	assert_eq!(eval(&mut client, "kept_limits.max_doubled()"), "6");
 	let changes = source.edit("main.dm", "\tvar/const/MAX = 3\n", "\tvar/const/MAX = 7\n");
@@ -1345,7 +1627,7 @@ fn main() {
 	assert_eq!(eval(&mut client, "verb_names(new /mob/chain_verbs)"), "\"speak,speak,other,speak\"");
 	assert_eq!(eval(&mut client, "world.chant()"), "\"xyz\"");
 	assert_eq!(eval(&mut client, "solo()"), "\"declared\"");
-	assert!(result.warnings.iter().all(|w| w.contains("things made before")), "{:?}", result.warnings);
+	assert!(result.warnings.iter().all(|w| w.contains("existing instances")), "{:?}", result.warnings);
 	for (path, needle) in [
 		("/mob/chain_verbs/speak", "\treturn ..() + \"c\""),
 		("/world/chant", "\treturn ..() + \"z\""),
@@ -1393,6 +1675,78 @@ fn main() {
 	);
 	println!("ok: world/Del source override numbering");
 
+	// Icon edits update literals, defaults, existing appearances, overlays,
+	// mouse pointers and new instances.
+	assert_eq!(eval(&mut client, "make_lamps()"), "\"made\"");
+	assert_eq!(eval(&mut client, "lamp_states()"), "\"on,off\"");
+	let built_lamp = resource_id(&eval(&mut client, "lamp_ref()"));
+	let result = reload_resource(&mut watcher, &source, "lamp.dmi", "lamp_edited.dmi", vec![built_lamp]);
+	let lamp = result.resources.first().unwrap_or_else(|| panic!("no resource in {:?}", result));
+	assert_ne!(lamp.id, built_lamp, "the edited file kept its resource");
+	assert!(lamp.appearances >= 3, "only {} appearances changed", lamp.appearances);
+	assert_eq!(resource_id(&eval(&mut client, "lamp_ref()")), lamp.id);
+	assert_eq!(eval(&mut client, "lamp_states()"), "\"on,off,new\"");
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off,new\"");
+	assert_eq!(eval(&mut client, "new_lamp_states()"), "\"on,off,new\"");
+	assert_eq!(eval(&mut client, "overlay_states()"), "\"on,off,new\"");
+	assert_eq!(resource_id(&eval(&mut client, "\"\\ref[placed_lamp.mouse_over_pointer]\"")), lamp.id);
+	println!("ok: resource reload of an icon");
+
+	// Sound literals and defaults resolve to the new resource.
+	let built_beep = resource_id(&eval(&mut client, "beep_ref()"));
+	let result = reload_resource(&mut watcher, &source, "beep.wav", "beep_edited.wav", vec![built_beep]);
+	let beep = result.resources.first().unwrap_or_else(|| panic!("no resource in {:?}", result));
+	assert_ne!(beep.id, built_beep, "the edited file kept its resource");
+	assert_eq!(resource_id(&eval(&mut client, "beep_ref()")), beep.id);
+	assert_eq!(resource_id(&eval(&mut client, "default_sound_ref()")), beep.id);
+	println!("ok: resource reload of a sound");
+
+	// Reload two files together. Values retained from the build must keep
+	// the old resource even when the client supplies that ID too.
+	assert_eq!(eval(&mut client, "make_crate()"), "\"made\"");
+	let built_crate = resource_id(&eval(&mut client, "crate_ref()"));
+	let held = "\"\\ref[held_lamp.icon]\"";
+	assert_eq!(resource_id(&eval(&mut client, held)), built_lamp);
+	let result = reload_resources(&mut watcher, &source, &[
+		("lamp.dmi", "lamp_third.dmi", vec![built_lamp, lamp.id]),
+		("crate.dmi", "crate_edited.dmi", vec![built_crate])
+	]);
+	assert_eq!(result.resources.len(), 2, "{:?}", result);
+	assert!(result.resources.iter().all(|r| r.appearances >= 1), "{:?}", result);
+	let crate_id = result.resources[1].id;
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off,third\"");
+	assert_eq!(eval(&mut client, "overlay_states()"), "\"on,off,third\"");
+	assert_eq!(eval(&mut client, "states_of(placed_crate.icon)"), "\"new1\"");
+	assert_eq!(resource_id(&eval(&mut client, held)), built_lamp);
+	println!("ok: resource reload of two files");
+
+	// Saving crate.dmi with the built lamp's content shares its resource ID.
+	// Later saves must leave that ID and held lamp values unchanged.
+	let result = reload_resource(&mut watcher, &source, "crate.dmi", "lamp_built.dmi", vec![crate_id]);
+	assert_eq!(result.resources[0].id, built_lamp, "{:?}", result);
+	assert!(
+		result.warnings.iter().any(|w| w.contains("crate.dmi shares existing resource")),
+		"{:?}",
+		result.warnings
+	);
+	assert_eq!(eval(&mut client, "states_of(placed_crate.icon)"), "\"on,off\"");
+	reload_resource(&mut watcher, &source, "crate.dmi", "crate_edited.dmi", vec![]);
+	assert_eq!(resource_id(&eval(&mut client, held)), built_lamp);
+	assert_eq!(eval(&mut client, "states_of(placed_crate.icon)"), "\"on,off\"");
+	println!("ok: resource reload with shared content");
+
+	// Restoring lamp.dmi's built content restores its own resource ID;
+	// its next save can replace that ID.
+	let third = resource_id(&eval(&mut client, "lamp_ref()"));
+	let result = reload_resource(&mut watcher, &source, "lamp.dmi", "lamp_built.dmi", vec![third]);
+	assert_eq!(result.resources[0].id, built_lamp, "{:?}", result);
+	assert!(!result.warnings.iter().any(|w| w.contains("same bytes")), "{:?}", result.warnings);
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off\"");
+	let result = reload_resource(&mut watcher, &source, "lamp.dmi", "lamp_edited.dmi", vec![built_lamp]);
+	assert!(result.warnings.iter().all(|w| !w.contains("same bytes")), "{:?}", result.warnings);
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off,new\"");
+	println!("ok: resource reload with restored built content");
+
 	// Shutting auxtools down puts back what the world had, which BYOND frees
 	// itself. The world then starts again from its .dmb.
 	eval(&mut client, "request_reboot()");
@@ -1404,6 +1758,29 @@ fn main() {
 	assert_eq!(eval(&mut client, "counter()"), "1");
 	assert_eq!(eval(&mut client, "old_dog.legs"), "4");
 	println!("ok: reboot after reload");
+
+	// After reboot, reload the edited icon over the built resource again.
+	assert_eq!(eval(&mut client, "make_lamps()"), "\"made\"");
+	assert_eq!(eval(&mut client, "lamp_states()"), "\"on,off\"");
+	assert_eq!(resource_id(&eval(&mut client, "lamp_ref()")), built_lamp);
+	let mut watcher = world.connect_watcher();
+	let result = reload_resource(&mut watcher, &source, "lamp.dmi", "lamp_edited.dmi", vec![built_lamp]);
+	assert!(result.resources.first().is_some_and(|lamp| lamp.appearances >= 3), "{:?}", result);
+	assert_eq!(eval(&mut client, "lamp_states()"), "\"on,off,new\"");
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off,new\"");
+	assert_eq!(eval(&mut client, "overlay_states()"), "\"on,off,new\"");
+	println!("ok: resource reload after a reboot");
+
+	// A world with more appearances than 16-bit ids
+	let lamp = result.resources[0].id;
+	assert_eq!(eval(&mut client, "make_many_appearances()"), "\"made\"");
+	let result = reload_resource(&mut watcher, &source, "lamp.dmi", "lamp_third.dmi", vec![lamp]);
+	assert!(result.resources.first().is_some_and(|lamp| lamp.appearances >= 3), "{:?}", result);
+	assert_eq!(eval(&mut client, "states_of(placed_lamp.icon)"), "\"on,off,third\"");
+	eval(&mut client, "many_appearances = null");
+	watcher.send(Request::Disconnect);
+	watcher.wait_closed();
+	println!("ok: resource reload past 65,535 appearances");
 
 	// The watcher doesn't need a debugger there. With the debugger gone, the
 	// world says what it runs.

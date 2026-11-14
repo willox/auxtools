@@ -102,6 +102,8 @@ fn completions(world: &mut World) {
 		pair("disassemble", "keyword")
 	]);
 	assert_eq!(offered(world, "#", Some(&frame)).len(), 5);
+	// Inspection commands are hidden from completion.
+	assert_eq!(offered(world, "#s", Some(&frame)), Vec::<(String, String)>::new());
 	ok("command completion");
 
 	// No frame: the world's, and nothing of a frame's
@@ -288,6 +290,13 @@ pub fn run() {
 		("world.maxx", "3")
 	]);
 	ok("global, static and const evaluation");
+
+	// Built-in stddef.dm macros remain available alongside source macros.
+	gives(&mut world, &[
+		("TILE_BOUND | COLORSPACE_HSV", "257"),
+		("length(REGEX_QUOTE(\"a.b\"))", "4")
+	]);
+	ok("stddef.dm macro evaluation");
 
 	gives(&mut world, &[
 		("leaf(4)", "10"),
@@ -524,7 +533,12 @@ pub fn run() {
 		"#dis said {}",
 		disassembly
 	);
-	assert!(world.eval("#help").contains("disassemble"));
+	let help = world.eval("#help");
+	assert!(
+		help.contains("disassemble") && !help.contains("skin") && !help.contains("script"),
+		"#help said {}",
+		help
+	);
 	ok("console disassembly commands");
 
 	// As a client sends its watches: all at once
@@ -550,5 +564,25 @@ pub fn run() {
 	assert!(!world.has_event("stopped"));
 	world.run_through("plain");
 	ok("evaluation while running");
+
+	// Evaluation failures must not reach a paused caller's catch.
+	world.run_to("caught", "/caught_inside", "caught_stop");
+	let frame = world.frame_id();
+	for context in ["repl", "watch"] {
+		let why = world.refused("evaluate", json!({ "expression": "text + 1", "frameId": frame, "context": context }));
+		assert!(
+			why.starts_with("runtime error: type mismatch"),
+			"unexpected result in {}: {:?}",
+			context,
+			why
+		);
+	}
+	world.resume_through("caught");
+	assert!(
+		world.output.contains("dap: caught_inside gave a\n") && !world.output.contains("dap: sc_caught caught"),
+		"evaluation changed the paused caller's control flow:\n{}",
+		world.output
+	);
+	ok("evaluation error isolation");
 	world.end();
 }

@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use auxtools_cli::{
 	local,
-	server_types::{Request, Response}
+	server_types::{Reconnected, Request, Response}
 };
 use serde_json::json;
 
@@ -14,6 +14,9 @@ use super::{args, seconds_text, Failure, Result, World, HUNG_UP, TIMED_OUT};
 
 /// How often to look again
 const INTERVAL: Duration = Duration::from_millis(50);
+
+/// Prefix identifying an evaluation's runtime error.
+const RUNTIME_ERROR: &str = "runtime error: ";
 
 /// Has the world evaluate `expression`, without waiting for an answer
 fn ask(world: &mut World, expression: &str) -> Result<()> {
@@ -38,9 +41,10 @@ fn gone_by(pid: u32, until: Instant) -> bool {
 	}
 }
 
-/// Wait for process exit until `until`. Successful world.Del() closes the
-/// debugger before returning; an eval response means shutdown failed with
-/// a runtime error and the world is still running.
+/// Wait for process exit until `until`. A successful world.Del() closes
+/// the debugger without a response. A runtime-error response means the
+/// world is still running. A sleep response ends only the evaluation: keep
+/// waiting for world.Del() to finish.
 fn ended_by(world: &mut World, until: Instant) -> Result<bool> {
 	loop {
 		if !local::alive(world.pid) {
@@ -51,6 +55,10 @@ fn ended_by(world: &mut World, until: Instant) -> Result<bool> {
 			return Ok(false);
 		}
 		match world.next(Some(until.min(now + INTERVAL))) {
+			// The evaluation ended at a sleep, but world.Del() is still
+			// running.
+			Ok(Some(Response::Eval(Err(error)))) if !error.starts_with(RUNTIME_ERROR) => {}
+			// The runtime error left the world and debugger running.
 			Ok(Some(Response::Eval(_))) => {
 				return Err(format!(
 					"world.Del() failed with a runtime error (see the world's log), so the world (pid {}) is still running. Fix world/Del() or \
@@ -60,6 +68,8 @@ fn ended_by(world: &mut World, until: Instant) -> Result<bool> {
 				.into())
 			}
 			Ok(_) => {}
+			// No debugger is available to request world.Del().
+			Err(e) if world.unavailable.is_some() => return Err(e),
 			// Debugger disconnection can precede process exit.
 			Err(_) => return Ok(gone_by(world.pid, until))
 		}
@@ -83,8 +93,8 @@ pub fn stop(world: &mut World, args: &args::Stop) -> Result<()> {
 	if ask(world, "world.Del()").is_err() && local::alive(pid) {
 		return Err(format!("cannot send the shutdown request: the connection to the world with pid {} ended.", pid).into());
 	}
-	// With --kill, force termination after either a timeout or failed
-	// world.Del().
+	// With --kill, force termination on timeout or world.Del() failure.
+	// An unavailable debugger cannot call world.Del().
 	let failed = match ended_by(world, Instant::now() + timeout) {
 		Ok(true) => {
 			done(
@@ -95,10 +105,11 @@ pub fn stop(world: &mut World, args: &args::Stop) -> Result<()> {
 			return Ok(());
 		}
 		Ok(false) => None,
+		Err(_) if world.unavailable.is_some() => None,
 		Err(e) if args.kill => Some(e),
 		Err(e) => return Err(e)
 	};
-	if !args.kill {
+	if !args.kill && world.unavailable.is_none() {
 		return Err(Failure(
 			TIMED_OUT,
 			format!(
@@ -111,9 +122,13 @@ pub fn stop(world: &mut World, args: &args::Stop) -> Result<()> {
 	}
 	local::kill(pid);
 	if gone_by(pid, Instant::now() + kill_timeout) {
-		match failed {
-			Some(_) => eprintln!("world.Del() failed with a runtime error; the process was terminated."),
-			None => eprintln!("graceful shutdown timed out after {}; the process was terminated.", seconds_text(timeout))
+		match (&world.unavailable, failed) {
+			(Some(why), _) => eprintln!(
+				"process terminated because debugger initialization failed: {}. world.Del() could not be called.",
+				why
+			),
+			(None, Some(_)) => eprintln!("world.Del() failed with a runtime error; the process was terminated."),
+			(None, None) => eprintln!("graceful shutdown timed out after {}; the process was terminated.", seconds_text(timeout))
 		}
 		done(
 			args.json,
@@ -130,6 +145,35 @@ pub fn stop(world: &mut World, args: &args::Stop) -> Result<()> {
 				pid
 			)
 		))
+	}
+}
+
+pub fn reconnect(world: &mut World, args: &args::Reconnect) -> Result<()> {
+	match world.request(Request::Reconnect)? {
+		Response::Reconnect(Ok(Reconnected::Clients(clients))) => {
+			done(
+				args.json,
+				json!({ "pid": world.pid, "reconnected": clients }),
+				format!(
+					"pid {}: asked {} {} to reconnect",
+					world.pid,
+					clients,
+					if clients == 1 { "client" } else { "clients" }
+				)
+			);
+			Ok(())
+		}
+		Response::Reconnect(Ok(Reconnected::Hosted)) => {
+			if !args.json {
+				eprintln!("Dream Seeker hosts the world: rebooting it instead.");
+			}
+			reboot(world, &args::Reboot {
+				timeout: args.timeout,
+				json: args.json
+			})
+		}
+		Response::Reconnect(Err(e)) => Err(format!("cannot reconnect the clients: {}.", e).into()),
+		other => Err(format!("unexpected response: {:?}", other).into())
 	}
 }
 

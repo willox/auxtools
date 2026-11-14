@@ -23,7 +23,7 @@ use auxtools::{
 };
 use dmasm::{
 	assembler::AssembleEnv as _,
-	reload::{ConstValue, InList, NewType, NewVar, ProcSettings, Redeclared, RemovedProc},
+	reload::{BuiltinInherited, ConstValue, InList, NewType, NewVar, ProcSettings, Redeclared, RemovedProc, Reparented},
 	Instruction, Node, Opcode
 };
 
@@ -33,13 +33,17 @@ use crate::{
 	server_types::{HotReloadInitProc, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, ProcRef, Reloaded, RemovedVar}
 };
 
+#[path = "reload_inherit.rs"]
+mod inherit;
+#[path = "reload_reparent.rs"]
+mod reparent;
+
 /// A reload, checked and assembled, ready to apply.
 #[derive(Default)]
 pub struct Prepared {
 	new_vars: Vec<PreparedNewVar>,
-	/// New globals indexed by name; BYOND's original global list excludes them
-	/// (see `added_global`).
-	new_globals: Vec<(String, u32)>,
+	/// New globals: name, var id and declaration flags
+	new_globals: Vec<(String, u32, u32)>,
 	removed_procs: Vec<PreparedRemoval>,
 	new_procs: Vec<PreparedNewProc>,
 	init_procs: Vec<PreparedInitProc>,
@@ -60,10 +64,18 @@ pub struct Prepared {
 	run_once: Vec<(u32, String, Vec<u32>)>,
 	/// (var id, value) for the global slots of vars that are static now
 	global_values: Vec<(u32, (u32, u32))>,
+	/// Global init proc to run at startup when the world has none.
+	global_init_now: Option<Vec<u32>>,
+	/// Replaced global init proc, when the world is starting at its call.
+	global_init_at_start: Option<raw_types::procs::ProcId>,
 	/// Procs that return parameters' `in` lists, by the index each gets
 	in_lists: Vec<(u32, ProcEntryWords)>,
 	/// New prefab instances and init proc entries, in ID allocation order.
-	instances: Vec<(u32, runtime_tables::Instance, ProcEntryWords)>
+	instances: Vec<(u32, runtime_tables::Instance, ProcEntryWords)>,
+	/// Inherited built-in defaults as (type ID, var), parents first.
+	builtin_inherits: Vec<(u32, String)>,
+	/// Types with changed parents.
+	reparent: reparent::PreparedReparents
 }
 
 /// Variable to append: name string ID and initial global-slot value.
@@ -86,7 +98,9 @@ struct AddedVars {
 	/// Existing parameter `in` proc count and staged additions by index.
 	in_lists_before: u32,
 	in_lists: Vec<(u32, ProcEntryWords)>,
-	instances: StagedInstances
+	instances: StagedInstances,
+	/// The static vars of procs this reload adds, by scope and name
+	statics: HashMap<(String, Vec<u8>), u32>
 }
 
 /// Existing and staged prefab instances, including init proc entries and
@@ -281,11 +295,7 @@ impl TypeVars {
 	fn subtree(&mut self, type_id: u32) -> Result<Vec<u32>, String> {
 		if self.parents.is_none() {
 			let count = runtime_tables::type_count()?;
-			self.parents = Some(
-				(0..count)
-					.map(|t| runtime_tables::type_field(t, type_fields::PARENT).unwrap_or(NONE))
-					.collect()
-			);
+			self.parents = Some((0..count).map(|t| reparent::parent_of(t).unwrap_or(NONE)).collect());
 		}
 		let parents = self.parents.as_ref().unwrap();
 		Ok((0..parents.len() as u32)
@@ -383,6 +393,9 @@ struct NewProcOnType {
 	map_entries: Vec<(u32, u32, Vec<u32>)>,
 	/// Procs whose `..()` must target the new definition.
 	relinked: Vec<u32>,
+	/// (proc, path string) for declarations moved to an ancestor.
+	/// These become overrides, whose paths omit `/proc`.
+	paths: Vec<(u32, u32)>,
 	/// Insert after this proc, or use the default `add_to_list` position.
 	after: Option<u32>
 }
@@ -440,7 +453,13 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		builtin_defaults,
 		init_procs,
 		line_moves,
-		removed_vars
+		removed_vars,
+		builtin_inherited,
+		reparented,
+		// (see `resource_reload`)
+		resources: _,
+		resource_dirs: _,
+		global_init
 	} = request;
 	runtime_tables::available().map_err(|e| vec![format!("hot reloading isn't available on this build of BYOND: {}", e)])?;
 
@@ -465,6 +484,8 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 
 	let mut pending = Pending::default();
 	let mut type_vars = TypeVars::default();
+	let mut staged = StagedProcs::default();
+	reparent::prepare(reparented, &mut type_vars, &mut staged, &mut prepared, &mut errors);
 
 	// Reserve IDs in allocation order so new code can refer to staged
 	// additions.
@@ -475,7 +496,8 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		run_once: vec![],
 		in_lists_before: runtime_tables::in_list_count().unwrap_or(0),
 		in_lists: vec![],
-		instances: StagedInstances::default()
+		instances: StagedInstances::default(),
+		statics: HashMap::new()
 	};
 	for new in new_vars {
 		if let Err(e) = prepare_new_var(new, &mut added, &mut type_vars, &mut pending, warnings) {
@@ -488,7 +510,6 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		}
 	}
 
-	let mut staged = StagedProcs::default();
 	for removed in removed_procs {
 		// An already removed proc must not block subsequent reloads.
 		if Proc::overrides(removed.proc.path.as_str()).is_empty() {
@@ -544,6 +565,30 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		}
 	}
 
+	// Replace global initialization before it runs after reboot,
+	// including initializers for newly added globals.
+	let mut restarted = false;
+	if let Some(init) = global_init {
+		match prepare_global_init(init, &pending, &mut world_globals, &mut added, warnings) {
+			Ok(Some(StartingInit::Proc(code, at_start))) => {
+				prepared.global_init_at_start = at_start.then_some(code.proc.id);
+				prepared.code.push(code);
+				restarted = true;
+			}
+			Ok(Some(StartingInit::Now(bytecode))) => {
+				prepared.global_init_now = Some(bytecode);
+				restarted = true;
+			}
+			Ok(None) => {}
+			// Failure to replace initialization must not block the remaining
+			// reload.
+			Err(e) => warnings.push(format!("{}: reboot will use the build's global and static initializers", e))
+		}
+	}
+	if restarted {
+		added.run_once.clear();
+	}
+
 	for change in settings {
 		let proc_ref = ProcRef {
 			path: change.proc.path.clone(),
@@ -591,7 +636,7 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 	}
 
 	for default in var_defaults {
-		if let Err(e) = prepare_var_default(default, &mut type_vars) {
+		if let Err(e) = prepare_var_default(default, &mut type_vars, &mut added) {
 			errors.push(e);
 		}
 	}
@@ -613,6 +658,8 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		}
 	}
 
+	inherit::prepare(builtin_inherited, &mut prepared, &mut errors);
+
 	// Computed initializers may use other additions in this reload.
 	for (id, name, init) in std::mem::take(&mut added.run_once) {
 		let code = value_code(init);
@@ -630,8 +677,7 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 	}
 
 	if !prepared.appearances.is_empty() {
-		warnings
-			.push("things made before the reload keep the verbs and built-in values they had; things made after get them as they are now".to_owned());
+		warnings.push("verb and built-in changes apply only to new instances; existing instances retain their values".to_owned());
 	}
 
 	prepared.new_vars = added.vars;
@@ -639,7 +685,15 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		.globals
 		.iter()
 		.filter(|((scope, _), _)| scope.is_empty())
-		.map(|((_, name), id)| (String::from_utf8_lossy(name).into_owned(), *id))
+		.map(|((_, name), id)| {
+			let name = String::from_utf8_lossy(name).into_owned();
+			let flags = request
+				.new_vars
+				.iter()
+				.find(|new| new.type_path.is_empty() && new.var == name)
+				.map_or(0, |new| new.flags);
+			(name, *id, flags)
+		})
 		.collect();
 	prepared.in_lists = added.in_lists;
 	let first_instance = added.instances.existing.as_ref().map_or(0, Vec::len) as u32;
@@ -657,6 +711,7 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		}
 	}
 
+	reparent::finish();
 	if errors.is_empty() {
 		Ok(prepared)
 	} else {
@@ -673,6 +728,19 @@ fn assemble(
 	world_globals: &mut WorldGlobals,
 	added: &mut AddedVars
 ) -> Result<Vec<u32>, String> {
+	assemble_with(name, code, original, HashMap::new(), pending, world_globals, added)
+}
+
+/// Assemble code using known global slots indexed by scope and name.
+fn assemble_with(
+	name: &str,
+	code: &HotReloadProc,
+	original: &[u32],
+	known: HashMap<(String, Vec<u8>), u32>,
+	pending: &Pending,
+	world_globals: &mut WorldGlobals,
+	added: &mut AddedVars
+) -> Result<Vec<u32>, String> {
 	let nodes = adapt_debug_info(&code.nodes, original);
 
 	let proc_globals = globals_in(original);
@@ -682,6 +750,7 @@ fn assemble(
 		world_globals,
 		pending,
 		new_statics,
+		known,
 		instances: &mut added.instances,
 		place: code_place(original),
 		error: None
@@ -712,14 +781,25 @@ fn prepare_code(
 ) -> Result<PreparedCode, String> {
 	let name = describe(&reload.proc);
 	let proc = find(&reload.proc)?;
-	let entry = runtime_tables::proc_entry(proc.id).ok_or_else(|| format!("{}: couldn't read its table entry", name))?;
-
 	if proc.is_hooked() {
 		warnings.push(format!("{}: auxtools has hooked it, so the hook runs instead of the new code", name));
 	}
-
 	let original = original_bytecode(&proc);
 	let bytecode = assemble(&name, reload, &original, pending, world_globals, added)?;
+	prepared_code(proc, name, reload, bytecode, pending, world_globals, added)
+}
+
+/// Assembled replacement proc code and tables, ready to apply.
+fn prepared_code(
+	proc: Proc,
+	name: String,
+	reload: &HotReloadProc,
+	bytecode: Vec<u32>,
+	pending: &Pending,
+	world_globals: &mut WorldGlobals,
+	added: &mut AddedVars
+) -> Result<PreparedCode, String> {
+	let entry = runtime_tables::proc_entry(proc.id).ok_or_else(|| format!("{}: couldn't read its table entry", name))?;
 	let bytecode_id = runtime_tables::intern_misc(&bytecode).map_err(|e| format!("{}: {}", name, e))?;
 
 	// Frames get as many locals as the table has names
@@ -750,6 +830,223 @@ fn prepare_code(
 		local_names: Some(reload.locals.clone()),
 		lines: None
 	})
+}
+
+/// Prepared global initialization for a rebooted world.
+enum StartingInit {
+	/// Replacement for the existing proc, and whether its call is pending.
+	Proc(PreparedCode, bool),
+	/// Run immediately because the world has no global init proc.
+	Now(Vec<u32>)
+}
+
+/// Prepare replacement global initialization before the original runs.
+/// The world starts at an earlier internal call or at the init proc's call.
+/// If no original exists, run the replacement immediately. If the original
+/// has already run, return none and warn.
+fn prepare_global_init(
+	init: &dmasm::reload::GlobalInit,
+	pending: &Pending,
+	world_globals: &mut WorldGlobals,
+	added: &mut AddedVars,
+	warnings: &mut Vec<String>
+) -> Result<Option<StartingInit>, String> {
+	const NAME: &str = crate::server_types::GLOBAL_INIT;
+	let ran = || {
+		format!(
+			"{}: global initialization has already run; rebuild to apply changed global and static initializers",
+			NAME
+		)
+	};
+	let Some(start) = auxtools::starting_call().filter(|_| !crate::world_resources::is_loaded()) else {
+		warnings.push(ran());
+		return Ok(None);
+	};
+	if !init.code.locals.is_empty() {
+		return Err(format!("{}: replacement global init proc needs locals; this is not supported yet", NAME));
+	}
+	let code = value_code(init.code.clone());
+	let Some(proc) = global_init_proc() else {
+		let known = global_slots(&code, &init.proc_statics, pending, added, world_globals);
+		let bytecode = assemble_with(NAME, &code, &[], known, pending, world_globals, added)?;
+		return Ok(Some(StartingInit::Now(bytecode)));
+	};
+	if proc.id != start && Proc::from_id(start).is_some() {
+		warnings.push(ran());
+		return Ok(None);
+	}
+	// Preserve the build's initializer order; dmasm's order is approximate.
+	// Place additions after the preceding var in the new code.
+	let known = global_slots(&code, &init.proc_statics, pending, added, world_globals);
+	let own = original_bytecode(&proc);
+	let (nodes, _) = dmasm::disassembler::disassemble(&own, &mut LenientDisassembleEnv);
+	let built: Vec<u32> = nodes
+		.iter()
+		.filter_map(|node| match node {
+			Node::Instruction(dmasm::Instruction::SetVar(dmasm::Variable::Global(global)), _) => global.id,
+			_ => None
+		})
+		.collect();
+	let mut code = code;
+	let mut unknown = HashSet::new();
+	code.nodes = init.in_built_order(|var, _| {
+		let key = (var.scope.clone().unwrap_or_default(), var.name.0.clone());
+		let Some(id) = known.get(&key) else {
+			unknown.insert(key);
+			return None;
+		};
+		built.iter().position(|set| set == id)
+	});
+	if !unknown.is_empty() {
+		warnings.push(format!(
+			"{}: {} vars could not be matched to built initializers; using dmasm's order for them",
+			NAME,
+			unknown.len()
+		));
+	}
+	let bytecode = assemble_with(NAME, &code, &[], known, pending, world_globals, added)?;
+	let at_start = proc.id == start;
+	prepared_code(proc, NAME.to_owned(), &code, bytecode, pending, world_globals, added).map(|code| Some(StartingInit::Proc(code, at_start)))
+}
+
+/// Prepare global initialization even when the rest of a restore waits
+/// for world/New. Omit statics whose slots do not exist yet; the deferred
+/// restore allocates and initializes them once. Return the omitted count.
+pub fn early_global_init(init: &dmasm::reload::GlobalInit, rest: &HotReloadRequest) -> (dmasm::reload::GlobalInit, usize) {
+	let later: HashSet<(String, Vec<u8>)> = rest
+		.procs
+		.iter()
+		.chain(rest.new_procs.iter().map(|new| &new.code))
+		.flat_map(|code| code.statics.iter().map(|s| (s.scope.clone(), s.name.as_bytes().to_vec())))
+		.chain(
+			rest.new_vars
+				.iter()
+				.filter(|var| !var.type_path.is_empty())
+				.map(|var| (var.type_path.clone(), var.var.as_bytes().to_vec()))
+		)
+		.collect();
+	let added = AddedVars {
+		first: runtime_tables::variable_count(),
+		vars: vec![],
+		param_names: HashMap::new(),
+		run_once: vec![],
+		in_lists_before: 0,
+		in_lists: vec![],
+		instances: StagedInstances::default(),
+		statics: HashMap::new()
+	};
+	let code = value_code(init.code.clone());
+	let known = global_slots(&code, &init.proc_statics, &Pending::default(), &added, &mut WorldGlobals::default());
+	let mut left = 0;
+	let init = init.without(|var| {
+		let key = (var.scope.clone().unwrap_or_default(), var.name.0.clone());
+		let leave = later.contains(&key) && !known.contains_key(&key);
+		left += usize::from(leave);
+		leave
+	});
+	(init, left)
+}
+
+/// Resolve global/static slots by scope and name. Use staged additions,
+/// the world's global list, type var tables, or proc bytecode. For proc
+/// statics, require the bytecode to reference as many same-named slots as
+/// `counts` declares. Otherwise match a unique assignment in the built
+/// global init proc by name and built proc lines, falling back to file.
+/// Leave unresolved slots to the assembler.
+fn global_slots(
+	code: &HotReloadProc,
+	counts: &BTreeMap<String, BTreeMap<String, usize>>,
+	pending: &Pending,
+	added: &AddedVars,
+	world_globals: &mut WorldGlobals
+) -> HashMap<(String, Vec<u8>), u32> {
+	let mut known = HashMap::new();
+	let mut file = vec![];
+	for node in &code.nodes {
+		let global = match node {
+			Node::Instruction(dmasm::Instruction::DbgFile(name), _) => {
+				file = name.0.clone();
+				continue;
+			}
+			Node::Instruction(dmasm::Instruction::SetVar(dmasm::Variable::Global(global)), _) => global,
+			_ => continue
+		};
+		let (scope, name) = (global.scope.clone().unwrap_or_default(), global.name.0.clone());
+		let key = (scope, name);
+		if known.contains_key(&key) {
+			continue;
+		}
+		let (scope, name) = &key;
+		let id = pending.globals.get(&key).or_else(|| added.statics.get(&key)).copied().or_else(|| {
+			if scope.is_empty() {
+				let globals = runtime_tables::global_var_ids().ok()?;
+				match variable_ids(name).into_iter().filter(|id| globals.contains(id)).collect::<Vec<_>>()[..] {
+					[id] => Some(id),
+					_ => None
+				}
+			} else if scope.starts_with("proc:") {
+				proc_static(scope, name, counts).or_else(|| {
+					// Match built source lines; edits can shift the new ones.
+					let unique = |ids: BTreeSet<u32>| (ids.len() == 1).then(|| ids.first().copied()).flatten();
+					let path = scope.strip_prefix("proc:").unwrap_or(scope);
+					let path = path.rsplit_once('#').map_or(path, |(path, _)| path);
+					let places: Vec<_> = Proc::overrides(&strip_path(path))
+						.iter()
+						.filter_map(|proc| code_place(&original_bytecode(proc)))
+						.collect();
+					let initialized = world_globals.initialized();
+					let in_proc = initialized
+						.iter()
+						.filter(|(at, global, line, _)| {
+							global == name && places.iter().any(|(file, first, last)| at == file && (*first..=*last).contains(line))
+						})
+						.map(|(.., id)| *id)
+						.collect();
+					let in_file = initialized
+						.iter()
+						.filter(|(at, global, ..)| *at == file && global == name)
+						.map(|(.., id)| *id)
+						.collect();
+					unique(in_proc).or_else(|| unique(in_file))
+				})
+			} else {
+				declared_global(scope, &String::from_utf8_lossy(name))
+			}
+		});
+		if let Some(id) = id {
+			known.insert(key, id);
+		}
+	}
+	known
+}
+
+/// Find the built global init proc: the last pathless proc, unless it is
+/// a type init proc. Worlds with only constant global initializers have none.
+fn global_init_proc() -> Option<Proc> {
+	let proc = crate::unnamed::find(crate::server_types::GLOBAL_INIT, 0)?;
+	let types = runtime_tables::type_count().ok()?;
+	let a_types = (0..types).any(|type_id| runtime_tables::type_field(type_id, type_fields::INIT_PROC).ok() == Some(proc.id.0));
+	(!a_types).then_some(proc)
+}
+
+/// Resolve a proc static by scope (`proc:PATH#N`) and name. Bytecode lists
+/// slots in use order, so trust it only if it references every declaration
+/// of that name (`counts`, see `GlobalInit::proc_statics`).
+fn proc_static(scope: &str, name: &[u8], counts: &BTreeMap<String, BTreeMap<String, usize>>) -> Option<u32> {
+	let path = scope.strip_prefix("proc:")?;
+	let path = path.rsplit_once('#').map_or(path, |(path, _)| path);
+	let declared = *counts.get(path)?.get(String::from_utf8_lossy(name).as_ref())?;
+	let ids: BTreeSet<u32> = Proc::overrides(&strip_path(path))
+		.iter()
+		.filter_map(|proc| {
+			let named = globals_in(&original_bytecode(proc)).remove(name)?;
+			(named.len() == declared).then(|| named.get(static_number(scope)).copied())?
+		})
+		.collect();
+	match ids.len() {
+		1 => ids.first().copied(),
+		_ => None
+	}
 }
 
 /// Compute changed proc settings as entry-word updates: flags, `set src`,
@@ -1015,7 +1312,7 @@ fn type_path(type_id: u32) -> String {
 fn type_and_ancestors(type_id: u32) -> Vec<u32> {
 	let mut out = vec![type_id];
 	let mut at = type_id;
-	while let Ok(parent) = runtime_tables::type_field(at, type_fields::PARENT) {
+	while let Ok(parent) = reparent::parent_of(at) {
 		if parent == NONE || out.contains(&parent) {
 			break;
 		}
@@ -1295,11 +1592,29 @@ fn prepare_new_proc(
 		staged.entries.insert(id, entry);
 		staged.own.entry((type_id, type_fields::PROCS)).or_default().push(id);
 
+		// The moved declaration is now an override; use its built override
+		// path.
+		let mut paths = vec![];
+		for &proc in &relinked {
+			let Some(path) = staged.entry(proc).map(|e| e.0[ProcEntryWords::PATH]) else {
+				continue;
+			};
+			let path = String::from(unsafe { StringRef::from_id(raw_types::strings::StringId(path)) });
+			if let Some(at) = path.rfind("/proc/") {
+				let renamed = leaked_string(&format!("{}/{}", &path[..at], &path[at + "/proc/".len()..])).map_err(fail)?;
+				match staged.entries.get_mut(&proc) {
+					Some(e) => e.0[ProcEntryWords::PATH] = renamed,
+					None => paths.push((proc, renamed))
+				}
+			}
+		}
+
 		Some(NewProcOnType {
 			type_id,
 			field: type_fields::PROCS,
 			map_entries,
 			relinked,
+			paths,
 			after: None
 		})
 	};
@@ -1391,6 +1706,7 @@ fn new_verb_on_type(type_path: &str, id: u32, at: usize, entry: &mut ProcEntryWo
 		field: type_fields::VERBS,
 		map_entries: vec![],
 		relinked,
+		paths: vec![],
 		after
 	})
 }
@@ -1432,6 +1748,7 @@ fn new_statics(
 		if let (None, Some(init)) = (&local.value, &local.init) {
 			added.run_once.push((id, format!("static local {}", local.name), (**init).clone()));
 		}
+		added.statics.insert((local.scope.clone(), name.clone()), id);
 		out.insert((local.scope.clone(), name), id);
 	}
 	Ok(out)
@@ -1444,6 +1761,7 @@ pub fn add_types(new_types: &[NewType]) -> Result<usize, Vec<String>> {
 		return Ok(0);
 	}
 	runtime_tables::available().map_err(|e| vec![format!("hot reloading isn't available on this build of BYOND: {}", e)])?;
+	runtime_tables::types_available().map_err(|e| vec![format!("adding types isn't available on this build of BYOND: {}", e)])?;
 	code_changed();
 
 	let mut added = 0;
@@ -1555,9 +1873,43 @@ fn builtin_writes(var: &str, value: &ConstValue) -> Result<Vec<BuiltinWrite>, St
 				Bits(type_fields::FLAGS_HIGH, 1, flags >> 11),
 			]
 		}
-		"alpha" | "blend_mode" | "color" | "invisibility" | "infra_luminosity" | "luminosity" | "pixel_x" | "pixel_y" | "pixel_w" | "pixel_z"
-		| "plane" | "render_source" | "render_target" | "bound_x" | "bound_y" | "bound_width" | "bound_height" | "step_size" | "step_x"
-		| "step_y" | "glide_size" | "screen_loc" | "vis_flags" | "mouse_drag_pointer" | "mouse_drop_pointer" | "mouse_over_pointer" | "override" => {
+		"alpha"
+		| "blend_mode"
+		| "color"
+		| "invisibility"
+		| "infra_luminosity"
+		| "luminosity"
+		| "pixel_x"
+		| "pixel_y"
+		| "pixel_w"
+		| "pixel_z"
+		| "plane"
+		| "render_source"
+		| "render_target"
+		| "bound_x"
+		| "bound_y"
+		| "bound_width"
+		| "bound_height"
+		| "step_size"
+		| "step_x"
+		| "step_y"
+		| "glide_size"
+		| "screen_loc"
+		| "vis_flags"
+		| "mouse_drag_pointer"
+		| "mouse_drop_pointer"
+		| "mouse_over_pointer"
+		| "override"
+		| "icon_w"
+		| "icon_z"
+		| "bounds"
+		| "fps"
+		| "view"
+		| "perspective"
+		| "tick_lag"
+		| "default_verb_category"
+		| "edge_limit"
+		| "mouse_pointer_icon" => {
 			let (tag, data) = const_value(value)?;
 			// As `PushVal` has it: a number's two halves after its tag, or
 			// the top byte of the data in the tag word
@@ -1689,10 +2041,23 @@ fn prepare_new_var(
 
 	if !new.type_path.is_empty() {
 		let type_id = find_type(&new.type_path).map_err(fail)?;
+		// Retain declarations on moved-from subtypes and their descendants.
+		// Any other declaration of that name is a duplicate.
+		let moved_from = new
+			.moved_from
+			.iter()
+			.map(|path| find_type(path))
+			.collect::<Result<Vec<u32>, String>>()
+			.map_err(fail)?;
+		let mut kept = vec![];
 		for sub in type_vars.subtree(type_id).map_err(fail)? {
 			let declared = type_vars.declared(sub).map_err(fail)?.clone();
 			let names: Vec<u32> = declared.chunks(2).map(|pair| type_vars.name_of(pair[0])).collect();
 			match names.binary_search(&name) {
+				Ok(_) if type_and_ancestors(sub).iter().any(|t| moved_from.contains(t)) => {
+					kept.push(sub);
+					continue;
+				}
 				Ok(_) => {
 					return Err(fail(format!(
 						"{} already has a var of that name (a duplicate definition)",
@@ -1716,6 +2081,9 @@ fn prepare_new_var(
 				table.splice(at * 4..at * 4, [name, id, value.0, value.1]);
 			}
 		}
+		if let Some(warning) = moved_var_warning(&new.type_path, &new.var, &kept) {
+			warnings.push(warning);
+		}
 	}
 
 	if new.type_path.is_empty() || new.flags & STATIC != 0 {
@@ -1724,6 +2092,28 @@ fn prepare_new_var(
 
 	added.vars.push(PreparedNewVar { id, name, value });
 	Ok(())
+}
+
+/// Warn about retained runtime declarations after a var moves to an ancestor.
+fn moved_var_warning(declaring: &str, var: &str, kept: &[u32]) -> Option<String> {
+	// Only topmost moved-from types are needed; their descendants inherit them.
+	let tops: Vec<String> = kept
+		.iter()
+		.filter(|&&t| !type_and_ancestors(t).iter().skip(1).any(|a| kept.contains(a)))
+		.map(|&t| type_path(t))
+		.collect();
+	if tops.is_empty() {
+		return None;
+	}
+	let (they, them) = if tops.len() == 1 { ("its", "it") } else { ("their", "them") };
+	Some(format!(
+		"{}: var {} moved here; {} and {} subtypes retain runtime declarations, values and var IDs. Rebuild to give {} the new declaration",
+		declaring,
+		var,
+		tops.join(", "),
+		they,
+		them
+	))
 }
 
 /// Update variable declaration flags on a type and its subtypes.
@@ -1791,7 +2181,7 @@ fn prepare_redeclared(
 	Ok(())
 }
 
-fn prepare_var_default(default: &HotReloadVarDefault, type_vars: &mut TypeVars) -> Result<(), String> {
+fn prepare_var_default(default: &HotReloadVarDefault, type_vars: &mut TypeVars, added: &mut AddedVars) -> Result<(), String> {
 	let fail = |e: String| format!("var {}: {}", default.var, e);
 
 	let value = const_value(&default.value).map_err(fail)?;
@@ -1803,11 +2193,23 @@ fn prepare_var_default(default: &HotReloadVarDefault, type_vars: &mut TypeVars) 
 	for path in &default.types {
 		let type_id = find_type(path).map_err(fail)?;
 		let table = type_vars.table(type_id).map_err(fail)?;
-		let Some(entry) = table.chunks_mut(4).find(|entry| entry[0] == key) else {
-			return Err(fail(format!("variable not found on runtime type {}", path)));
-		};
-		entry[2] = value.0;
-		entry[3] = value.1;
+		match table.chunks_mut(4).find(|entry| entry[0] == key) {
+			Some(entry) => {
+				entry[2] = value.0;
+				entry[3] = value.1;
+			}
+			// Sound and similar built-in vars acquire a var-table entry only
+			// when the type sets them.
+			None if inherit::builtin_in_table(type_id, &default.var) => {
+				let id = match variable_ids(default.var.as_bytes()).first() {
+					Some(&id) => id,
+					None => added.add(leaked_string(&default.var).map_err(fail)?, (0, 0))
+				};
+				let at = table.chunks(4).position(|entry| entry[0] > key).unwrap_or(table.len() / 4);
+				table.splice(at * 4..at * 4, [key, id, value.0, value.1]);
+			}
+			None => return Err(fail(format!("variable not found on runtime type {}", path)))
+		}
 	}
 	Ok(())
 }
@@ -1815,12 +2217,13 @@ fn prepare_var_default(default: &HotReloadVarDefault, type_vars: &mut TypeVars) 
 /// Commit a prepared reload. Temporarily remove affected breakpoints,
 /// then restore them at their remapped source lines and update their metadata.
 pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
-	prepared: Prepared,
+	mut prepared: Prepared,
 	breakpoints: &mut HashMap<(raw_types::procs::ProcId, u16), BTreeMap<K, T>>,
 	moved_breakpoints: &mut MovedBreakpoints<K>,
 	warnings: &mut Vec<String>
 ) {
 	code_changed();
+	reparent::apply_tree(&mut prepared.reparent);
 	// The id each new var really got, if it got one
 	let mut got = HashMap::new();
 	for new in &prepared.new_vars {
@@ -1838,13 +2241,20 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 		};
 		got.insert(new.id, id);
 	}
-	// Register new globals by their actual IDs for expression lookup.
-	// Existing globals retain their IDs.
-	let globals = prepared
+	// Register globals under their allocated IDs for global.vars and
+	// evaluation. Preserve IDs of existing globals.
+	let globals: Vec<(String, u32, u32)> = prepared
 		.new_globals
 		.iter()
-		.filter_map(|(name, id)| Some((name.clone(), got.get(id).copied().unwrap_or(Some(*id))?)));
-	ADDED_GLOBALS.lock().unwrap().extend(globals);
+		.filter_map(|(name, id, flags)| Some((name.clone(), got.get(id).copied().unwrap_or(Some(*id))?, *flags)))
+		.collect();
+	if !globals.is_empty() {
+		let pairs: Vec<(u32, u32)> = globals.iter().map(|&(_, id, flags)| (id, flags)).collect();
+		if let Err(e) = runtime_tables::add_global_vars(&pairs) {
+			warnings.push(format!("the new global vars are missing from global.vars: {}", e));
+		}
+	}
+	ADDED_GLOBALS.lock().unwrap().extend(globals.into_iter().map(|(name, id, _)| (name, id)));
 
 	let procs_before = runtime_tables::proc_count();
 
@@ -1916,6 +2326,9 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 
 			for &proc in &on_type.relinked {
 				runtime_tables::set_proc_entry_word(raw_types::procs::ProcId(proc), ProcEntryWords::NEXT_OVERRIDE, id);
+			}
+			for &(proc, path) in &on_type.paths {
+				runtime_tables::set_proc_entry_word(raw_types::procs::ProcId(proc), ProcEntryWords::PATH, path);
 			}
 		}
 
@@ -1992,11 +2405,13 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 	for (type_id, field, words) in prepared.type_fields {
 		let _ = runtime_tables::set_type_field(type_id, field, words);
 	}
+	reparent::apply_builtins(&prepared.reparent, warnings);
 	for (type_id, writes) in &prepared.builtin_writes {
 		if let Err(e) = write_builtins(*type_id, writes) {
 			warnings.push(format!("couldn't set a built-in var: {}", e));
 		}
 	}
+	inherit::apply(&prepared.builtin_inherits, warnings);
 	for &type_id in &prepared.appearances {
 		let _ = runtime_tables::forget_type_appearance(type_id);
 	}
@@ -2009,13 +2424,34 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 
 	// Run computed initializers after installing the remaining changes,
 	// using the expression stub.
+	if let Some(proc) = prepared.global_init_at_start {
+		auxtools::start_runs_new_code(proc);
+	}
+	if let Some(bytecode) = prepared.global_init_now {
+		match Proc::find("/proc/auxtools_expr_stub") {
+			Some(stub) => {
+				stub.set_bytecode(bytecode);
+				if let Err(e) = stub.call(&[]) {
+					warnings.push(format!("(global init): {}", e.message));
+				}
+			}
+			None => warnings.push("(global init): missing /proc/auxtools_expr_stub to run it".to_owned())
+		}
+	}
 	for (id, name, bytecode) in prepared.run_once {
 		let Some(stub) = Proc::find("/proc/auxtools_expr_stub") else {
 			warnings.push(format!("{}: missing /proc/auxtools_expr_stub for initializer evaluation", name));
 			continue;
 		};
 		stub.set_bytecode(bytecode);
-		match stub.call(&[]) {
+		// Keep initializer failures out of paused callers' try blocks.
+		let ends = crate::WORLD_ENDS.load(std::sync::atomic::Ordering::Relaxed);
+		let tries = crate::server::Server::hide_tries();
+		let result = stub.call(&[]);
+		if crate::WORLD_ENDS.load(std::sync::atomic::Ordering::Relaxed) == ends {
+			crate::server::Server::show_tries(tries);
+		}
+		match result {
 			Ok(value) => {
 				if let Err(e) = runtime_tables::set_global_value(id, value) {
 					warnings.push(format!("{}: {}", name, e));
@@ -2178,8 +2614,7 @@ pub fn code_generation() -> u32 {
 /// their var ids
 static ADDED_GLOBALS: Mutex<BTreeMap<String, u32>> = Mutex::new(BTreeMap::new());
 
-/// Look up globals added by reload. They are absent from `global.vars`,
-/// which BYOND constructs at load time, so expressions use their IDs.
+/// Look up a newly added global's var ID for expression evaluation.
 pub fn added_global(name: &str) -> Option<u32> {
 	ADDED_GLOBALS.lock().unwrap().get(name).copied()
 }
@@ -2571,6 +3006,8 @@ struct ReloadEnv<'a> {
 	/// The proc's static locals the running world doesn't have yet, by scope
 	/// and name
 	new_statics: HashMap<(String, Vec<u8>), u32>,
+	/// Global vars whose slots are known, by scope and name
+	known: HashMap<(String, Vec<u8>), u32>,
 	instances: &'a mut StagedInstances,
 	/// Source file and line range of the proc.
 	place: Option<(Vec<u8>, u32, u32)>,
@@ -2622,6 +3059,9 @@ impl dmasm::assembler::AssembleEnv for ReloadEnv<'_> {
 
 	fn get_global_index(&mut self, name: &[u8], scope: Option<&str>) -> Option<u32> {
 		let shown = String::from_utf8_lossy(name).into_owned();
+		if let Some(&id) = self.known.get(&(scope.unwrap_or_default().to_owned(), name.to_vec())) {
+			return Some(id);
+		}
 
 		// Resolve an existing static local by its proc scope and declaration
 		// index.
@@ -2675,6 +3115,22 @@ impl dmasm::assembler::AssembleEnv for ReloadEnv<'_> {
 			_ => {}
 		}
 
+		// Disambiguate global names using the world's global list.
+		if scope == Some("") {
+			if let Ok(globals) = runtime_tables::global_var_ids() {
+				if let [id] = candidates.iter().filter(|id| globals.contains(id)).collect::<Vec<_>>()[..] {
+					return Some(*id);
+				}
+			}
+		}
+
+		// Resolve type statics and consts on their declaring type first.
+		// Reparented code may have referenced a different var with the same
+		// name.
+		if let Some(id) = scope.filter(|s| s.starts_with('/')).and_then(|ty| declared_global(ty, &shown)) {
+			return Some(id);
+		}
+
 		// Prefer the same-named variable already referenced by this proc.
 		if let Some([id]) = self.proc_globals.get(name).map(Vec::as_slice) {
 			return Some(*id);
@@ -2702,6 +3158,23 @@ impl dmasm::assembler::AssembleEnv for ReloadEnv<'_> {
 			scope.filter(|s| !s.is_empty()).unwrap_or("the world")
 		));
 		None
+	}
+}
+
+/// The static or const var `name` that type `path` declares, if it's one.
+fn declared_global(path: &str, name: &str) -> Option<u32> {
+	let type_id = find_type(path).ok()?;
+	let name = StringRef::new(name).ok()?.get_id().0;
+	let declared = runtime_tables::misc_words(runtime_tables::type_field(type_id, type_fields::DECLARED_VARS).ok()?)?;
+	// (flags 1 static, 2 const)
+	let found: Vec<u32> = declared
+		.chunks(2)
+		.filter(|c| c.len() == 2 && c[1] & 3 != 0 && runtime_tables::variable_name(c[0]) == Some(name))
+		.map(|c| c[0])
+		.collect();
+	match found[..] {
+		[id] => Some(id),
+		_ => None
 	}
 }
 

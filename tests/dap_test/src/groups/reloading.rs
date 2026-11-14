@@ -1,12 +1,13 @@
 //! Debugging a world while its code is hot reloaded
 
-use std::path::PathBuf;
+use std::{path::PathBuf, process::Command};
 
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::{
 	client::value_of,
 	ok,
+	paths::ByondCommand,
 	world::{host_file, World}
 };
 
@@ -19,7 +20,10 @@ pub fn copy_of_the_world(name: &str) -> PathBuf {
 			let copy_to = to.join(path.file_name().unwrap());
 			if path.is_dir() {
 				copy(&path, &copy_to);
-			} else if path.extension().is_some_and(|e| e == "dm" || e == "dme" || e == "dmb" || e == "rsc") {
+			} else if path
+				.extension()
+				.is_some_and(|e| ["dm", "dme", "dmb", "rsc", "dmi"].contains(&e.to_str().unwrap_or_default()))
+			{
 				std::fs::copy(&path, copy_to).unwrap();
 			}
 		}
@@ -27,6 +31,32 @@ pub fn copy_of_the_world(name: &str) -> PathBuf {
 	let dir = std::env::temp_dir().join(format!("dap_test_{}-{}", name, std::process::id()));
 	let _ = std::fs::remove_dir_all(&dir);
 	copy(&host_file(""), &dir);
+	dir
+}
+
+/// The directory's long path. Windows can give the temporary directory by
+/// an 8.3 name (`RUNNER~1`). DreamMaker expands the path of an included
+/// `.dmf` or `.dms`, so under such a directory it rejects the file as
+/// outside the world's ("invalid file") and builds the world without it.
+#[cfg(windows)]
+pub fn long_name(dir: PathBuf) -> PathBuf {
+	use std::os::windows::ffi::{OsStrExt, OsStringExt};
+	#[link(name = "kernel32")]
+	extern "system" {
+		fn GetLongPathNameW(short: *const u16, long: *mut u16, len: u32) -> u32;
+	}
+	let short: Vec<u16> = dir.as_os_str().encode_wide().chain(Some(0)).collect();
+	let mut long = vec![0u16; 1024];
+	// SAFETY: `short` ends in a NUL, and `long` has room for `len` units
+	let len = unsafe { GetLongPathNameW(short.as_ptr(), long.as_mut_ptr(), long.len() as u32) } as usize;
+	if len == 0 || len > long.len() {
+		return dir;
+	}
+	PathBuf::from(std::ffi::OsString::from_wide(&long[..len]))
+}
+
+#[cfg(not(windows))]
+pub fn long_name(dir: PathBuf) -> PathBuf {
 	dir
 }
 
@@ -52,6 +82,51 @@ fn moved(world: &mut World) -> (u64, bool) {
 	assert_eq!(event["body"]["reason"], "changed", "{}", event);
 	let breakpoint = &event["body"]["breakpoint"];
 	(breakpoint["line"].as_u64().unwrap(), breakpoint["verified"].as_bool().unwrap())
+}
+
+/// Reboot and wait for the `count`th world/New and restored reloads.
+fn reboot(world: &mut World, count: usize) {
+	let restarts = world.output.matches("The world restarted").count();
+	world.run("reboot");
+	rebooted(world, count, restarts);
+}
+
+/// Wait for the `count`th world/New and restored reloads after `restarts`
+/// previous reboots.
+fn rebooted(world: &mut World, count: usize, restarts: usize) {
+	world.wait_count("dap: world/New", count);
+	world.wait_until("the reloads again", |output| {
+		output.matches("The world restarted").count() > restarts
+			&& output.rsplit("The world restarted").next().is_some_and(|after| reloads(after) > 0)
+	});
+}
+
+/// Launch a separate world with hot reload and source watching.
+fn watched_world(name: &str) -> (World, PathBuf) {
+	let dir = copy_of_the_world(name);
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.catch_runtimes(false);
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	(world, dir)
+}
+
+/// Removing only a built-in override must still produce a reload.
+fn built_in_taken_away() {
+	let (mut world, dir) = watched_world("built_in_taken_away");
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_built()\n",
+		"/obj/layered\n\tlayer = 7\n\n/proc/icon_built()\n"
+	);
+	assert_eq!(world.eval_global("(new /obj/layered).layer"), "7");
+	// Keep source lines unchanged so the override is the only difference.
+	edit(&mut world, "main.dm", "\tlayer = 7\n", "\t// layer = 7\n");
+	assert_eq!(world.eval_global("(new /obj/layered).layer"), "3");
+	ok("built-in-only override removal");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// Edits the client has no part in: an agent's, another editor's, a checkout
@@ -315,9 +390,452 @@ fn saved_without_reloading() {
 	world.end();
 }
 
+/// With no global init proc or map, startup still precedes world/New
+/// at an internal call. Reloads introducing resources must apply at once
+/// after world/New has loaded the world data.
+fn starting_at_world_new() {
+	let dir = std::env::temp_dir().join(format!("dap_test_world_new-{}", std::process::id()));
+	let _ = std::fs::remove_dir_all(&dir);
+	std::fs::create_dir_all(&dir).unwrap();
+	std::fs::write(dir.join("dap_test_host.dme"), "#include \"bare.dm\"\n").unwrap();
+	std::fs::write(
+		dir.join("bare.dm"),
+		"/world/New()\n\tworld.log << \"dap: world/New\"\n\n/proc/icon_new()\n\treturn null\n"
+	)
+	.unwrap();
+	std::fs::copy(host_file("reload_new.dmi"), dir.join("reload_new.dmi")).unwrap();
+	let built = Command::new(crate::paths::find_dm())
+		.with_byond_paths()
+		.arg(dir.join("dap_test_host.dme"))
+		.status()
+		.unwrap();
+	assert!(built.success(), "dreammaker build of {} failed", dir.display());
+
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	edit(&mut world, "bare.dm", "\treturn null\n", "\treturn 'reload_new.dmi'\n");
+	assert_eq!(world.eval_global("jointext(icon_states(icon_new()), \",\")"), "\"new1\"");
+	assert!(
+		!world.output.contains("applies as world/New starts"),
+		"the reload waited for world/New:\n{}",
+		world.output
+	);
+	ok("resource reload after world/New startup");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A parent-only change must still produce a reload.
+fn parent_changed_alone() {
+	let (mut world, dir) = watched_world("parent_changed_alone");
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_built()\n",
+		"/datum/pa\n\tvar/x = 1\n\n/datum/pb\n\tvar/x = 2\n\n/datum/pt\n\tparent_type = /datum/pa\n\n/proc/icon_built()\n"
+	);
+	assert_eq!(world.eval_global("(new /datum/pt).x"), "1");
+	edit(&mut world, "main.dm", "\tparent_type = /datum/pa\n", "\tparent_type = /datum/pb\n");
+	assert_eq!(world.eval_global("(new /datum/pt).x"), "2");
+	assert_eq!(world.eval_global("istype(new /datum/pt, /datum/pb)"), "1");
+	ok("parent-only reload");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Restore added types and a parent change after reboot. Wait until
+/// InitVarRecorder calls release their type entries, then restore before
+/// global initialization and map creation. Restoring too early crashed
+/// or made a new ancestor's New() recurse through ..().
+fn types_changed_before_reboot() {
+	let (mut world, dir) = watched_world("types_changed_before_reboot");
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_built()\n",
+		"/datum/rb_base\n\tvar/list/held = list(3)\n\tvar/x = 5\n\n/datum/rb_base/kid\n\n/datum/rb_base/New()\n\tx += \
+		 1\n\t..()\n\n/proc/icon_built()\n"
+	);
+	edit(
+		&mut world,
+		"stepping.dm",
+		"/datum/made\n",
+		"/datum/made\n\tparent_type = /datum/rb_base\n"
+	);
+	// New() calls the override added on its ancestor.
+	edit(
+		&mut world,
+		"stepping.dm",
+		"\tsize = n // @made_new\n",
+		"\tsize = n // @made_new\n\t..()\n"
+	);
+	let check = |world: &mut World| {
+		assert_eq!(world.eval_global("var/datum/rb_base/kid/k = new\n\"[k.x] [length(k.held)]\""), "\"6 1\"");
+		assert_eq!(
+			world.eval_global("var/datum/made/m = new(2)\n\"[istype(m, /datum/rb_base)] [m:x] [m.size]\""),
+			"\"1 6 2\""
+		);
+	};
+	check(&mut world);
+	for count in 2..=4 {
+		reboot(&mut world, count);
+		check(&mut world);
+	}
+	ok("type and parent restoration after reboot");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Restore an override before map creation. BYOND has not built proc-name
+/// maps yet; inserting it there as well caused duplicate entries and
+/// recursive ..() calls when BYOND later built the map.
+fn override_restored_before_map() {
+	let dir = copy_of_the_world("override_restored_before_map");
+	std::fs::write(
+		dir.join("placed.dm"),
+		"var/placed_news = 0\n\n/obj/placed\n\n/obj/placed/New()\n\tplaced_news++\n\t..()\n\n/datum/rb_over\n"
+	)
+	.unwrap();
+	std::fs::write(
+		dir.join("placed.dmm"),
+		"\"a\" = (/turf,/area)\n\"b\" = (/obj/placed,/turf,/area)\n\n(1,1,1) = {\"\naab\n\"}\n"
+	)
+	.unwrap();
+	let dme = dir.join("dap_test_host.dme");
+	let text = std::fs::read_to_string(&dme).unwrap() + "#include \"placed.dm\"\n#include \"placed.dmm\"\n";
+	std::fs::write(&dme, text).unwrap();
+	let built = Command::new(crate::paths::find_dm()).with_byond_paths().arg(&dme).status().unwrap();
+	assert!(built.success(), "dreammaker build of {} failed", dir.display());
+
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.catch_runtimes(false);
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	edit(
+		&mut world,
+		"placed.dm",
+		"/datum/rb_over\n",
+		"/datum/rb_over\n\n/datum/rb_over/New()\n\tplaced_news += 10\n\t..()\n"
+	);
+	let made = |world: &mut World| world.eval_global("var/before = placed_news\nnew /datum/rb_over\nplaced_news - before");
+	assert_eq!(made(&mut world), "10");
+	for count in 2..=3 {
+		reboot(&mut world, count);
+		assert_eq!(world.eval_global("placed_news"), "1", "map atom was not constructed exactly once");
+		assert_eq!(made(&mut world), "10");
+	}
+	ok("override restoration before map creation");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Global and static initializers used by `initializers_after_reboot`.
+const INITIALIZERS: &str = "/proc/rb_late_set()
+	return isnull(rb_late) ? \"null\" : \"set\"
+
+var/rb_a = 5
+var/rb_b = rb_a * 2
+var/rb_news = 0
+var/rb_seen = 0
+
+/datum/rb_counted
+	var/n
+
+/datum/rb_counted/New(n)
+	src.n = n
+	rb_news++
+
+var/datum/rb_counted/rb_made = new(1)
+
+/datum/rb_static
+	var/static/s = rb_a + 1
+
+/proc/rb_local()
+	var/static/l = rb_a + 2
+	return l
+
+var/rb_late = rb_a
+
+/obj/rb_placed/New()
+	rb_seen = rb_b
+	..()
+
+/datum/rb_holder
+	var/held = 'lamp.dmi'
+
+/proc/rb_held()
+	var/datum/rb_holder/H = new
+	return list(H.held, 'lamp.dmi')
+";
+
+/// Save a source change with no immediate runtime effect.
+fn edit_nothing_to_run(world: &mut World, file: &str, old: &str, new: &str) {
+	let before = world.count("Hot reload: no runtime changes");
+	world.marks.edit(file, old, new);
+	world.wait_count("Hot reload: no runtime changes", before + 1);
+}
+
+/// Running globals and statics retain their values. After reboot, run
+/// changed initializers once, in the build's order, before map creation.
+/// Cover dependent globals, additions, constructor side effects and
+/// type/proc statics, then repeat after another reboot.
+fn initializers_after_reboot() {
+	let dir = copy_of_the_world("initializers_after_reboot");
+	std::fs::write(dir.join("inits.dm"), INITIALIZERS).unwrap();
+	std::fs::write(
+		dir.join("inits.dmm"),
+		"\"a\" = (/turf,/area)\n\"b\" = (/obj/rb_placed,/turf,/area)\n\n(1,1,1) = {\"\naab\n\"}\n"
+	)
+	.unwrap();
+	let dme = dir.join("dap_test_host.dme");
+	let text = std::fs::read_to_string(&dme).unwrap() + "#include \"inits.dm\"\n#include \"inits.dmm\"\n";
+	std::fs::write(&dme, text).unwrap();
+	let built = Command::new(crate::paths::find_dm()).with_byond_paths().arg(&dme).status().unwrap();
+	assert!(built.success(), "dreammaker build of {} failed", dir.display());
+
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.catch_runtimes(false);
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	const VALUES: &str = "\"[rb_a] [rb_b] [rb_news] [rb_made.n] [(new /datum/rb_static).s] [rb_local()] [rb_c] [rb_seen]\"";
+	// Only initializers changed; no immediate runtime effect.
+	edit_nothing_to_run(&mut world, "inits.dm", "var/rb_a = 5\n", "var/rb_a = 7\n");
+	edit_nothing_to_run(&mut world, "inits.dm", "new(1)", "new(2)");
+	edit_nothing_to_run(&mut world, "inits.dm", "\tvar/static/s = rb_a + 1\n", "\tvar/static/s = rb_a + 10\n");
+	edit(&mut world, "inits.dm", "\tvar/static/l = rb_a + 2\n", "\tvar/static/l = rb_a + 20\n");
+	edit(&mut world, "inits.dm", "var/rb_news = 0\n", "var/rb_news = 0\nvar/rb_c = rb_late_set()\n");
+	assert_eq!(world.eval_global(VALUES), "\"5 10 1 1 6 7 set 10\"");
+	for count in 2..=3 {
+		reboot(&mut world, count);
+		assert_eq!(world.eval_global(VALUES), "\"7 14 1 2 17 27 null 14\"", "after reboot {}", count - 1);
+	}
+	ok("updated global initialization after reboot");
+	// A new resource defers restoration until world/New. New proc statics
+	// have no slots beforehand and must initialize once when allocated.
+	std::fs::copy(host_file("reload_new.dmi"), dir.join("rb_new.dmi")).unwrap();
+	edit(
+		&mut world,
+		"inits.dm",
+		"\treturn l\n",
+		"\treturn l\n\n/proc/rb_icon()\n\tvar/static/rb_kept = rb_a + 1\n\treturn list(new /datum/rb_static, 'rb_new.dmi', rb_kept)\n"
+	);
+	reboot(&mut world, 4);
+	assert!(
+		world.output.contains("applies as world/New starts"),
+		"the restore didn't wait:\n{}",
+		world.output
+	);
+	assert_eq!(world.eval_global(VALUES), "\"7 14 1 2 17 27 null 14\"");
+	ok("updated global initialization with deferred restore");
+	assert_eq!(world.eval_global("var/list/I = rb_icon()\n\"[length(I)] [I[3]]\""), "\"3 8\"");
+	// Restore a type default and code referencing its type with a new
+	// resource, deferred until world/New.
+	resource_saved(&mut world, &dir, "lamp_edited.dmi");
+	let held = "var/list/L = rb_held()\n\"[length(icon_states(L[1]))] [length(icon_states(L[2]))]\"";
+	assert_eq!(world.eval_global(held), "\"3 3\"");
+	reboot(&mut world, 5);
+	assert_eq!(world.eval_global(held), "\"3 3\"");
+	ok("type defaults in deferred restore");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A newly added computed global must initialize after reboot even when
+/// the build has no global init proc.
+fn initializer_added_to_a_world_without() {
+	let dir = std::env::temp_dir().join(format!("dap_test_no_inits-{}", std::process::id()));
+	let _ = std::fs::remove_dir_all(&dir);
+	std::fs::create_dir_all(&dir).unwrap();
+	std::fs::write(dir.join("dap_test_host.dme"), "#include \"bare.dm\"\n").unwrap();
+	std::fs::write(
+		dir.join("bare.dm"),
+		"var/bare_n = 1\n\n/world/New()\n\tworld.log << \"dap: world/New\"\n\n/proc/bare_reboot()\n\tspawn(1)\n\t\tworld.Reboot()\n"
+	)
+	.unwrap();
+	let built = Command::new(crate::paths::find_dm())
+		.with_byond_paths()
+		.arg(dir.join("dap_test_host.dme"))
+		.status()
+		.unwrap();
+	assert!(built.success(), "dreammaker build of {} failed", dir.display());
+
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.catch_runtimes(false);
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	edit(
+		&mut world,
+		"bare.dm",
+		"var/bare_n = 1\n",
+		"var/bare_n = 1\nvar/list/bare_list = list(bare_n, 2)\n"
+	);
+	edit_nothing_to_run(&mut world, "bare.dm", "var/bare_n = 1\n", "var/bare_n = 3\n");
+	assert_eq!(world.eval_global("\"[bare_n] [length(bare_list)] [bare_list[1]]\""), "\"1 2 1\"");
+	for count in 2..=3 {
+		let restarts = world.count("The world restarted");
+		world.eval_global("bare_reboot()");
+		rebooted(&mut world, count, restarts);
+		assert_eq!(
+			world.eval_global("\"[bare_n] [length(bare_list)] [bare_list[1]]\""),
+			"\"3 2 3\"",
+			"after reboot {}",
+			count - 1
+		);
+	}
+	ok("added global init proc after reboot");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// New FILE_DIR references use paths relative to the world directory,
+/// unlike built resource names. Watch and reload later saves too.
+fn file_named_by_a_reload() {
+	let dir = copy_of_the_world("file_named_by_a_reload");
+	std::fs::create_dir_all(dir.join("fzdir")).unwrap();
+	std::fs::copy(host_file("reload_new.dmi"), dir.join("fzdir/named.dmi")).unwrap();
+	let dme = dir.join("dap_test_host.dme");
+	let text = "#define FILE_DIR fzdir\n".to_owned() + &std::fs::read_to_string(&dme).unwrap();
+	std::fs::write(&dme, text).unwrap();
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.catch_runtimes(false);
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_built()\n",
+		"/proc/icon_named()\n\treturn 'named.dmi'\n\n/proc/icon_built()\n"
+	);
+	let shown = |world: &mut World| world.eval_global("\"[icon_named()] [jointext(icon_states(icon_named()), \",\")]\"");
+	assert_eq!(shown(&mut world), "\"fzdir/named.dmi new1\"");
+	ok("new resource lookup through FILE_DIR");
+
+	let before = world.count("Hot reload: reloaded fzdir/named.dmi");
+	// (bytes the world has no resource for)
+	std::fs::copy(host_file("lamp_edited.dmi"), dir.join("fzdir/named.dmi")).unwrap();
+	let saved = std::fs::File::options().write(true).open(dir.join("fzdir/named.dmi")).unwrap();
+	saved.set_modified(std::time::SystemTime::now()).unwrap();
+	world.wait_until("the resource reload", |output| {
+		output.matches("Hot reload: reloaded fzdir/named.dmi").count() > before
+	});
+	assert_eq!(shown(&mut world), "\"fzdir/named.dmi on,off,new\"");
+	ok("watching newly referenced resources");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Wait for a resource reload report.
+fn resource_saved(world: &mut World, dir: &std::path::Path, version: &str) {
+	let before = world.count("Hot reload: reloaded lamp.dmi");
+	std::fs::copy(dir.join(version), dir.join("lamp.dmi")).unwrap();
+	// As an editor saves it: Windows keeps the copied file's time
+	let saved = std::fs::File::options().write(true).open(dir.join("lamp.dmi")).unwrap();
+	saved.set_modified(std::time::SystemTime::now()).unwrap();
+	world.wait_until("the resource reload", |output| {
+		output.matches("Hot reload: reloaded lamp.dmi").count() > before
+	});
+}
+
+/// An icon saved while the world runs, then after a reboot
+fn resource_files() {
+	let dir = copy_of_the_world("resources");
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	assert_eq!(world.eval_global("make_lamps()"), "\"made\"");
+	assert_eq!(world.eval_global("lamp_states()"), "\"on,off\"");
+
+	// Existing appearances, resource literals and newly created instances.
+	resource_saved(&mut world, &dir, "lamp_edited.dmi");
+	let new = "\"on,off,new\"";
+	assert_eq!(world.eval_global("lamp_states()"), new);
+	assert_eq!(world.eval_global("states_of(early_lamp.icon)"), new);
+	assert_eq!(world.eval_global("states_of(placed_lamp.icon)"), new);
+	assert_eq!(world.eval_global("overlay_states()"), new);
+	assert_eq!(world.eval_global("var/obj/lamp/L = new\nstates_of(L.icon)"), new);
+	ok("icon reload on existing and new instances");
+
+	// Restore the icon after reboot, including appearances made while loading.
+	world.run("reboot");
+	world.wait_count("dap: world/New", 2);
+	world.wait_output("Hot reload: restoring resource files changed since the build");
+	assert_eq!(world.eval_global("states_of(early_lamp.icon)"), new);
+	assert_eq!(world.eval_global("lamp_states()"), new);
+	ok("saved icon restored after reboot");
+
+	// A later save must replace the restored resource ID too.
+	resource_saved(&mut world, &dir, "lamp_third.dmi");
+	let third = "\"on,off,third\"";
+	assert_eq!(world.eval_global("states_of(early_lamp.icon)"), third);
+	assert_eq!(world.eval_global("lamp_states()"), third);
+	ok("icon saved again after reboot");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Breakpoint after `var/text = "[n]"`: DreamMaker records that line before
+/// assigning the var, so `text` is still unset there.
+fn read_ahead_stop(world: &mut World, file: &std::path::Path, line: u64) -> (u64, String) {
+	world.set_breakpoints(file, json!([line]));
+	world.run("nothing_to_run");
+	let stop = world.stop();
+	let text = world.local("text");
+	world.resume_through("nothing_to_run");
+	world.set_breakpoints(file, json!([]));
+	(stop.line, text)
+}
+
+/// Breakpoints must retain their positions after reload, including empty
+/// macro expansions, uninitialized vars, set statements and lookahead lines.
+fn nothing_to_run() {
+	let (mut world, dir) = watched_world("nothing_to_run");
+	let at = world.marks.clone();
+	let file = at.file("stepping.dm");
+	let names = ["nothing_macro", "nothing_var", "nothing_set", "nothing_code"];
+	let lines: Vec<u64> = names.iter().map(|name| at.line(name)).collect();
+	let placed = |world: &mut World| -> Vec<Value> {
+		let set = world.set_breakpoints(&file, json!(lines));
+		set.iter().map(|b| b["line"].clone()).collect()
+	};
+	let expected: Vec<Value> = lines.iter().map(|l| json!(l)).collect();
+	assert_eq!(placed(&mut world), expected, "breakpoints moved off lines DreamMaker's code has");
+	world.set_breakpoints(&file, json!([lines[0]]));
+	world.run("nothing_to_run");
+	world.stop_on("breakpoint", "/nothing_to_run", "nothing_macro");
+	world.resume_through("nothing_to_run");
+	let read_ahead = at.line("read_ahead_next");
+	let before = read_ahead_stop(&mut world, &file, read_ahead);
+
+	// Change the proc so its bytecode is recompiled.
+	edit(&mut world, "stepping.dm", "\tn = 1 // @nothing_code\n", "\tn = 2 // @nothing_code\n");
+	assert_eq!(world.eval_global("nothing_to_run()"), "2");
+	assert_eq!(placed(&mut world), expected, "breakpoints moved off lines after the reload");
+	world.set_breakpoints(&file, json!([lines[0]]));
+	world.run("nothing_to_run");
+	world.stop_on("breakpoint", "/nothing_to_run", "nothing_macro");
+	world.resume_through("nothing_to_run");
+	ok("breakpoints on nonexecutable lines after reload");
+	let after = read_ahead_stop(&mut world, &file, read_ahead);
+	assert_eq!(after, before, "a breakpoint DreamMaker records ahead stopped elsewhere after the reload");
+	ok("breakpoint on a lookahead line after reload");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
 pub fn run() {
 	saved_without_reloading();
+	built_in_taken_away();
 	behind_the_clients_back();
+	starting_at_world_new();
+	parent_changed_alone();
+	types_changed_before_reboot();
+	override_restored_before_map();
+	initializers_after_reboot();
+	initializer_added_to_a_world_without();
+	file_named_by_a_reload();
+	resource_files();
+	nothing_to_run();
 
 	let dir = copy_of_the_world("reloading");
 	let mut world = World::launch_as(json!({ "supportsInvalidatedEvent": true }), dir.clone(), json!({ "hotReload": true }));
@@ -590,6 +1108,46 @@ pub fn run() {
 	world.break_on(&[]);
 	world.resume_through("middle");
 	ok("restore reloads and breakpoints after reboot");
+
+	// Before resources load, restored code must use the build's resource ID
+	// (the first cache ID belongs to reload_built.dmi).
+	let states = |world: &mut World, proc: &str| world.eval_global(&format!("jointext(icon_states({}()), \",\")", proc));
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_reloaded()\n\treturn null\n",
+		"/proc/icon_reloaded()\n\treturn 'reload_built_2.dmi'\n"
+	);
+	assert_eq!(states(&mut world, "icon_reloaded"), "\"second1\"");
+	reboot(&mut world, 3);
+	assert_eq!(states(&mut world, "icon_reloaded"), "\"second1\"");
+	let after = world.output.rsplit("The world restarted").next().unwrap_or_default().to_owned();
+	assert!(
+		!after.contains("applies as world/New starts"),
+		"the reload waited for world/New:\n{}",
+		after
+	);
+	ok("restored reload names a built resource");
+
+	// A resource absent from the build must wait for world/New to get an ID.
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_built()\n",
+		"/proc/icon_new()\n\treturn 'reload_new.dmi'\n\n/proc/icon_built()\n"
+	);
+	assert_eq!(states(&mut world, "icon_new"), "\"new1\"");
+	reboot(&mut world, 4);
+	let after = world.output.rsplit("The world restarted").next().unwrap_or_default().to_owned();
+	assert!(
+		after.contains("resource files need the loaded cache (reload_new.dmi); reload applies as world/New starts"),
+		"the launcher said:\n{}",
+		after
+	);
+	assert_eq!(states(&mut world, "icon_new"), "\"new1\"");
+	assert_eq!(states(&mut world, "icon_reloaded"), "\"second1\"");
+	assert_eq!(states(&mut world, "icon_built"), "\"built1,built2\"");
+	ok("restored reload naming a new resource waits for world/New");
 	world.end();
 	let _ = std::fs::remove_dir_all(&dir);
 }

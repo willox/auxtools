@@ -12,6 +12,10 @@ pub mod local;
 #[path = "../../debug_server/src/server_types.rs"]
 pub mod server_types;
 
+// Read a world's resource table as the debug server does.
+#[path = "../../debug_server/src/dmb_tables.rs"]
+pub mod dmb_tables;
+
 // Share macro expansion logic with the debug server.
 #[allow(dead_code)]
 #[path = "../../debug_server/src/macros.rs"]

@@ -3,8 +3,9 @@
 //! with its cleanup code.
 //!
 //! Layouts are based on 516.1688, with older-build differences documented
-//! locally. Patterns were checked on Windows and Linux builds 515.1637,
-//! 515.1647, 516.1659, 516.1685 and 516.1688.
+//! locally. Patterns were checked on every Windows and Linux build from
+//! 515.1637 to 516.1688, and the tables on 515.1637, 515.1647, 516.1659,
+//! 516.1685, 516.1686 and 516.1688.
 
 use std::ffi::c_void;
 
@@ -151,9 +152,10 @@ struct Functions {
 	alloc_shared: extern "C" fn(usize) -> *mut c_void,
 	free_shared: extern "C" fn(*mut c_void) -> bool,
 	copy_shared: extern "C" fn(*mut c_void) -> *mut c_void,
-	/// Works out a type's typepath value and lets `text2path` find it (none
-	/// before `TYPEPATH_BUILD`)
-	register_typepath: Option<extern "C" fn(u32)>,
+	/// Register a typepath for `text2path` (absent before `TYPEPATH_BUILD`).
+	/// Only type additions require this; proc and var additions can proceed
+	/// when it is unavailable.
+	register_typepath: Result<Option<extern "C" fn(u32)>, String>,
 	/// The size of a type table entry
 	type_stride: usize,
 	crt_realloc: extern "C" fn(*mut c_void, usize) -> *mut c_void,
@@ -182,7 +184,11 @@ struct Functions {
 
 	/// Global slot for each variable ID: global/static values and declared
 	/// variable defaults. New locals start with their ID's slot value.
-	global_values: *const *const crate::raw_types::values::Value
+	global_values: *const *const crate::raw_types::values::Value,
+	/// Misc entry of (var ID, flags) pairs, sorted by name string ID.
+	/// `global.vars` enumerates it and binary-searches it for name lookups.
+	/// Reloads can proceed without it, but new globals will be absent there.
+	global_vars: Result<*mut u32, String>
 }
 
 #[derive(Clone, Copy)]
@@ -266,6 +272,19 @@ mod recipes {
 		),
 		hops: &[],
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
+	};
+
+	// Loader store of the sorted, interned global (var ID, flags) list.
+	// The destination address is operand 0.
+	pub const GLOBAL_VARS: Recipe = Recipe {
+		name: "global_vars",
+		versions: CHECKED,
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"0F B7 07 50 53 E8 ?? ?? ?? ?? 53 A3 ?? ?? ?? ?? FF 15 ?? ?? ?? ?? FF 35"
+		),
+		hops: &[],
+		extract: Extract::AbsMem(OperandSelect::NthAbsMem(0))
 	};
 
 	pub const ALLOC_SHARED: Recipe = Recipe {
@@ -418,10 +437,10 @@ mod recipes {
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
 	};
 
-	// Builds before 1687 don't check for NONE
+	// Builds before 1686 don't check for NONE
 	pub const REGISTER_TYPEPATH: Recipe = Recipe {
 		name: "register_typepath",
-		versions: VersionRange { min: 1687, max: 1688 },
+		versions: VersionRange { min: 1686, max: 1688 },
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 57 8B 7D 08 3B 3D ?? ?? ?? ?? 0F 83 ?? ?? ?? ?? 81 FF FF FF 00 00 0F 84 ?? ?? ?? ?? 56 69 F7 98 00 00 00 03 35 ?? ?? ?? ?? 0F \
@@ -433,7 +452,7 @@ mod recipes {
 
 	pub const REGISTER_TYPEPATH_OLD: Recipe = Recipe {
 		name: "register_typepath",
-		versions: VersionRange { min: 1641, max: 1686 },
+		versions: VersionRange { min: 1641, max: 1685 },
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 57 8B 7D 08 3B 3D ?? ?? ?? ?? 0F 83 ?? ?? ?? ?? 56 69 F7 98 00 00 00 03 35 ?? ?? ?? ?? 0F 84 ?? ?? ?? ?? 80 BE 8C 00 00 00 00 \
@@ -474,9 +493,11 @@ fn resolve() -> Result<Functions, String> {
 			free_shared: std::mem::transmute(find(&FREE_SHARED)?),
 			copy_shared: std::mem::transmute(find(&COPY_SHARED)?),
 			register_typepath: if build < TYPEPATH_BUILD {
-				None
+				Ok(None)
 			} else {
-				Some(std::mem::transmute(find(&REGISTER_TYPEPATH).or_else(|_| find(&REGISTER_TYPEPATH_OLD))?))
+				find(&REGISTER_TYPEPATH)
+					.or_else(|_| find(&REGISTER_TYPEPATH_OLD))
+					.map(|address| Some(std::mem::transmute::<usize, extern "C" fn(u32)>(address)))
 			},
 			type_stride: type_stride(build),
 			crt_realloc: std::mem::transmute(crt_realloc),
@@ -493,7 +514,8 @@ fn resolve() -> Result<Functions, String> {
 			mobs: find(&MOBS)? as *const *mut MobType,
 			// The code holds the map's address
 			world_name_map: (find(&WORLD_NAME_MAP)? as *const *mut ProcNameMap).read_unaligned(),
-			global_values: find(&GLOBAL_VALUES)? as *const *const crate::raw_types::values::Value
+			global_values: find(&GLOBAL_VALUES)? as *const *const crate::raw_types::values::Value,
+			global_vars: find(&GLOBAL_VARS).map(|address| address as *mut u32)
 		})
 	}
 }
@@ -563,6 +585,19 @@ mod recipes {
 		),
 		hops: &[],
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
+	};
+
+	// Loader store of the sorted, interned global (var ID, flags) list.
+	// The destination address is operand 0.
+	pub const GLOBAL_VARS: Recipe = Recipe {
+		name: "global_vars",
+		versions: CHECKED,
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"66 D1 EA 0F B7 D2 E8 ?? ?? ?? ?? 59 58 0F B7 07 50 53 E8 ?? ?? ?? ?? 89 C7 89 1C 24 A3 ?? ?? ?? ??"
+		),
+		hops: &[],
+		extract: Extract::AbsMem(OperandSelect::NthAbsMem(0))
 	};
 
 	pub const ALLOC_SHARED: Recipe = Recipe {
@@ -706,10 +741,10 @@ mod recipes {
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
 	};
 
-	// Builds before 1687 don't check for NONE
+	// Builds before 1686 don't check for NONE
 	pub const REGISTER_TYPEPATH: Recipe = Recipe {
 		name: "register_typepath",
-		versions: VersionRange { min: 1687, max: 1688 },
+		versions: VersionRange { min: 1686, max: 1688 },
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"53 83 EC 18 8B 44 24 20 3B 05 ?? ?? ?? ?? 73 ?? 3D FF FF 00 00 74 ?? 69 D8 94 00 00 00 03 1D ?? ?? ?? ?? 74 ?? 80 BB 8C 00 00 00 00 74 \
@@ -721,7 +756,7 @@ mod recipes {
 
 	pub const REGISTER_TYPEPATH_OLD: Recipe = Recipe {
 		name: "register_typepath",
-		versions: VersionRange { min: 1644, max: 1686 },
+		versions: VersionRange { min: 1644, max: 1685 },
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"53 83 EC 18 8B 44 24 20 3B 05 ?? ?? ?? ?? 73 ?? 69 D8 94 00 00 00 03 1D ?? ?? ?? ?? 74 ?? 80 BB 8C 00 00 00 00 74 ?? 8D 44 24 08 83 EC \
@@ -787,6 +822,16 @@ mod recipes {
 		anchor: Anchor::Signature(SignatureTreatment::NoOffset, VAR_LOADER_EARLY),
 		hops: &[],
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(3))
+	};
+	pub const GLOBAL_VARS_EARLY: Recipe = Recipe {
+		name: "global_vars",
+		versions: EARLY,
+		anchor: Anchor::Signature(
+			SignatureTreatment::NoOffset,
+			"66 D1 E8 0F B7 C0 89 44 24 04 E8 ?? ?? ?? ?? 0F B7 06 89 3C 24 89 44 24 04 E8 ?? ?? ?? ?? 89 3C 24 A3 ?? ?? ?? ??"
+		),
+		hops: &[],
+		extract: Extract::AbsMem(OperandSelect::NthAbsMem(0))
 	};
 	pub const IN_LIST_COUNT_EARLY: Recipe = Recipe {
 		name: "in_list_count",
@@ -879,13 +924,10 @@ fn resolve() -> Result<Functions, String> {
 			free_shared: std::mem::transmute(find(&FREE_SHARED)?),
 			copy_shared: std::mem::transmute(find(&COPY_SHARED)?),
 			register_typepath: if build < TYPEPATH_BUILD {
-				None
+				Ok(None)
 			} else {
-				Some(std::mem::transmute(crate::find_recipe_of(&[
-					REGISTER_TYPEPATH,
-					REGISTER_TYPEPATH_OLD,
-					REGISTER_TYPEPATH_EARLY
-				])?))
+				crate::find_recipe_of(&[REGISTER_TYPEPATH, REGISTER_TYPEPATH_OLD, REGISTER_TYPEPATH_EARLY])
+					.map(|address| Some(std::mem::transmute::<usize, extern "C" fn(u32)>(address)))
 			},
 			type_stride: type_stride(build),
 			crt_realloc: std::mem::transmute::<unsafe extern "C" fn(*mut c_void, usize) -> *mut c_void, _>(realloc),
@@ -904,7 +946,8 @@ fn resolve() -> Result<Functions, String> {
 			mobs: crate::find_recipe_of(&[MOBS, MOBS_EARLY])? as *const *mut MobType,
 			// The code holds the map's address
 			world_name_map: (crate::find_recipe_of(&[WORLD_NAME_MAP, WORLD_NAME_MAP_EARLY])? as *const *mut ProcNameMap).read_unaligned(),
-			global_values: crate::find_recipe_of(&[GLOBAL_VALUES, GLOBAL_VALUES_EARLY])? as *const *const crate::raw_types::values::Value
+			global_values: crate::find_recipe_of(&[GLOBAL_VALUES, GLOBAL_VALUES_EARLY])? as *const *const crate::raw_types::values::Value,
+			global_vars: crate::find_recipe_of(&[GLOBAL_VARS, GLOBAL_VARS_EARLY]).map(|address| address as *mut u32)
 		})
 	}
 }
@@ -916,9 +959,15 @@ fn functions() -> Result<&'static Functions, String> {
 	}
 }
 
-/// Whether this build of BYOND has everything here.
+/// Check hot reload support excluding type registration
+/// (see [`types_available`]).
 pub fn available() -> Result<(), String> {
 	functions().map(|_| ())
+}
+
+/// Whether this build of BYOND has everything [`add_type`] needs.
+pub fn types_available() -> Result<(), String> {
+	functions()?.register_typepath.as_ref().map(|_| ()).map_err(Clone::clone)
 }
 
 /// A proc's table entry.
@@ -1249,8 +1298,14 @@ fn named_procs_in(map: *mut ProcNameMap, key: u32) -> Result<Vec<u32>, String> {
 
 /// Replace a type's proc name entry, inserting it if absent.
 /// Release the old shared buffer and transfer ownership of the new one.
+/// A map BYOND hasn't built yet is left alone: it builds it from the type's
+/// procs, and links their `..()` chains, as the world loads.
 pub fn set_named_procs(type_id: u32, key: u32, procs: &[u32]) -> Result<(), String> {
-	set_named_procs_in(name_map(type_id)?, key, procs)
+	let map = name_map(type_id)?;
+	if unsafe { (*map).built } == 0 {
+		return Ok(());
+	}
+	set_named_procs_in(map, key, procs)
 }
 
 /// Whether BYOND has built the world proc name map. Construction occurs
@@ -1311,7 +1366,7 @@ pub fn set_global_value(var_id: u32, value: crate::Value) -> Result<(), String> 
 	let functions = functions()?;
 	unsafe {
 		if var_id >= variable_count() {
-			return Err(format!("there's no var id {}", var_id));
+			return Err(format!("var ID {} does not exist", var_id));
 		}
 		let slot = (*functions.global_values as *mut crate::raw_types::values::Value).add(var_id as usize);
 		drop(crate::Value::from_raw_owned(*slot));
@@ -1327,7 +1382,7 @@ pub fn set_global_words(var_id: u32, tag: u8, data: u32) -> Result<(), String> {
 	let functions = functions()?;
 	unsafe {
 		if var_id >= variable_count() {
-			return Err(format!("there's no var id {}", var_id));
+			return Err(format!("var ID {} does not exist", var_id));
 		}
 		let slot = (*functions.global_values as *mut [u32; 2]).add(var_id as usize);
 		drop(crate::Value::from_raw_owned(*(slot as *const crate::raw_types::values::Value)));
@@ -1341,10 +1396,45 @@ pub fn global_value(var_id: u32) -> Result<crate::raw_types::values::Value, Stri
 	let functions = functions()?;
 	unsafe {
 		if var_id >= variable_count() {
-			return Err(format!("there's no var id {}", var_id));
+			return Err(format!("var ID {} does not exist", var_id));
 		}
 		Ok(*(*functions.global_values).add(var_id as usize))
 	}
+}
+
+/// Add globals to `global.vars`, sorted by name string ID.
+/// Leave existing (var ID, flags) pairs unchanged.
+pub fn add_global_vars(vars: &[(u32, u32)]) -> Result<(), String> {
+	let global_vars = functions()?.global_vars.clone()?;
+	let current = unsafe { *global_vars };
+	let mut words = misc_words(current).ok_or_else(|| format!("global-var misc entry {} is missing", current))?;
+	let name = |var_id: u32| variable_name(var_id).ok_or_else(|| format!("var ID {} does not exist", var_id));
+	for &(var_id, flags) in vars {
+		if words.chunks(2).any(|pair| pair[0] == var_id) {
+			continue;
+		}
+		let key = name(var_id)?;
+		let mut at = 0;
+		for pair in words.chunks(2) {
+			if name(pair[0])? > key {
+				break;
+			}
+			at += 2;
+		}
+		words.splice(at..at, [var_id, flags]);
+	}
+	let id = intern_misc(&words)?;
+	unsafe {
+		*global_vars = id;
+	}
+	Ok(())
+}
+
+/// Var IDs listed by `global.vars`.
+pub fn global_var_ids() -> Result<Vec<u32>, String> {
+	let current = unsafe { *functions()?.global_vars.clone()? };
+	let words = misc_words(current).ok_or_else(|| format!("global-var misc entry {} is missing", current))?;
+	Ok(words.chunks(2).map(|pair| pair[0]).collect())
 }
 
 /// How many var ids there are.
@@ -1397,6 +1487,7 @@ pub fn add_variable(name: u32, tag: u8, data: u32) -> Result<u32, String> {
 pub fn add_type(parent: u32, path: u32) -> Result<u32, String> {
 	use type_fields::*;
 	let functions = functions()?;
+	let register_typepath = functions.register_typepath.clone()?;
 	unsafe {
 		let count = *functions.type_count as usize;
 		if parent as usize >= count {
@@ -1449,7 +1540,7 @@ pub fn add_type(parent: u32, path: u32) -> Result<u32, String> {
 			}
 		}
 		*word(count, INIT_SEGMENTS) = 0;
-		if functions.register_typepath.is_some() {
+		if register_typepath.is_some() {
 			*word(count, TYPEPATH) = 0;
 			*word(count, TYPEPATH + 4) = 0;
 		}
@@ -1503,7 +1594,7 @@ pub fn add_type(parent: u32, path: u32) -> Result<u32, String> {
 		// parent. Its index is the mob typepath value. Older builds without
 		// stored typepath values resolve it by type ID.
 		let mobs = std::slice::from_raw_parts(*functions.mobs, *functions.mob_count as usize);
-		let mob = match functions.register_typepath {
+		let mob = match register_typepath {
 			Some(register) => {
 				if *(word(parent as usize, TYPEPATH) as *const u8) == 0 {
 					register(parent);
@@ -1523,7 +1614,7 @@ pub fn add_type(parent: u32, path: u32) -> Result<u32, String> {
 				..from
 			})?;
 		}
-		if let Some(register) = functions.register_typepath {
+		if let Some(register) = register_typepath {
 			register(count as u32);
 		}
 		Ok(count as u32)
@@ -1544,4 +1635,225 @@ pub fn set_type_byte(type_id: u32, offset: usize, value: u8) -> Result<(), Strin
 		*type_entry(type_id)?.add(offset) = value;
 	}
 	Ok(())
+}
+
+/// All proc-name map buckets as (key, procs, no_link), sorted by key.
+pub fn name_map_entries(type_id: u32) -> Result<Vec<(u32, Vec<u32>, u8)>, String> {
+	unsafe {
+		Ok(buckets(name_map(type_id)?)
+			.iter()
+			.map(|bucket| {
+				let ids = if bucket.ids.is_null() {
+					vec![]
+				} else {
+					std::slice::from_raw_parts(bucket.ids, bucket.count as usize).to_vec()
+				};
+				(bucket.key, ids, bucket.no_link)
+			})
+			.collect())
+	}
+}
+
+/// Preallocated proc-name map. [`NameMapPlan::write`] cannot fail;
+/// dropping an unwritten plan releases its buffers.
+pub struct NameMapPlan {
+	map: *mut ProcNameMap,
+	buckets: *mut ProcNameBucket,
+	count: u16,
+	written: bool
+}
+
+/// Allocate a proc-name map from `entries` in any order, omitting empty
+/// entries. Accepts the output of [`name_map_entries`].
+pub fn plan_name_map(type_id: u32, entries: &[(u32, Vec<u32>, u8)]) -> Result<NameMapPlan, String> {
+	let functions = functions()?;
+	let map = name_map(type_id)?;
+	let mut entries: Vec<&(u32, Vec<u32>, u8)> = entries.iter().filter(|(_, ids, _)| !ids.is_empty()).collect();
+	entries.sort_by_key(|(key, ..)| *key);
+	let size = entries.len().max(1) * std::mem::size_of::<ProcNameBucket>();
+	unsafe {
+		let buckets = (functions.crt_realloc)(std::ptr::null_mut(), size) as *mut ProcNameBucket;
+		if buckets.is_null() {
+			return Err("out of memory for a proc name map".to_owned());
+		}
+		let mut plan = NameMapPlan {
+			map,
+			buckets,
+			count: 0,
+			written: false
+		};
+		for (key, ids, no_link) in entries {
+			let buffer = (functions.alloc_shared)(ids.len() * 4) as *mut u32;
+			if buffer.is_null() {
+				return Err("out of memory for a proc name map entry".to_owned());
+			}
+			std::ptr::copy_nonoverlapping(ids.as_ptr(), buffer, ids.len());
+			buckets.add(plan.count as usize).write(ProcNameBucket {
+				key: *key,
+				ids: buffer,
+				count: ids.len() as u16,
+				no_link: *no_link
+			});
+			plan.count += 1;
+		}
+		Ok(plan)
+	}
+}
+
+impl NameMapPlan {
+	/// Install the map and release the old shared buffers. Retain the old
+	/// bucket array, as with type matrices.
+	pub fn write(mut self) {
+		let Ok(functions) = functions() else {
+			return;
+		};
+		unsafe {
+			let old_ids: Vec<*mut u32> = buckets(self.map).iter().map(|bucket| bucket.ids).collect();
+			(*self.map).buckets = self.buckets;
+			(*self.map).count = self.count;
+			for ids in old_ids {
+				if !ids.is_null() {
+					(functions.free_shared)(ids as *mut c_void);
+				}
+			}
+		}
+		self.written = true;
+	}
+}
+
+impl Drop for NameMapPlan {
+	fn drop(&mut self) {
+		if self.written {
+			return;
+		}
+		if let Ok(functions) = functions() {
+			unsafe {
+				for at in 0..self.count as usize {
+					(functions.free_shared)((*self.buckets.add(at)).ids as *mut c_void);
+				}
+			}
+		}
+	}
+}
+
+/// Prepared parents and type preorder. [`ParentPlan::write`] cannot fail.
+pub struct ParentPlan {
+	changes: Vec<(u32, u32)>,
+	order: Vec<u32>,
+	places: Vec<(u32, u32)>
+}
+
+/// Recompute parents and the preorder used by `istype` and `typesof`,
+/// visiting children by ascending ID as BYOND does. Leave other inherited
+/// state unchanged.
+pub fn plan_parents(changes: &[(u32, u32)]) -> Result<ParentPlan, String> {
+	use type_fields::*;
+	let functions = functions()?;
+	let count = type_count()? as usize;
+	for &(type_id, parent) in changes {
+		if type_id as usize >= count || parent as usize >= count {
+			return Err(format!("type {} or parent {} does not exist", type_id, parent));
+		}
+	}
+	unsafe {
+		let word = |id: usize, offset: usize| (*functions.type_table).add(id * functions.type_stride + offset) as *mut u32;
+		let mut parents: Vec<u32> = (0..count).map(|id| *word(id, PARENT)).collect();
+		for &(type_id, parent) in changes {
+			parents[type_id as usize] = parent;
+		}
+		let mut children: Vec<Vec<u32>> = vec![vec![]; count];
+		let mut roots = vec![];
+		for (id, &parent) in parents.iter().enumerate() {
+			if (parent as usize) < count && parent as usize != id {
+				children[parent as usize].push(id as u32);
+			} else {
+				roots.push(id as u32);
+			}
+		}
+		// (type, place, end) in the new preorder
+		let mut order = Vec::with_capacity(count);
+		let mut places = vec![(0u32, 0u32); count];
+		// (type, next child to visit)
+		let mut stack: Vec<(u32, usize)> = vec![];
+		for root in roots {
+			places[root as usize].0 = order.len() as u32;
+			order.push(root);
+			stack.push((root, 0));
+			while let Some(top) = stack.last_mut() {
+				let (id, next) = *top;
+				match children[id as usize].get(next) {
+					Some(&child) => {
+						top.1 += 1;
+						places[child as usize].0 = order.len() as u32;
+						order.push(child);
+						stack.push((child, 0));
+					}
+					None => {
+						places[id as usize].1 = order.len() as u32;
+						stack.pop();
+					}
+				}
+			}
+		}
+		if order.len() != count {
+			return Err(format!(
+				"type hierarchy contains a cycle: preorder includes {} of {} types",
+				order.len(),
+				count
+			));
+		}
+		Ok(ParentPlan {
+			changes: changes.to_vec(),
+			order,
+			places
+		})
+	}
+}
+
+impl ParentPlan {
+	pub fn write(&self) {
+		use type_fields::*;
+		let Ok(functions) = functions() else {
+			return;
+		};
+		unsafe {
+			let word = |id: usize, offset: usize| (*functions.type_table).add(id * functions.type_stride + offset) as *mut u32;
+			for &(type_id, parent) in &self.changes {
+				*word(type_id as usize, PARENT) = parent;
+			}
+			let preorder = *functions.preorder;
+			for (at, &id) in self.order.iter().enumerate() {
+				*preorder.add(at) = id;
+				*word(id as usize, PREORDER) = self.places[id as usize].0;
+				*word(id as usize, PREORDER_END) = self.places[id as usize].1;
+			}
+		}
+	}
+}
+
+/// Copy a type's transform (`TRANSFORM`, 6 floats) or colour matrix
+/// (`COLOR_MATRIX`, 20), or clear it. Each type owns its copy, as at load.
+/// Retain the old allocation because readers may still reference it.
+pub fn copy_type_matrix(type_id: u32, from: u32, offset: usize) -> Result<(), String> {
+	use type_fields::*;
+	let size = match offset {
+		TRANSFORM => 6 * 4,
+		COLOR_MATRIX => 20 * 4,
+		_ => return Err(format!("+{:#x} isn't a type's matrix", offset))
+	};
+	let functions = functions()?;
+	unsafe {
+		let source = type_field(from, offset)? as *const u8;
+		let copy = if source.is_null() {
+			0
+		} else {
+			let copy = (functions.crt_realloc)(std::ptr::null_mut(), size) as *mut u8;
+			if copy.is_null() {
+				return Err("out of memory copying a type's matrix".to_owned());
+			}
+			std::ptr::copy_nonoverlapping(source, copy, size);
+			copy as u32
+		};
+		set_type_field(type_id, offset, copy)
+	}
 }

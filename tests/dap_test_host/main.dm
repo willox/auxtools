@@ -61,5 +61,16 @@ var/early_global = early_value()
 	world.log << "dap: rebooting"
 	world.Reboot()
 
+// Built resources and reload_new.dmi, introduced only by a reload.
+
+/proc/icon_built()
+	return 'reload_built.dmi'
+
+/proc/icon_built_2()
+	return 'reload_built_2.dmi'
+
+/proc/icon_reloaded()
+	return null
+
 /proc/sc_stderr()
 	world.log << "dap: to the log"

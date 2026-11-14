@@ -69,6 +69,11 @@
 				"command": "auxtools.pickWorld",
 				"title": "Pick a running world",
 				"category": "auxtools"
+			},
+			{
+				"command": "auxtools.reconnectClients",
+				"title": "Reconnect players",
+				"category": "auxtools"
 			}
 		],
 		"menus": {
@@ -80,6 +85,10 @@
 				{
 					"command": "auxtools.pickWorld",
 					"when": "false"
+				},
+				{
+					"command": "auxtools.reconnectClients",
+					"when": "debugType == auxtools"
 				}
 			]
 		},

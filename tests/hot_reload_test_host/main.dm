@@ -117,3 +117,26 @@ var/datum/declared/declared_one = new
 
 /proc/keyed(a, b)
 	return b
+
+// Static sharing a built-in sound var name absent from the build.
+
+/datum/hr_named
+	var/static/falloff = 9
+
+/proc/hr_named_falloff(sound/s)
+	var/datum/hr_named/named = new
+	. = "[s.falloff] "
+	s.falloff = 7
+	. += "[s.falloff] [named.falloff]"
+
+// Reparented sound types use var-table built-ins. Avoid repeat and volume,
+// which new() sets from arguments.
+/sound/hr_sa
+	pan = 10
+
+/sound/hr_sb
+	priority = 5
+
+/sound/hr_st
+	parent_type = /sound/hr_sa
+	frequency = 3

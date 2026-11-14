@@ -78,9 +78,9 @@ impl Write for Shared {
 	}
 }
 
-/// Sends a message to the debug server
-pub fn send(stream: &mut impl Write, request: &Request) -> io::Result<()> {
-	let data = bincode::serialize(request).map_err(io::Error::other)?;
+/// Send a message to the debug server, or from a test server to a client.
+pub fn send(stream: &mut impl Write, message: &impl serde::Serialize) -> io::Result<()> {
+	let data = bincode::serialize(message).map_err(io::Error::other)?;
 	stream.write_all(&(data.len() as u32).to_le_bytes())?;
 	stream.write_all(&data)?;
 	stream.flush()
@@ -119,7 +119,18 @@ pub struct World {
 	pub compatible: bool,
 	/// Whether the world answered within [`PROBE_PATIENCE`]. `None` for
 	/// incompatible worlds, which are not queried.
-	pub responsive: Option<bool>
+	pub responsive: Option<bool>,
+	/// Debugger initialization failure, if any. The world remains running
+	/// and supports only stop requests.
+	pub unavailable: Option<String>
+}
+
+/// Response to a query for world information.
+enum Probed {
+	/// Command line and working directory.
+	Info(Vec<String>, String),
+	/// Debugger initialization failure.
+	Unavailable(String)
 }
 
 /// How long to wait for all world probes.
@@ -148,10 +159,11 @@ pub fn worlds() -> Vec<World> {
 				cwd: String::new(),
 				protocol,
 				compatible,
-				responsive
+				responsive,
+				unavailable: None
 			};
 			match answer.map(|answer| answer.recv_timeout(until.saturating_duration_since(Instant::now()))) {
-				Some(Ok(Ok((args, cwd)))) => Some(World {
+				Some(Ok(Ok(Probed::Info(args, cwd)))) => Some(World {
 					pid,
 					program: program.clone(),
 					dmb: world_dmb(&args, &cwd),
@@ -159,7 +171,12 @@ pub fn worlds() -> Vec<World> {
 					cwd,
 					protocol: PROTOCOL_VERSION,
 					compatible: true,
-					responsive: Some(true)
+					responsive: Some(true),
+					unavailable: None
+				}),
+				Some(Ok(Ok(Probed::Unavailable(why)))) => Some(World {
+					unavailable: Some(why),
+					..unknown(PROTOCOL_VERSION, true, Some(true))
 				}),
 				// The debugger accepts connections but did not answer.
 				Some(Err(_)) => Some(unknown(PROTOCOL_VERSION, true, Some(false))),
@@ -173,7 +190,7 @@ pub fn worlds() -> Vec<World> {
 
 /// Query world details on a worker thread. The world handles requests
 /// between DM instructions, so a stalled world may never answer.
-fn probe(stream: Stream) -> std::sync::mpsc::Receiver<io::Result<(Vec<String>, String)>> {
+fn probe(stream: Stream) -> std::sync::mpsc::Receiver<io::Result<Probed>> {
 	let (sender, receiver) = std::sync::mpsc::channel();
 	std::thread::spawn(move || {
 		let mut stream = stream;
@@ -181,7 +198,8 @@ fn probe(stream: Stream) -> std::sync::mpsc::Receiver<io::Result<(Vec<String>, S
 			send(&mut stream, &Request::WorldInfo)?;
 			loop {
 				match receive(&mut stream)? {
-					Response::WorldInfo { args, cwd } => return Ok((args, cwd)),
+					Response::WorldInfo { args, cwd } => return Ok(Probed::Info(args, cwd)),
+					Response::Unavailable { reason } => return Ok(Probed::Unavailable(reason)),
 					Response::Disconnect => return Err(io::Error::other("it hung up")),
 					_ => {}
 				}

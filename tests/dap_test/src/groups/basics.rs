@@ -333,6 +333,7 @@ fn loaded_sources(world: &mut World) {
 		"errors.dm",
 		"lib/tool.dm",
 		"main.dm",
+		"resources.dm",
 		"stepping.dm",
 		"sub/tool.dm",
 		"values.dm",

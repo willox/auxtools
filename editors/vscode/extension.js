@@ -245,6 +245,56 @@ function trackUnsavedFiles(context) {
 	vscode.workspace.textDocuments.forEach(update);
 }
 
+// Reconnect players to load an interface update.
+// Dream Seeker-hosted worlds must reboot instead.
+async function reconnectClients(session) {
+	session = session || vscode.debug.activeDebugSession;
+	if (!session || session.type !== DEBUG_TYPE) {
+		vscode.window.showErrorMessage("No active auxtools debug session.");
+		return;
+	}
+	try {
+		const done = await session.customRequest("auxtoolsReconnect");
+		if (done && done.rebooted) {
+			vscode.window.showInformationMessage("Rebooting the Dream Seeker-hosted world.");
+		} else if (done) {
+			vscode.window.showInformationMessage(`Asked ${done.reconnected} ${done.reconnected === 1 ? "player" : "players"} to reconnect.`);
+		}
+	} catch (e) {
+		vscode.window.showErrorMessage(`Could not reconnect the players: ${e.message}`);
+	}
+}
+
+// Offer reconnect after a skin reload.
+async function skinReloaded(event) {
+	const { file, clients, hosted } = event.body;
+	if (!clients) {
+		return;
+	}
+	const message = hosted
+		? `Skin ${file} reloaded. Reboot to update Dream Seeker's interface.`
+		: `Skin ${file} reloaded. ${clients} connected ${clients === 1 ? "player needs" : "players need"} to reconnect to load the new interface.`;
+	const action = hosted ? "Reboot" : "Reconnect";
+	if ((await vscode.window.showInformationMessage(message, action)) === action) {
+		await reconnectClients(event.session);
+	}
+}
+
+// Offer reconnect after a client script reload.
+async function scriptReloaded(event) {
+	const { clients, hosted } = event.body;
+	if (!clients) {
+		return;
+	}
+	const message = hosted
+		? "Client script reloaded. Reboot to update Dream Seeker's script."
+		: `Client script reloaded. ${clients} connected ${clients === 1 ? "player needs" : "players need"} to reconnect to load the new script.`;
+	const action = hosted ? "Reboot" : "Reconnect";
+	if ((await vscode.window.showInformationMessage(message, action)) === action) {
+		await reconnectClients(event.session);
+	}
+}
+
 function activate(context) {
 	const provider = new ConfigurationProvider(context);
 	trackUnsavedFiles(context);
@@ -255,6 +305,14 @@ function activate(context) {
 		vscode.commands.registerCommand("auxtools.debugDreamSeeker", startCommand("dreamseeker")),
 		vscode.commands.registerCommand("auxtools.debugDreamDaemon", startCommand("dreamdaemon")),
 		vscode.commands.registerCommand("auxtools.attach", attach),
+		vscode.commands.registerCommand("auxtools.reconnectClients", () => reconnectClients()),
+		vscode.debug.onDidReceiveDebugSessionCustomEvent((event) => {
+			if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsSkin") {
+				skinReloaded(event);
+			} else if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsScript") {
+				scriptReloaded(event);
+			}
+		}),
 		// For `${command:auxtools.pickWorld}` in attach configurations
 		vscode.commands.registerCommand("auxtools.pickWorld", () => pickWorld(context)),
 		// Provide a read-only expression for hover evaluation.

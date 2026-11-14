@@ -48,6 +48,9 @@ var/datum/held/held = new
 		return
 	if (fexists("fail_del"))
 		CRASH("attach test: world/Del failed")
+	// Sleeping shutdown ends the evaluation before world.Del() finishes.
+	if (fexists("slow_del"))
+		sleep(3)
 	..()
 
 /proc/run_until_stopped()

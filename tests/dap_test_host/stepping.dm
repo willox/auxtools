@@ -199,3 +199,43 @@ var/list/dozers
 	for (var/datum/dozer/d in dozers)
 		del(d)
 	dozers = null
+
+// Lines with no executable code. DreamMaker records each; an empty macro
+// counts only as the first body line (as with RETURN_TYPE(/list)).
+#define NOTHING_TO_RUN
+/proc/nothing_to_run()
+	NOTHING_TO_RUN // @nothing_macro
+	var/n // @nothing_var
+	set background = TRUE // @nothing_set
+	n = 1 // @nothing_code
+	// DreamMaker records the next line before evaluating this initializer.
+	
+	var/text = "[n]" // @read_ahead_text
+	var/size = length(text) // @read_ahead_next
+	return n * size
+
+/proc/sc_nothing_to_run()
+	nothing_to_run()
+
+// spawn(-1) runs immediately in a copy of the proc's frame.
+/proc/spawns_now()
+	var/n = 1 // @spawn_now_1
+	spawn (-1) // @spawn_now_spawn
+		n = 2 // @spawn_now_body
+	n = 3 // @spawn_now_2
+	return n
+
+/proc/sc_spawn_now()
+	spawns_now()
+
+// A final spawn(-1) whose copy outlives the original proc by sleeping.
+
+/proc/spawns_sleeping()
+	var/n = 1
+	spawn (-1) // @spawn_sleep_spawn
+		sleep(2)
+		n = 2 // @spawn_sleep_body
+
+/proc/sc_spawn_sleep()
+	spawns_sleeping() // @spawn_sleep_call
+	sleep(5)

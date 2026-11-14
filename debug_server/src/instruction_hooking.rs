@@ -42,6 +42,37 @@ impl ProcInstanceRef {
 	fn is(&self, ptr: *mut raw_types::procs::ProcInstance) -> bool {
 		unsafe { self.0 == (*ptr).mega_hack }
 	}
+
+	/// Whether this frame is the original instance. `spawn (-1)` copies the
+	/// instance ID into a new frame above it; Step Over must skip that copy.
+	unsafe fn is_frame(&self, ctx: *mut raw_types::procs::ExecutionContext) -> bool {
+		unsafe { self.is(*(*ctx).proc_instance()) && !self.is_copy(ctx) }
+	}
+
+	/// Whether this frame is a spawned copy: an older frame has the same ID.
+	unsafe fn is_copy(&self, ctx: *mut raw_types::procs::ExecutionContext) -> bool {
+		unsafe {
+			let mut at = *(*ctx).parent_context();
+			while !at.is_null() {
+				if self.is(*(*at).proc_instance()) {
+					return true;
+				}
+				at = *(*at).parent_context();
+			}
+			false
+		}
+	}
+
+	/// Clear a spawned copy's ID so a later wake cannot be mistaken for the
+	/// original proc after it has returned.
+	unsafe fn forget_copy(&self, ctx: *mut raw_types::procs::ExecutionContext) {
+		unsafe {
+			let instance = *(*ctx).proc_instance();
+			if self.is(instance) && self.is_copy(ctx) {
+				(*instance).mega_hack = 0;
+			}
+		}
+	}
 }
 
 // A lot of these store the parent ExecutionContext so we can tell if our proc
@@ -424,6 +455,17 @@ impl InstructionHook for Server {
 		unsafe {
 			let action = if in_eval { DebuggerAction::None } else { CURRENT_ACTION };
 
+			// Spawned copies retain the stepping proc's ID. Clear it before
+			// they can sleep and outlive the original proc.
+			match action {
+				DebuggerAction::StepOver { target: frame, .. }
+				| DebuggerAction::StepInto { parent: frame, .. }
+				| DebuggerAction::StepOut { target: frame }
+				| DebuggerAction::StepOverInstruction { target: frame, .. }
+				| DebuggerAction::StepIntoInstruction { parent: frame, .. } => frame.forget_copy(ctx),
+				_ => {}
+			}
+
 			match action {
 				DebuggerAction::None => {}
 
@@ -451,14 +493,14 @@ impl InstructionHook for Server {
 				// 2) We're inside the target context and on a DbgLine
 				//    instruction
 				DebuggerAction::StepOver { target, caller } => {
-					if is_dbgline && target.is(*(*ctx).proc_instance()) {
+					if is_dbgline && target.is_frame(ctx) {
 						CURRENT_ACTION = DebuggerAction::BreakOnNext;
 					} else if !proc_instance_is_in_stack(ctx, target) && !proc_instance_is_suspended(target) {
 						// If the target ended, stop in its caller. If execution
 						// belongs to another stack, end the step without
 						// pausing.
 						CURRENT_ACTION = DebuggerAction::None;
-						if caller.is_some_and(|caller| caller.is(*(*ctx).proc_instance())) {
+						if caller.is_some_and(|caller| caller.is_frame(ctx)) {
 							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step).unwrap_or(DebuggerAction::None);
 							did_breakpoint = true;
 						} else {
@@ -476,7 +518,7 @@ impl InstructionHook for Server {
 				//    instruction
 				DebuggerAction::StepInto { parent, caller } => {
 					if !is_generated_proc(ctx) {
-						let is_in_parent = parent.is(*(*ctx).proc_instance());
+						let is_in_parent = parent.is_frame(ctx);
 
 						if is_dbgline && is_in_parent {
 							CURRENT_ACTION = DebuggerAction::BreakOnNext;
@@ -489,7 +531,7 @@ impl InstructionHook for Server {
 							// stack.
 							if !in_stack && !is_suspended {
 								CURRENT_ACTION = DebuggerAction::None;
-								if caller.is_some_and(|caller| caller.is(*(*ctx).proc_instance())) {
+								if caller.is_some_and(|caller| caller.is_frame(ctx)) {
 									CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step).unwrap_or(DebuggerAction::None);
 									did_breakpoint = true;
 								} else {
@@ -507,11 +549,11 @@ impl InstructionHook for Server {
 				// caller if the target returns.
 				DebuggerAction::StepOverInstruction { target: frame, caller } | DebuggerAction::StepIntoInstruction { parent: frame, caller } => {
 					let into = matches!(action, DebuggerAction::StepIntoInstruction { .. });
-					let here = frame.is(*(*ctx).proc_instance()) || (into && proc_instance_is_in_stack(ctx, frame));
+					let here = frame.is_frame(ctx) || (into && proc_instance_is_in_stack(ctx, frame));
 					let over = !here && !proc_instance_is_in_stack(ctx, frame) && !proc_instance_is_suspended(frame);
 					if here || over {
 						CURRENT_ACTION = DebuggerAction::None;
-						if here || caller.is_some_and(|caller| caller.is(*(*ctx).proc_instance())) {
+						if here || caller.is_some_and(|caller| caller.is_frame(ctx)) {
 							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step).unwrap_or(DebuggerAction::None);
 							did_breakpoint = true;
 						} else {
@@ -523,7 +565,7 @@ impl InstructionHook for Server {
 				// Just breaks the moment we're in the target instance
 				DebuggerAction::StepOut { target } => {
 					if !is_generated_proc(ctx) {
-						if target.is(*(*ctx).proc_instance()) {
+						if target.is_frame(ctx) {
 							CURRENT_ACTION = DebuggerAction::None;
 							CURRENT_ACTION = handle_breakpoint(ctx, BreakpointReason::Step).unwrap_or(DebuggerAction::None);
 							did_breakpoint = true;
@@ -579,7 +621,7 @@ impl InstructionHook for Server {
 					if original.first() == Some(&OPCODE_DBGLINE) && !in_eval {
 						match CURRENT_ACTION {
 							DebuggerAction::StepOver { target: frame, .. } | DebuggerAction::StepInto { parent: frame, .. }
-								if frame.is(*(*ctx).proc_instance()) =>
+								if frame.is_frame(ctx) =>
 							{
 								CURRENT_ACTION = DebuggerAction::BreakOnNext;
 							}

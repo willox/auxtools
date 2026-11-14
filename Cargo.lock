@@ -488,7 +488,7 @@ dependencies = [
 [[package]]
 name = "dap-types"
 version = "0.0.0"
-source = "git+https://github.com/auxtools/SpacemanDMM?branch=master#b3da989c7bec77b4b90d3bfc4852f3b3e37de6f7"
+source = "git+https://github.com/auxtools/SpacemanDMM?branch=master#16928f219fb81e462daa4cba2bf28f749a3c6fb7"
 dependencies = [
  "foldhash",
  "serde",
@@ -610,7 +610,7 @@ dependencies = [
 [[package]]
 name = "dmasm"
 version = "0.1.0"
-source = "git+https://github.com/auxtools/dmasm?branch=master#fc51d7f9b4d1e7a70cab727d29ae6bdd53227fa9"
+source = "git+https://github.com/auxtools/dmasm?branch=master#ec2c77752548905d92678ca21c85f5f5119dbe35"
 dependencies = [
  "bitflags 2.13.2",
  "dreammaker",
@@ -629,7 +629,7 @@ checksum = "c2db04e74f0a9a93103b50e90b96024c9b2bdca8bce6a632ec71b88736d3d359"
 [[package]]
 name = "dreammaker"
 version = "0.1.0"
-source = "git+https://github.com/auxtools/SpacemanDMM?branch=master#b3da989c7bec77b4b90d3bfc4852f3b3e37de6f7"
+source = "git+https://github.com/auxtools/SpacemanDMM?branch=master#16928f219fb81e462daa4cba2bf28f749a3c6fb7"
 dependencies = [
  "beef",
  "bitflags 2.13.2",
@@ -651,7 +651,7 @@ dependencies = [
 [[package]]
 name = "dreammaker-macros"
 version = "0.0.0"
-source = "git+https://github.com/auxtools/SpacemanDMM?branch=master#b3da989c7bec77b4b90d3bfc4852f3b3e37de6f7"
+source = "git+https://github.com/auxtools/SpacemanDMM?branch=master#16928f219fb81e462daa4cba2bf28f749a3c6fb7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1014,7 +1014,7 @@ dependencies = [
 [[package]]
 name = "interval-tree"
 version = "0.8.0"
-source = "git+https://github.com/auxtools/SpacemanDMM?branch=master#b3da989c7bec77b4b90d3bfc4852f3b3e37de6f7"
+source = "git+https://github.com/auxtools/SpacemanDMM?branch=master#16928f219fb81e462daa4cba2bf28f749a3c6fb7"
 
 [[package]]
 name = "inventory"
@@ -1052,6 +1052,7 @@ dependencies = [
 name = "launcher_test"
 version = "0.1.0"
 dependencies = [
+ "auxtools-cli",
  "debug_server",
  "interprocess",
  "serde_json",

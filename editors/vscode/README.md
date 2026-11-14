@@ -167,6 +167,15 @@ parsed the project for hot reload. Definitions update on reload; undefined macro
 are removed. They are unavailable when the project has not been parsed, including
 with `"hotReload": false`.
 
+Evaluation uses the proc compiler's constant folding, including DreamMaker
+quirks such as `~-4` and `new /obj` in conditions. Some differences remain:
+
+- Const vars are read from the running world, so expressions such as `~-CONST`
+  or `-(0 * CONST)` can differ from DreamMaker's folded result.
+- `x::name` uses the type of `x`'s current value, rather than its declared type,
+  and returns null when `x` is null.
+- `..()`, `__FILE__`, `__LINE__`, `__PROC__` and `__TYPE__` are unavailable.
+
 Hovering source code evaluates a single expression in the selected frame without
 calling procs or assigning values. The Debug Console completes visible variables
 and procs, including members after `.`.
@@ -196,18 +205,24 @@ instruction, entering a callee if needed. **Step Out** returns to the caller.
 
 Saving a source file reloads supported changes, including during **Run Without
 Debugging**. The Debug Console reports results and changes requiring a rebuild.
-Reloads are restored after reboot.
+
+After reboot, reloads are restored before world code runs. Reloads introducing
+resources absent from the build wait until `world/New`, so map atoms run the
+built code.
 
 Supported changes include proc bodies, new procs and verbs, removals, new types
 (including mobs), new variables and static locals, variable types and defaults,
 changes to `static`, `const` and `tmp` variable declarations,
-parameters (including `as` input types), `in` lists, prefabs and `set` statements.
+parameters (including `as` input types), `in` lists, prefabs, `set` statements
+and parent types (`parent_type`).
 Proc, verb, world proc and global proc definitions can be inserted or removed
 between existing overrides.
 
-Changes requiring a rebuild include parent types; proc declaration changes,
-such as switching between proc and verb or adding `final`; and unsupported
-built-in defaults such as `ckey`.
+Changes requiring a rebuild include proc declaration changes (such as switching
+between proc and verb or adding `final`), unsupported built-in defaults such as
+`see_infrared`, and removing a built-in type's own override (such as
+`/mob/layer`). The last case needs BYOND's original default, which the running
+world no longer stores.
 
 Reloaded and evaluated code preserves DreamMaker's field caching: after
 `a.b.f()`, a later `a.b.x` in the same flow can use the old object even if
@@ -215,15 +230,68 @@ Reloaded and evaluated code preserves DreamMaker's field caching: after
 a local when a call may replace it. Other compatibility differences and
 copied quirks are reported as warnings.
 
-Active calls finish on their original code. Existing instances retain their verbs
-and built-in values. Computed defaults apply to new instances. New computed
-variables are null on existing instances, and their `initial()` value remains null
-until restart. Existing globals retain their current values when their initializers
-change.
+Active calls finish on their original code. Existing instances retain their
+verbs and built-in values. Computed defaults apply to new instances; new
+computed vars are null on existing instances, including their `initial()`
+values, until restart. Running globals and statics keep their values when
+initializers change. Changed world settings and client settings stored in the
+world record, such as `client.control_freak`, take effect after restart.
 
 Breakpoints follow statements after edits from VS Code, other editors or checkouts.
 The VS Code extension reports unsaved files to the launcher. Other DAP clients
 that do not report this state use on-disk line numbers for new breakpoints.
+
+### Icons, sounds and other files
+
+Saving an icon, sound or other referenced resource reloads it. Files are found
+in the `.dme` directory, then in `FILE_DIR` order, as DreamMaker does. Existing
+appearances, overlays, images and mouse pointers redraw with the new file.
+Recompiled code and defaults use the new resource.
+
+Stored values retain old resources: vars, lists, `/icon` and `/sound` datums,
+mutable appearances, and objects later made from those values. Files with
+identical content share a resource ID and cannot be replaced independently; a
+warning requests a rebuild.
+
+After reboot, resource edits and dependent code wait until `world/New`, so map
+atoms use the built versions. Edits made before launch are reported but left
+alone until the next save.
+
+Reloaded `FILE_DIR` resources use paths relative to the world directory. For
+example, `"[icon]"` and `browse_rsc()` use `icons/lamp.dmi` where a rebuild uses
+the source spelling `lamp.dmi`.
+
+Resource reloads modify BYOND's appearance tree and require a validated build.
+Builds newer than 516.1688 are refused for this operation, even though the rest
+of the debugger is attempted.
+
+Generated assets and caches need the codebase to regenerate them or a rebuild:
+
+- Runtime-generated icons (`icon()` and its procs), including tgstation's
+  greyscale items and tgui spritesheets, have their own resource content.
+- Startup caches, such as tgstation's HUD styles and sound groups, retain old
+  resources even after reboot: global initialization runs before resource edits
+  are restored.
+- Files sent through `browse_rsc()` or an asset cache reach clients when the
+  codebase sends them again.
+
+Files generated while the world runs, such as tgstation's map preview icons, are
+watched and reloaded too.
+
+### Skins
+
+Saving the last `.dmf` included by the `.dme` updates the login skin and
+preserves it after reboot. Connected players must reconnect to load it. Use the
+reload notification or **auxtools: Reconnect players**. Dream Seeker-hosted
+worlds reboot instead because the host cannot reconnect independently. New image
+references absent from the build require a rebuild.
+
+### Client scripts
+
+Changes to `client/script` text apply at login and survive reboot. Connected
+players must reconnect to load them; use the notification or **auxtools:
+Reconnect players**. Resource-file scripts and included `.dms` files require a
+rebuild.
 
 ## Attach to a running world
 

@@ -8,5 +8,6 @@
 #include "values.dm"
 #include "errors.dm"
 #include "watching.dm"
+#include "resources.dm"
 #include "sub/tool.dm"
 #include "lib\lib.dme"

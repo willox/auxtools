@@ -23,27 +23,90 @@ use crate::server_types::Macro;
 /// What the world was given: none until a launcher gives them
 static MACROS: Mutex<Option<Macros>> = Mutex::new(None);
 
+/// Built-in macros from this BYOND build's stddef.dm, overridden by source
+/// macros.
+static BUILTIN: Mutex<Vec<Macro>> = Mutex::new(vec![]);
+
 /// Maximum cached expansions; breakpoint conditions may run at every hit.
 const REMEMBERED: usize = 1000;
 
 struct Macros {
+	/// Merged built-in and source macros, with source definitions taking
+	/// precedence.
 	by_name: HashMap<String, Macro>,
+	/// Source macros supplied by the launcher.
+	given: Option<Vec<Macro>>,
 	/// Cached expansions; `None` means the expression contains no macros.
 	expanded: HashMap<String, Result<Option<String>, String>>
 }
 
+impl Macros {
+	fn new(builtin: &[Macro], given: Option<Vec<Macro>>) -> Self {
+		let by_name = builtin
+			.iter()
+			.chain(given.iter().flatten())
+			.map(|define| (define.name.clone(), define.clone()))
+			.collect();
+		Self {
+			by_name,
+			given,
+			expanded: HashMap::new()
+		}
+	}
+}
+
 /// The code's macros, in place of any the world had
 pub fn set(macros: Vec<Macro>) {
-	let by_name = macros.into_iter().map(|define| (define.name.clone(), define)).collect();
-	*MACROS.lock().unwrap() = Some(Macros {
-		by_name,
-		expanded: HashMap::new()
-	});
+	let builtin = BUILTIN.lock().unwrap();
+	*MACROS.lock().unwrap() = Some(Macros::new(&builtin, Some(macros)));
+}
+
+/// Load built-in macros even without source macros from a launcher.
+pub fn set_builtin(macros: Vec<Macro>) {
+	let mut builtin = BUILTIN.lock().unwrap();
+	*builtin = macros;
+	let mut current = MACROS.lock().unwrap();
+	let given = current.take().and_then(|macros| macros.given);
+	*current = Some(Macros::new(&builtin, given));
 }
 
 /// Whether a launcher has given the world its code's macros
 pub fn given() -> bool {
-	MACROS.lock().unwrap().is_some()
+	MACROS.lock().unwrap().as_ref().is_some_and(|macros| macros.given.is_some())
+}
+
+/// Read stddef.dm definitions in the format used by `Request::Defines`.
+pub fn builtin_macros(stddef: &str) -> Vec<Macro> {
+	let ctx = Context::default();
+	let mut pp = dreammaker::Preprocessor::from_buffer(&ctx, "stddef.dm".into(), stddef);
+	pp.by_ref().for_each(drop);
+	let history = pp.finalize();
+	let mut defined: HashMap<String, (u16, Macro)> = HashMap::new();
+	for (range, (name, define)) in history.iter() {
+		// Keep definitions still active at EOF, excluding parser-provided ones.
+		let at_end = range.end.file == FileId::UNKNOWN && range.end.line == !0;
+		if !at_end || define.location.file == FileId::BUILTINS {
+			continue;
+		}
+		if defined.get(name.as_str()).is_some_and(|(order, _)| *order > range.end.column) {
+			continue;
+		}
+		let mut params: Vec<String> = define.params.iter().map(|param| param.to_string()).collect();
+		if define.variadic {
+			if let Some(last) = params.last_mut() {
+				last.push_str("...");
+			}
+		}
+		defined.insert(
+			name.to_string(),
+			(range.end.column, Macro {
+				name: name.to_string(),
+				params,
+				text: text_of(&define.subst)
+			})
+		);
+	}
+	defined.into_values().map(|(_, define)| define).collect()
 }
 
 /// Expand source macros in `text`, preserving text without macro invocations.
@@ -241,7 +304,7 @@ pub fn text_of<'a>(tokens: impl IntoIterator<Item = &'a Token>) -> String {
 mod tests {
 	use std::collections::HashMap;
 
-	use super::{expand_with, Macro};
+	use super::{builtin_macros, expand_with, Macro};
 
 	fn macros() -> HashMap<String, Macro> {
 		let define = |name: &str, params: &[&str], text: &str| Macro {
@@ -291,5 +354,17 @@ mod tests {
 	#[test]
 	fn a_use_without_its_end_is_an_error() {
 		assert!(expand_with(&macros(), "DOUBLE(1").is_err());
+	}
+
+	#[test]
+	fn byonds_own_macros_come_from_its_stddef() {
+		let stddef = "#define TILE_BOUND 256\n#define LINEAR_RAND 2   // proportional\n#define REGEX_QUOTE(a) regex((a), 1)\n#define GONE 1\n#undef \
+		              GONE\nvar/const\n\tNORTH = 1\n";
+		let by_name: HashMap<String, Macro> = builtin_macros(stddef).into_iter().map(|define| (define.name.clone(), define)).collect();
+		let mut names: Vec<&str> = by_name.keys().map(String::as_str).collect();
+		names.sort();
+		assert_eq!(names, ["LINEAR_RAND", "REGEX_QUOTE", "TILE_BOUND"]);
+		assert_eq!(expand_with(&by_name, "TILE_BOUND | LINEAR_RAND").unwrap().as_deref(), Some("256 | 2"));
+		assert_eq!(expand_with(&by_name, "REGEX_QUOTE(\"a\")").unwrap().as_deref(), Some("regex((\"a\"), 1)"));
 	}
 }

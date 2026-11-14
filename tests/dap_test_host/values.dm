@@ -83,3 +83,14 @@
 	var/in_caller = 77
 	s.inside(4)
 	return in_caller
+
+// Pause beneath a caller's try block.
+/proc/sc_caught()
+	try
+		world.log << "dap: caught_inside gave [caught_inside()]"
+	catch (var/exception/e)
+		world.log << "dap: sc_caught caught [e.name]"
+
+/proc/caught_inside()
+	var/text = "a"
+	return text // @caught_stop

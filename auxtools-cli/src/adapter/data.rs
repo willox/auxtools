@@ -72,7 +72,7 @@ impl Adapter {
 			return unwatched("debugging is disabled");
 		}
 		if self.debuggee.is_none() {
-			return unwatched("world is not running");
+			return unwatched(self.not_connected());
 		}
 		let place = match args.variables_reference.filter(|&reference| reference > 0) {
 			Some(reference) => aux::WatchPlace::Variable {
@@ -125,7 +125,7 @@ impl Adapter {
 			const OVER: &str = "watch target expired; select it again";
 			let watched: Result<aux::Watch, String> = match &known {
 				_ if !self.debugging => Err("debugging is disabled".to_owned()),
-				_ if self.debuggee.is_none() => Err("world is not running".to_owned()),
+				_ if self.debuggee.is_none() => Err(self.not_connected().to_owned()),
 				None => Err(OVER.to_owned()),
 				Some((_, _, Some(of_stop))) if Some(*of_stop) != stop || !self.debuggee.as_ref().is_some_and(Debuggee::stopped) => {
 					Err(OVER.to_owned())
