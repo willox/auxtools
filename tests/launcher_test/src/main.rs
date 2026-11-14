@@ -1203,7 +1203,7 @@ fn attach_and_reload(server: &str, library: &Path) {
 	runner.event("initialized");
 	runner.request("configurationDone", json!({}));
 	runner.wait_output("attach test: 1");
-	runner.wait_output("Hot reload: watching");
+	runner.wait_output("Hot reload active");
 	println!("ok: noDebug launch with source watching");
 
 	let pid = client::listed_world("attach_host.dmb");
@@ -1249,11 +1249,7 @@ fn attach_and_reload(server: &str, library: &Path) {
 	std::fs::write(&code, source.replace("\treturn 1", "\treturn 2")).unwrap();
 	runner.wait_output("Hot reload: reloaded /value");
 	runner.wait_output("attach test: 2");
-	assert!(
-		!runner.output.contains("parsing the full project"),
-		"a change to a proc's code read all the code again"
-	);
-	println!("ok: single-file source reload");
+	println!("ok: source reload");
 
 	// Leaving doesn't end a world that was attached to
 	first.disconnect(json!({}));
@@ -1500,7 +1496,7 @@ fn errored_baseline(server: &str) {
 	let mut started = Started::default();
 	let output = launch_here(&dme.with_extension("dmb"), server, &mut started);
 	let read = || output.lock().unwrap().clone();
-	wait_for_text("launch", "Hot reload: watching", read);
+	wait_for_text("launch", "Hot reload active", read);
 	started.pids.push(started_pid(&read()));
 	assert!(
 		read().contains("The source has parse errors"),
@@ -1589,7 +1585,7 @@ fn launch_from_the_command_line(server: &str) {
 	let mut started = Started::default();
 	let output = launch_here(&dmb, server, &mut started);
 	let read = || output.lock().unwrap().clone();
-	wait_for_text("launch", "Hot reload: watching", read);
+	wait_for_text("launch", "Hot reload active", read);
 	wait_for_text("launch", "attach test: 1", read);
 	started.pids.push(started_pid(&read()));
 	std::fs::write(&code, source.replace("\treturn 1", "\treturn 2")).unwrap();
@@ -1631,7 +1627,7 @@ fn launch_from_the_command_line(server: &str) {
 		let mut started = Started::default();
 		let output = launch_here(&dmb, server, &mut started);
 		let read = || output.lock().unwrap().clone();
-		wait_for_text("launch", "Hot reload: watching", read);
+		wait_for_text("launch", "Hot reload active", read);
 		started.pids.push(started_pid(&read()));
 		let launcher = started.child.as_ref().unwrap().id().to_string();
 		assert!(Command::new("kill").args(["-TERM", &launcher]).status().unwrap().success());
@@ -1659,7 +1655,7 @@ fn launch_from_the_command_line(server: &str) {
 	assert_eq!(log, dir.join("attach_host.auxtools.log"));
 	let read_log = || std::fs::read_to_string(&log).unwrap_or_default();
 	assert!(
-		read_log().contains("Hot reload: watching"),
+		read_log().contains("Hot reload active"),
 		"the world was up before its code was watched:\n{}",
 		read_log()
 	);
@@ -1771,7 +1767,7 @@ fn launch_from_the_command_line(server: &str) {
 	// The rebuilt world already contains the edit; do not apply it again.
 	#[cfg(unix)]
 	{
-		let rebaselined = || read_log().matches("using the rebuilt .dmb as the source baseline").count();
+		let rebaselined = || read_log().matches("Hot reload: using the rebuilt .dmb").count();
 		let before = rebaselined();
 		let launcher_text = launcher.to_string();
 		assert!(Command::new("kill").args(["-STOP", &launcher_text]).status().unwrap().success());

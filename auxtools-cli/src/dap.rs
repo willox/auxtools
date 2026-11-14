@@ -168,6 +168,11 @@ impl Output {
 		});
 	}
 
+	/// Whether output goes to a DAP client rather than an in-process caller.
+	pub fn to_client(&self) -> bool {
+		matches!(self.to, To::Client(_))
+	}
+
 	/// The world is ready to be used (see `Note::Ready`). A client is told
 	/// as much in other ways.
 	pub fn ready(&self) {

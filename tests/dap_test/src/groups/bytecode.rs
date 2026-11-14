@@ -256,7 +256,7 @@ fn old_code() {
 	let mut world = World::launch_in(dir, json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 
 	world.run_to("middle", "/leaf", "leaf_1");
 	let paused = frame_address(&mut world);

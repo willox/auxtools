@@ -232,7 +232,6 @@ impl Code {
 		// as a new baseline on the next connection.
 		let dmb_modified = self.dmb_modified();
 
-		let started = Instant::now();
 		let built = match self.parse() {
 			Ok(snapshot) => snapshot,
 			Err(e) => {
@@ -267,17 +266,11 @@ impl Code {
 			},
 			resources
 		};
-		let took = started.elapsed();
 		// Send macros before reporting readiness.
 		if !self.give_macros() {
 			return;
 		}
-		self.log(format!(
-			"watching {} files with {} procs (read in {:.1} s)",
-			files.len(),
-			watching.built.procs().count(),
-			took.as_secs_f32()
-		));
+		self.out.console("Hot reload active");
 		if !self.send(Event::Watching) {
 			return;
 		}
@@ -375,11 +368,8 @@ impl Code {
 						Some(false) => true
 					};
 				}
-				Err(why) => self.log(format!(
-					"parsing the full project: {} requires more than a proc-body reload ({})",
-					file.display(),
-					why
-				))
+				// Fall back to parsing the whole project.
+				Err(_) => {}
 			}
 		}
 
@@ -426,7 +416,7 @@ impl Code {
 			if !self.ready() {
 				return false;
 			}
-			self.log("using the rebuilt .dmb as the source baseline");
+			self.log("using the rebuilt .dmb");
 			watching.dmb_modified = dmb_modified;
 			// Include pending edits in the baseline rather than reloading them.
 			watching.files.changed(&self.root);
@@ -484,7 +474,6 @@ impl Code {
 			return self.restore_resources(watching, &resource_files) && self.ready();
 		}
 
-		self.log("world rebooted; restoring source changes since the build");
 		let current = match self.parse() {
 			Ok(current) => current,
 			Err(e) => {
@@ -530,7 +519,6 @@ impl Code {
 		if files.is_empty() {
 			return true;
 		}
-		self.log("restoring resource files changed since the build");
 		self.reload_resources(watching, files)
 	}
 
@@ -723,7 +711,7 @@ impl Code {
 			for why in &notes {
 				self.out.console(format!("    note: {}", why));
 			}
-			self.log("no runtime changes");
+			self.log("no changes to the running code");
 			let sent = self.send(Event::NothingChanged {
 				warnings: changes.warnings.clone()
 			});

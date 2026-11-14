@@ -143,7 +143,7 @@ fn told_along_the_way() {
 	let mut world = World::launch_as(json!({ "supportsProgressReporting": true }), host_file(""), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	// The source worker prints that itself; the adapter reports `active` after
 	// handling the worker's earlier events, which end the parse's progress.
 	while world.event("auxtoolsReload")["body"]["state"] != "active" {}

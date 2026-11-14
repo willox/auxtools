@@ -281,6 +281,19 @@ impl Launcher {
 		}
 	}
 
+	/// Wait for a successful reload whose summary contains `what`.
+	pub fn reloaded(&mut self, what: &str) -> Value {
+		let deadline = Instant::now() + TIMEOUT;
+		loop {
+			let event = self
+				.event_within("auxtoolsReload", deadline.saturating_duration_since(Instant::now()))
+				.unwrap_or_else(|| panic!("no successful reload reported for {}; output:\n{}", what, self.output));
+			if event["body"]["state"] == "reloaded" && event["body"]["summary"].as_str().is_some_and(|summary| summary.contains(what)) {
+				return event;
+			}
+		}
+	}
+
 	/// Whether an event of this name has come and not been taken
 	pub fn has_event(&mut self, name: &str) -> bool {
 		// Whatever has arrived is looked at first

@@ -116,7 +116,7 @@ fn watched_world(name: &str) -> (World, PathBuf) {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	(world, dir)
 }
 
@@ -144,7 +144,7 @@ fn behind_the_clients_back() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	let at = world.marks.clone();
 	assert_eq!(world.eval_global("TWICE(21)"), "42");
 
@@ -422,7 +422,7 @@ fn starting_at_world_new() {
 
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	edit(&mut world, "bare.dm", "\treturn null\n", "\treturn 'reload_new.dmi'\n");
 	assert_eq!(world.eval_global("jointext(icon_states(icon_new()), \",\")"), "\"new1\"");
 	assert!(
@@ -520,7 +520,7 @@ fn override_restored_before_map() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	edit(
 		&mut world,
 		"placed.dm",
@@ -580,9 +580,9 @@ var/rb_late = rb_a
 
 /// Save a source change with no immediate runtime effect.
 fn edit_nothing_to_run(world: &mut World, file: &str, old: &str, new: &str) {
-	let before = world.count("Hot reload: no runtime changes");
+	let before = world.count("Hot reload: no changes to the running code");
 	world.marks.edit(file, old, new);
-	world.wait_count("Hot reload: no runtime changes", before + 1);
+	world.wait_count("Hot reload: no changes to the running code", before + 1);
 }
 
 /// Running globals and statics retain their values. After reboot, run
@@ -606,7 +606,7 @@ fn initializers_after_reboot() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	const VALUES: &str = "\"[rb_a] [rb_b] [rb_news] [rb_made.n] [(new /datum/rb_static).s] [rb_local()] [rb_c] [rb_seen]\"";
 	// Only initializers changed; no immediate runtime effect.
 	edit_nothing_to_run(&mut world, "inits.dm", "var/rb_a = 5\n", "var/rb_a = 7\n");
@@ -672,7 +672,7 @@ fn initializer_added_to_a_world_without() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	edit(
 		&mut world,
 		"bare.dm",
@@ -709,7 +709,7 @@ fn file_named_by_a_reload() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	edit(
 		&mut world,
 		"main.dm",
@@ -751,7 +751,7 @@ fn resource_files() {
 	let dir = copy_of_the_world("resources");
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	assert_eq!(world.eval_global("make_lamps()"), "\"made\"");
 	assert_eq!(world.eval_global("lamp_states()"), "\"on,off\"");
 
@@ -766,9 +766,10 @@ fn resource_files() {
 	ok("icon reload on existing and new instances");
 
 	// Restore the icon after reboot, including appearances made while loading.
+	world.drop_events("auxtoolsReload");
 	world.run("reboot");
 	world.wait_count("dap: world/New", 2);
-	world.wait_output("Hot reload: restoring resource files changed since the build");
+	world.reloaded("lamp");
 	assert_eq!(world.eval_global("states_of(early_lamp.icon)"), new);
 	assert_eq!(world.eval_global("lamp_states()"), new);
 	ok("saved icon restored after reboot");
@@ -850,7 +851,7 @@ pub fn run() {
 	let mut world = World::launch_as(json!({ "supportsInvalidatedEvent": true }), dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 
 	// Three lines more above the breakpoint: the client moves its mark with
 	// the text, and says where its breakpoints are now
@@ -1100,7 +1101,7 @@ pub fn run() {
 	world.break_on(&[]);
 	world.resume_through("middle");
 	world.marks.edit("stepping.dm", "\tvar/list/broken = (\n", "");
-	world.wait_output("Hot reload: no runtime changes");
+	world.wait_output("Hot reload: no changes to the running code");
 	let fixed = last_reload_state(&mut world);
 	assert_eq!((&fixed["state"], &fixed["problems"]), (&json!("reloaded"), &json!([])), "{}", fixed);
 	world.drop_events("breakpoint");
