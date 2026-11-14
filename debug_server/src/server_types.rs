@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Wire protocol version. Increment for changes incompatible with older
 /// clients or servers. Including the version in endpoint names prevents
 /// connections using incompatible message layouts.
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 
 /// Shutdown notification sent before disconnecting clients; not used for
 /// reboot.
@@ -240,7 +240,10 @@ pub enum Request {
 	/// Request client reconnects to load the skin. Leave Dream Seeker-hosted
 	/// worlds unchanged: reconnecting the host would restart the world.
 	/// Respond with `Response::Reconnect`.
-	Reconnect
+	Reconnect,
+	/// Set `client/script` text for future logins. Defer until `world/New`
+	/// if the world is still loading. Respond with `Response::Script`.
+	Script(ScriptRequest)
 }
 
 /// A `#define` of the world's code, as its preprocessor has it
@@ -391,6 +394,7 @@ pub enum Response {
 	Reloader(Result<(), String>),
 	Skin(Result<SkinReloaded, String>),
 	Reconnect(Result<Reconnected, String>),
+	Script(Result<ScriptReloaded, String>),
 	/// Permanent initialization failure, sent on connection instead of a
 	/// response, followed by `Disconnect`. The world continues without
 	/// the debugger for the lifetime of the process.
@@ -409,6 +413,25 @@ pub struct SkinRequest {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct SkinReloaded {
 	/// Connected players retaining the old skin until reconnect.
+	pub clients: u32,
+	/// Whether Dream Seeker hosts the world
+	pub hosted: bool
+}
+
+/// Client script text or none (see `Request::Script`). Included `.dms`
+/// files remain as built.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ScriptRequest {
+	/// Its text, `None` for no script
+	pub text: Option<String>,
+	/// Built text (`None` for none), used to validate the field before
+	/// the first change.
+	pub built: Option<String>
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ScriptReloaded {
+	/// Connected players retaining the old script until reconnect.
 	pub clients: u32,
 	/// Whether Dream Seeker hosts the world
 	pub hosted: bool

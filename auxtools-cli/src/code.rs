@@ -14,11 +14,11 @@ use std::{
 
 use auxtools_cli::server_types::{
 	HotReloadInitProc, HotReloadLines, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadResource, HotReloadVarDefault, Macro, ProcRef,
-	ReloadedResource, RemovedVar, SkinRequest
+	ReloadedResource, RemovedVar, ScriptRequest, SkinRequest
 };
 use dmasm::reload::{diff, Changes, ParseOptions, ProcKey, Snapshot};
 
-use crate::{adapter::Input, dap::Output, resources::Resources, skin::Skin};
+use crate::{adapter::Input, dap::Output, resources::Resources, script::Script, skin::Skin};
 
 /// How often to look for changed files
 const INTERVAL: Duration = Duration::from_millis(500);
@@ -74,6 +74,13 @@ pub enum Event {
 		file: PathBuf,
 		/// Files referenced by this skin but absent from the built skin.
 		images: Vec<String>,
+		/// Restore after reboot, before clients log in.
+		restored: bool,
+		world: u64
+	},
+	/// Client script update. The adapter replies with `Command::Reloaded`.
+	Script {
+		request: ScriptRequest,
 		/// Restore after reboot, before clients log in.
 		restored: bool,
 		world: u64
@@ -157,6 +164,7 @@ struct Watching {
 	applied: Option<Snapshot>,
 	files: Watched,
 	skin: Skin,
+	script: Script,
 	/// Watched resource files and their current IDs.
 	resources: Resources,
 	/// Original resource IDs, used after reboot.
@@ -218,11 +226,13 @@ impl Code {
 		let files = files(&built, &self.options.dme);
 		self.warn_of_later_edits(&files, dmb_modified);
 		let resources = self.read_resources(&files);
+		let script = Script::built(built.client_script());
 		let mut watched = files.clone();
 		watched.extend(resources.files.keys().cloned());
 		let mut watching = Watching {
 			files: Watched::new(&self.root, &watched, self.parse_started.get()),
 			skin: Skin::built(&self.root, built.skin()),
+			script,
 			dmb_modified,
 			edited_since_built: HashSet::new(),
 			applied: None,
@@ -300,7 +310,7 @@ impl Code {
 		self.log(format!("changed: {}", shown.join(", ")));
 
 		watching.skin.take_edit(&mut changed);
-		// Resource files, then code, then the skin
+		// Resource files, then code, then the skin and the client script
 		let resource_files: Vec<PathBuf> = changed.iter().filter(|f| watching.resources.files.contains_key(*f)).cloned().collect();
 		if !resource_files.is_empty() {
 			changed.retain(|f| !watching.resources.files.contains_key(f));
@@ -311,7 +321,7 @@ impl Code {
 		if !changed.is_empty() && !self.reload_code(watching, changed) {
 			return false;
 		}
-		self.reload_skin(watching, false)
+		self.reload_skin(watching, false) && self.reload_script(watching, false)
 	}
 
 	/// Reload the changed DM files. Return false on adapter disconnect.
@@ -357,6 +367,7 @@ impl Code {
 			}
 		};
 		watching.skin.parsed(new.skin());
+		watching.script.parsed(new.client_script());
 		let current = watching.applied.as_ref().unwrap_or(&watching.built);
 		let mut changes = diff(current, &new, Some(&changed));
 		refuse_hidden(current, &new, &mut changes);
@@ -404,6 +415,7 @@ impl Code {
 						watching.files.add(&self.root, file, self.parse_started.get());
 					}
 					watching.skin = Skin::built(&self.root, built.skin());
+					watching.script = Script::built(built.client_script());
 					watching.built_resources = Resources {
 						files: resources.files.clone(),
 						dirs: resources.dirs.clone()
@@ -428,6 +440,10 @@ impl Code {
 			return false;
 		}
 		watching.resources.restarted(&watching.built_resources);
+		watching.script.rebooted();
+		if !self.reload_script(watching, true) {
+			return false;
+		}
 		let resource_files: Vec<PathBuf> = watching
 			.resources
 			.edited_since_built(&self.root)
@@ -701,6 +717,37 @@ impl Code {
 				Ok(Command::Reloaded(applied)) => {
 					if applied {
 						watching.skin.applied(change);
+					}
+					return true;
+				}
+				Ok(Command::Resources(_)) => {}
+				Ok(Command::Connected { world, .. }) => self.connected(world),
+				Err(_) => return false
+			}
+		}
+	}
+
+	/// Update the client script if it differs from the world's.
+	/// Return false on disconnect.
+	fn reload_script(&self, watching: &mut Watching, restored: bool) -> bool {
+		if let Some(why) = watching.script.problem() {
+			self.log(format!("client script: {}; the world keeps the script it has", why));
+		}
+		let Some(change) = watching.script.change() else {
+			return true;
+		};
+		if !self.send(Event::Script {
+			request: change.request.clone(),
+			restored,
+			world: self.world.get()
+		}) {
+			return false;
+		}
+		loop {
+			match self.commands.recv() {
+				Ok(Command::Reloaded(applied)) => {
+					if applied {
+						watching.script.applied(change);
 					}
 					return true;
 				}

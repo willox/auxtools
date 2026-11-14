@@ -280,6 +280,21 @@ async function skinReloaded(event) {
 	}
 }
 
+// Offer reconnect after a client script reload.
+async function scriptReloaded(event) {
+	const { clients, hosted } = event.body;
+	if (!clients) {
+		return;
+	}
+	const message = hosted
+		? "Client script reloaded. Reboot to update Dream Seeker's script."
+		: `Client script reloaded. ${clients} connected ${clients === 1 ? "player needs" : "players need"} to reconnect to load the new script.`;
+	const action = hosted ? "Reboot" : "Reconnect";
+	if ((await vscode.window.showInformationMessage(message, action)) === action) {
+		await reconnectClients(event.session);
+	}
+}
+
 function activate(context) {
 	const provider = new ConfigurationProvider(context);
 	trackUnsavedFiles(context);
@@ -294,6 +309,8 @@ function activate(context) {
 		vscode.debug.onDidReceiveDebugSessionCustomEvent((event) => {
 			if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsSkin") {
 				skinReloaded(event);
+			} else if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsScript") {
+				scriptReloaded(event);
 			}
 		}),
 		// For `${command:auxtools.pickWorld}` in attach configurations

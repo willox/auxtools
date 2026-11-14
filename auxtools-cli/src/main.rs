@@ -8,6 +8,7 @@ mod dap;
 mod debuggee;
 mod lines;
 mod resources;
+mod script;
 mod skin;
 mod stddef;
 

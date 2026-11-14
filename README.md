@@ -55,6 +55,8 @@ Saving an icon, sound or other referenced resource reloads it, including files f
 
 Saving the `.dmf` skin updates the interface sent at login. Connected clients need to reconnect; `auxtools reconnect` requests this, or reboots Dream Seeker-hosted worlds.
 
+Changes to `client/script` text also apply at login. Resource-file scripts and included `.dms` files require a rebuild.
+
 Proc-body edits can use a single-file parse. Other edits trigger a full project parse. See the [extension documentation](editors/vscode/README.md#hot-reload-experimental) for reload limits and the [hot reload tests](tests/hot_reload_test) for supported cases.
 
 ## Supported BYOND versions

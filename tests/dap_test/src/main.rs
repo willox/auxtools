@@ -50,7 +50,8 @@ const GROUPS: &[(&str, fn())] = &[
 	("reboots", groups::reboots::run),
 	("reloading", groups::reloading::run),
 	("bytecode", groups::bytecode::run),
-	("skins", groups::skins::run)
+	("skins", groups::skins::run),
+	("scripts", groups::scripts::run)
 ];
 
 fn main() {

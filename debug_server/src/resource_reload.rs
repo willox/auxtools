@@ -90,10 +90,11 @@ pub fn apply(prepared: &[Prepared]) -> Result<Applied, String> {
 	let mut appearances = repointed.appearances;
 	appearances.sort_unstable();
 	appearances.dedup();
+	let warnings: Vec<String> = repointed.warnings.into_iter().map(|w| format!("resource reload: {}", w)).collect();
 	Ok(Applied {
 		reloaded,
 		appearances,
-		warnings: repointed.warnings.into_iter().map(|w| format!("resource reload: {}", w)).collect()
+		warnings
 	})
 }
 

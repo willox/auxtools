@@ -34,6 +34,7 @@ use crate::{
 mod data;
 mod files;
 mod journal;
+mod script;
 mod skin;
 
 pub use journal::reload_by_another;
@@ -1119,6 +1120,12 @@ impl Adapter {
 				world
 			} => {
 				let applied = self.debuggee.as_ref().is_some_and(|d| d.generation == world) && self.reload_skin(request, &file, &images, restored);
+				if let Some(code) = &self.code {
+					let _ = code.send(code::Command::Reloaded(applied));
+				}
+			}
+			code::Event::Script { request, restored, world } => {
+				let applied = self.debuggee.as_ref().is_some_and(|d| d.generation == world) && self.reload_script(request, restored);
 				if let Some(code) = &self.code {
 					let _ = code.send(code::Command::Reloaded(applied));
 				}

@@ -12,6 +12,7 @@ pub mod pausing;
 pub mod reboots;
 pub mod reloading;
 pub mod runtimes;
+pub mod scripts;
 pub mod sessions;
 pub mod skins;
 pub mod stepping;

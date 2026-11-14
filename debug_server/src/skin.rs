@@ -136,7 +136,7 @@ fn field() -> Result<*mut u32, String> {
 }
 
 /// Whether Dream Seeker runs the world, rather than DreamDaemon
-fn hosted() -> bool {
+pub(crate) fn hosted() -> bool {
 	std::env::current_exe()
 		.ok()
 		.and_then(|exe| exe.file_stem().map(|stem| stem.to_string_lossy().to_lowercase()))
@@ -145,7 +145,7 @@ fn hosted() -> bool {
 
 /// Run DM `code`, an expression or a proc body, with `params` set, and
 /// return its value
-fn run(code: &str, params: &[(&str, &Value)]) -> Result<Value, String> {
+pub(crate) fn run(code: &str, params: &[(&str, &Value)]) -> Result<Value, String> {
 	let names: Vec<&str> = params.iter().map(|(name, _)| *name).collect();
 	let values: Vec<&Value> = params.iter().map(|(_, value)| *value).collect();
 	let body = dmasm::compiler::compile_body_in(code, &names, None, crate::world_byond()).map_err(|e| e.to_string())?;
@@ -157,7 +157,7 @@ fn run(code: &str, params: &[(&str, &Value)]) -> Result<Value, String> {
 	result.as_list().and_then(|list| list.get(1)).map_err(|e| e.message)
 }
 
-fn text(value: &str) -> Result<Value, String> {
+pub(crate) fn text(value: &str) -> Result<Value, String> {
 	Value::from_string(value).map_err(|e| e.message)
 }
 
@@ -182,7 +182,7 @@ pub fn set(request: &SkinRequest) -> Result<SkinReloaded, String> {
 
 /// Count logged-in clients by key. The idle-world waker has no key;
 /// winset() on it would raise a runtime error.
-fn clients() -> Result<u32, String> {
+pub(crate) fn clients() -> Result<u32, String> {
 	let count = run("var/n = 0\nfor(var/client/C)\n\tif(C.key)\n\t\tn++\nn\n", &[])?;
 	count.as_number().map(|n| n as u32).map_err(|e| e.message)
 }
@@ -210,5 +210,6 @@ pub fn reconnect() -> Result<Reconnected, String> {
 		"var/n = 0\nfor(var/client/C)\n\tif(C.key)\n\t\twinset(C, null, \"command=.reconnect\")\n\t\tn++\nn\n",
 		&[]
 	)?;
-	count.as_number().map(|n| Reconnected::Clients(n as u32)).map_err(|e| e.message)
+	let count = count.as_number().map_err(|e| e.message)?;
+	Ok(Reconnected::Clients(count as u32))
 }

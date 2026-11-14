@@ -72,7 +72,7 @@
 			},
 			{
 				"command": "auxtools.reconnectClients",
-				"title": "Reconnect players to load the skin",
+				"title": "Reconnect players",
 				"category": "auxtools"
 			}
 		],

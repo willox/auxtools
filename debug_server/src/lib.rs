@@ -1,5 +1,6 @@
 mod assemble_env;
 mod ckey_override;
+mod client_script;
 mod connection;
 mod dmb_tables;
 mod hot_reload;

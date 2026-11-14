@@ -273,9 +273,16 @@ watched and reloaded too.
 
 Saving the last `.dmf` included by the `.dme` updates the login skin and
 preserves it after reboot. Connected players must reconnect to load it. Use the
-reload notification or **auxtools: Reconnect players to load the skin**. Dream
-Seeker-hosted worlds reboot instead because the host cannot reconnect
-independently. New image references absent from the build require a rebuild.
+reload notification or **auxtools: Reconnect players**. Dream Seeker-hosted
+worlds reboot instead because the host cannot reconnect independently. New image
+references absent from the build require a rebuild.
+
+### Client scripts
+
+Changes to `client/script` text apply at login and survive reboot. Connected
+players must reconnect to load them; use the notification or **auxtools:
+Reconnect players**. Resource-file scripts and included `.dms` files require a
+rebuild.
 
 ## Attach to a running world
 

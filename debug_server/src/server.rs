@@ -340,6 +340,8 @@ pub struct Server {
 	waiting_to_start: bool,
 	/// Skin deferred until world data loads at `world/New`.
 	pending_skin: Option<SkinRequest>,
+	/// Client script deferred until world data loads.
+	pending_script: Option<ScriptRequest>,
 	/// Current resource IDs per reloaded file, used by later reloads.
 	resource_ids: HashMap<String, Vec<u32>>,
 	/// Resource IDs before each file's first reload. Restoring its original
@@ -402,6 +404,12 @@ impl Server {
 			)
 			// Test-only inspection command, omitted from help and completion.
 			.subcommand(Command::new("skin").about("Show login skin resource ID and text").hide(true))
+			// Test-only inspection command, omitted from help and completion.
+			.subcommand(
+				Command::new("script")
+					.about("Show login script string ID, resource IDs and text")
+					.hide(true)
+			)
 			.subcommand(
 				Command::new("guest_override")
 					.about("Override the CKey used by guest connections")
@@ -443,6 +451,7 @@ impl Server {
 			eval_warnings: vec![],
 			waiting_to_start: false,
 			pending_skin: None,
+			pending_script: None,
 			resource_ids: HashMap::new(),
 			resource_origins: HashMap::new(),
 			eval_src: None,
@@ -2284,6 +2293,8 @@ impl Server {
 						Err(e) => format!("Failed: {}", e)
 					},
 
+					Some(("script", _)) => self.evaluating(crate::client_script::state).unwrap_or_else(|e| format!("Failed: {}", e)),
+
 					Some(("guest_override", matches)) => match matches.get_one::<String>("ckey").map(String::as_str) {
 						Some(ckey) => match crate::ckey_override::override_guest_ckey(ckey) {
 							Ok(()) => "Success".to_owned(),
@@ -2886,6 +2897,16 @@ impl Server {
 		}
 	}
 
+	/// Apply the client script deferred until world data loaded.
+	fn apply_pending_script(&mut self) {
+		let Some(request) = self.pending_script.take() else {
+			return;
+		};
+		if let Err(e) = self.evaluating(|| crate::client_script::set(&request)) {
+			self.notify(format!("could not restore client script after reboot: {}", e));
+		}
+	}
+
 	/// Mark DM run by `work` as a debugger evaluation.
 	fn evaluating<T>(&mut self, work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
 		self.in_eval = true;
@@ -3084,6 +3105,7 @@ impl Server {
 
 	/// Apply deferred reloads once `world/New` starts and resources are loaded.
 	pub fn world_data_loaded(&mut self) {
+		self.apply_pending_script();
 		for request in std::mem::take(&mut self.waiting_reloads) {
 			let result = self.hot_reload(&request);
 			if !result.applied {
@@ -3191,6 +3213,18 @@ impl Server {
 					None => self.evaluating(|| crate::skin::set(&request))
 				};
 				self.send_or_disconnect(Response::Skin(result));
+			}
+			Request::Script(request) => {
+				let result = match self.reloads_refused() {
+					Some(why) => Err(why),
+					// As for the skin
+					None if !crate::world_resources::is_loaded() => {
+						self.pending_script = Some(request);
+						Ok(ScriptReloaded { clients: 0, hosted: false })
+					}
+					None => self.evaluating(|| crate::client_script::set(&request))
+				};
+				self.send_or_disconnect(Response::Script(result));
 			}
 			Request::Reconnect => {
 				let reconnected = self.evaluating(crate::skin::reconnect);

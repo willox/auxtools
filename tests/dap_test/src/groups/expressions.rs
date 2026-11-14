@@ -527,7 +527,11 @@ pub fn run() {
 		disassembly
 	);
 	let help = world.eval("#help");
-	assert!(help.contains("disassemble") && !help.contains("skin"), "#help said {}", help);
+	assert!(
+		help.contains("disassemble") && !help.contains("skin") && !help.contains("script"),
+		"#help said {}",
+		help
+	);
 	ok("console disassembly commands");
 
 	// As a client sends its watches: all at once
