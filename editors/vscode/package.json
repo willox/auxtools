@@ -109,6 +109,11 @@
 					"type": "string",
 					"default": "",
 					"markdownDescription": "Optional `debug_server.dll` or `libdebug_server.so` override. Leave empty to use the library bundled with the extension."
+				},
+				"auxtools.addToTerminalPath": {
+					"type": "boolean",
+					"default": true,
+					"markdownDescription": "Add the launcher directory to VS Code terminals' `PATH` so `auxtools` commands are available."
 				}
 			}
 		},

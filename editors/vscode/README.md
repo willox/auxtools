@@ -346,6 +346,9 @@ for attach sessions to avoid competing with the launching session's reloads.
 - `auxtools.debugLibrary`: optional debug library override (`debug_server.dll`
   or `libdebug_server.so`). Leave empty to use the library bundled with the
   extension.
+- `auxtools.addToTerminalPath`: add the launcher directory to terminal `PATH`
+  so commands such as `auxtools log` work there. Relaunch existing terminals
+  to apply changes. Default: `true`.
 
 ## License
 

@@ -46,6 +46,23 @@ function ensureExecutable(file) {
 	}
 }
 
+// Add the launcher directory to terminal PATH. Existing terminals need
+// to be relaunched to pick up the change.
+function exposeLauncher(context) {
+	const collection = context.environmentVariableCollection;
+	collection.clear();
+	if (!settings().get("addToTerminalPath")) {
+		return;
+	}
+	const launcher = launcherPath(context);
+	if (!fs.existsSync(launcher)) {
+		return;
+	}
+	ensureExecutable(launcher);
+	collection.description = "Adds the auxtools launcher directory to PATH.";
+	collection.prepend("PATH", path.dirname(launcher) + path.delimiter);
+}
+
 // Find project files, preferring the workspace-folder name and shallow paths.
 async function findFiles(extension, folder) {
 	const glob = `**/*${extension}`;
@@ -345,6 +362,7 @@ async function scriptReloaded(event) {
 function activate(context) {
 	const provider = new ConfigurationProvider(context);
 	trackUnsavedFiles(context);
+	exposeLauncher(context);
 	context.subscriptions.push(
 		vscode.debug.registerDebugAdapterDescriptorFactory(DEBUG_TYPE, new AdapterFactory(context)),
 		vscode.debug.registerDebugConfigurationProvider(DEBUG_TYPE, provider),
@@ -353,6 +371,11 @@ function activate(context) {
 		vscode.commands.registerCommand("auxtools.attach", attach),
 		vscode.commands.registerCommand("auxtools.reconnectClients", () => reconnectClients()),
 		vscode.commands.registerCommand("auxtools.reboot", reboot),
+		vscode.workspace.onDidChangeConfiguration((event) => {
+			if (event.affectsConfiguration("auxtools.launcherPath") || event.affectsConfiguration("auxtools.addToTerminalPath")) {
+				exposeLauncher(context);
+			}
+		}),
 		vscode.debug.onDidReceiveDebugSessionCustomEvent((event) => {
 			if (event.session.type === DEBUG_TYPE && event.event === "auxtoolsSkin") {
 				skinReloaded(event);
