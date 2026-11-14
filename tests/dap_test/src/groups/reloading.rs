@@ -2,7 +2,7 @@
 
 use std::{path::PathBuf, process::Command};
 
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::{
 	client::value_of,
@@ -487,6 +487,55 @@ fn resource_files() {
 	let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Breakpoint after `var/text = "[n]"`: DreamMaker records that line before
+/// assigning the var, so `text` is still unset there.
+fn read_ahead_stop(world: &mut World, file: &std::path::Path, line: u64) -> (u64, String) {
+	world.set_breakpoints(file, json!([line]));
+	world.run("nothing_to_run");
+	let stop = world.stop();
+	let text = world.local("text");
+	world.resume_through("nothing_to_run");
+	world.set_breakpoints(file, json!([]));
+	(stop.line, text)
+}
+
+/// Breakpoints must retain their positions after reload, including empty
+/// macro expansions, uninitialized vars, set statements and lookahead lines.
+fn nothing_to_run() {
+	let (mut world, dir) = watched_world("nothing_to_run");
+	let at = world.marks.clone();
+	let file = at.file("stepping.dm");
+	let names = ["nothing_macro", "nothing_var", "nothing_set", "nothing_code"];
+	let lines: Vec<u64> = names.iter().map(|name| at.line(name)).collect();
+	let placed = |world: &mut World| -> Vec<Value> {
+		let set = world.set_breakpoints(&file, json!(lines));
+		set.iter().map(|b| b["line"].clone()).collect()
+	};
+	let expected: Vec<Value> = lines.iter().map(|l| json!(l)).collect();
+	assert_eq!(placed(&mut world), expected, "breakpoints moved off lines DreamMaker's code has");
+	world.set_breakpoints(&file, json!([lines[0]]));
+	world.run("nothing_to_run");
+	world.stop_on("breakpoint", "/nothing_to_run", "nothing_macro");
+	world.resume_through("nothing_to_run");
+	let read_ahead = at.line("read_ahead_next");
+	let before = read_ahead_stop(&mut world, &file, read_ahead);
+
+	// Change the proc so its bytecode is recompiled.
+	edit(&mut world, "stepping.dm", "\tn = 1 // @nothing_code\n", "\tn = 2 // @nothing_code\n");
+	assert_eq!(world.eval_global("nothing_to_run()"), "2");
+	assert_eq!(placed(&mut world), expected, "breakpoints moved off lines after the reload");
+	world.set_breakpoints(&file, json!([lines[0]]));
+	world.run("nothing_to_run");
+	world.stop_on("breakpoint", "/nothing_to_run", "nothing_macro");
+	world.resume_through("nothing_to_run");
+	ok("breakpoints on nonexecutable lines after reload");
+	let after = read_ahead_stop(&mut world, &file, read_ahead);
+	assert_eq!(after, before, "a breakpoint DreamMaker records ahead stopped elsewhere after the reload");
+	ok("breakpoint on a lookahead line after reload");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
 pub fn run() {
 	saved_without_reloading();
 	built_in_taken_away();
@@ -494,6 +543,7 @@ pub fn run() {
 	starting_at_world_new();
 	parent_changed_alone();
 	resource_files();
+	nothing_to_run();
 
 	let dir = copy_of_the_world("reloading");
 	let mut world = World::launch_as(json!({ "supportsInvalidatedEvent": true }), dir.clone(), json!({ "hotReload": true }));

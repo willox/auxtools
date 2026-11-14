@@ -199,3 +199,20 @@ var/list/dozers
 	for (var/datum/dozer/d in dozers)
 		del(d)
 	dozers = null
+
+// Lines with no executable code. DreamMaker records each; an empty macro
+// counts only as the first body line (as with RETURN_TYPE(/list)).
+#define NOTHING_TO_RUN
+/proc/nothing_to_run()
+	NOTHING_TO_RUN // @nothing_macro
+	var/n // @nothing_var
+	set background = TRUE // @nothing_set
+	n = 1 // @nothing_code
+	// DreamMaker records the next line before evaluating this initializer.
+	
+	var/text = "[n]" // @read_ahead_text
+	var/size = length(text) // @read_ahead_next
+	return n * size
+
+/proc/sc_nothing_to_run()
+	nothing_to_run()
