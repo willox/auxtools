@@ -637,8 +637,7 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 	}
 
 	if !prepared.appearances.is_empty() {
-		warnings
-			.push("things made before the reload keep the verbs and built-in values they had; things made after get them as they are now".to_owned());
+		warnings.push("verb and built-in changes apply only to new instances; existing instances retain their values".to_owned());
 	}
 
 	prepared.new_vars = added.vars;

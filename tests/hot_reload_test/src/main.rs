@@ -1415,7 +1415,7 @@ fn main() {
 	assert_eq!(eval(&mut client, "verb_names(new /mob/chain_verbs)"), "\"speak,speak,other,speak\"");
 	assert_eq!(eval(&mut client, "world.chant()"), "\"xyz\"");
 	assert_eq!(eval(&mut client, "solo()"), "\"declared\"");
-	assert!(result.warnings.iter().all(|w| w.contains("things made before")), "{:?}", result.warnings);
+	assert!(result.warnings.iter().all(|w| w.contains("existing instances")), "{:?}", result.warnings);
 	for (path, needle) in [
 		("/mob/chain_verbs/speak", "\treturn ..() + \"c\""),
 		("/world/chant", "\treturn ..() + \"z\""),
