@@ -1233,6 +1233,66 @@ fn main() {
 	assert_eq!(eval(&mut client, "(new /datum/hr_t).x"), "1");
 	println!("ok: parent type change");
 
+	// Move var/proc declarations to an ancestor. Existing subtypes retain
+	// their declarations; the proc becomes an override of the new ancestor's.
+	let changes = source.edit(
+		"reload.dm",
+		"/proc/first_def()\n",
+		"/datum/mv_hud\n\n/datum/mv_hud/human\n\tvar/tmp/list/sue = list(\"human\")\n\n/datum/mv_hud/human/sub\n\n/datum/mv_hud/robot\n\tvar/sue = \
+		 2\n\n/datum/mv_hud/plain\n\n/datum/mv_hud/human/proc/upd()\n\treturn \
+		 \"human\"\n\nvar/datum/mv_hud/human/mv_kept\n\n/proc/mv_keep()\n\tmv_kept = new\n\n/proc/first_def()\n"
+	);
+	reload(&mut watcher, &changes);
+	eval(&mut client, "mv_keep()");
+	let changes = source.edit_many("reload.dm", &[
+		(
+			"/datum/mv_hud\n\n",
+			"/datum/mv_hud\n\tvar/sue = 5\n\n/datum/mv_hud/proc/upd()\n\treturn \"hud\"\n\n/proc/mv_error()\n\ttry\n\t\t(new \
+			 /datum/mv_hud/human).upd(TRUE)\n\tcatch(var/exception/e)\n\t\treturn e.desc\n\n"
+		),
+		("\tvar/tmp/list/sue = list(\"human\")\n", ""),
+		("\tvar/sue = 2\n", "\tsue = 3\n"),
+		(
+			"/datum/mv_hud/human/proc/upd()\n\treturn \"human\"\n",
+			"/datum/mv_hud/human/upd(fail)\n\tif(fail)\n\t\tvar/list/nothing\n\t\treturn nothing.len\n\treturn \"human>\" + ..()\n"
+		)
+	]);
+	assert!(changes.refused.is_empty(), "{:?}", changes.refused);
+	// A redeclaration not listed as moved-from must still be rejected.
+	let mut unmarked = reload_request(&changes);
+	if let Request::HotReload(request) = &mut unmarked {
+		for var in &mut request.new_vars {
+			var.moved_from.clear();
+		}
+	}
+	let refused = expect_reload_result(watcher.request(unmarked));
+	assert!(!refused.applied, "duplicate var was accepted: {:?}", refused);
+	assert!(refused.errors.iter().any(|e| e.contains("duplicate definition")), "{:?}", refused.errors);
+	let result = reload(&mut watcher, &changes);
+	assert!(
+		result
+			.warnings
+			.iter()
+			.any(|w| w.contains("retain runtime declarations, values and var IDs")),
+		"{:?}",
+		result.warnings
+	);
+	let report = "\"[(new /datum/mv_hud).sue] [(new /datum/mv_hud/human).sue] [(new /datum/mv_hud/human/sub).sue] [(new /datum/mv_hud/robot).sue] \
+	              [(new /datum/mv_hud/plain).sue]\"";
+	assert_eq!(eval(&mut client, report), "\"5 5 5 3 5\"");
+	assert_eq!(eval(&mut client, "issaved((new /datum/mv_hud/human).sue)"), "1");
+	assert_eq!(eval(&mut client, "initial((new /datum/mv_hud/human/sub).sue)"), "5");
+	assert_eq!(eval(&mut client, "(new /datum/mv_hud/human/sub).upd()"), "\"human>hud\"");
+	assert_eq!(eval(&mut client, "(new /datum/mv_hud/plain).upd()"), "\"hud\"");
+	assert_eq!(eval(&mut client, "hascall(new /datum/mv_hud/robot, \"upd\")"), "1");
+	// Runtime errors must use the proc's new override path.
+	let error = eval(&mut client, "mv_error()");
+	assert!(error.contains("proc name: upd (/datum/mv_hud/human/upd)"), "{}", error);
+	// Existing instances retain their values and use the new code.
+	assert_eq!(eval(&mut client, "json_encode(mv_kept.sue)"), "\"[\\\"human\\\"]\"");
+	assert_eq!(eval(&mut client, "mv_kept.upd()"), "\"human>hud\"");
+	println!("ok: declarations moved to an ancestor");
+
 	// Reparent sound types: retain explicit var-table built-ins and copy
 	// inherited defaults from the new parent.
 	let sound = "\"[(new /sound/hr_st).pan] [(new /sound/hr_st).frequency] [(new /sound/hr_st).priority]\"";

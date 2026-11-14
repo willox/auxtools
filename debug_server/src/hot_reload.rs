@@ -387,6 +387,9 @@ struct NewProcOnType {
 	map_entries: Vec<(u32, u32, Vec<u32>)>,
 	/// Procs whose `..()` must target the new definition.
 	relinked: Vec<u32>,
+	/// (proc, path string) for declarations moved to an ancestor.
+	/// These become overrides, whose paths omit `/proc`.
+	paths: Vec<(u32, u32)>,
 	/// Insert after this proc, or use the default `add_to_list` position.
 	after: Option<u32>
 }
@@ -1312,11 +1315,29 @@ fn prepare_new_proc(
 		staged.entries.insert(id, entry);
 		staged.own.entry((type_id, type_fields::PROCS)).or_default().push(id);
 
+		// The moved declaration is now an override; use its built override
+		// path.
+		let mut paths = vec![];
+		for &proc in &relinked {
+			let Some(path) = staged.entry(proc).map(|e| e.0[ProcEntryWords::PATH]) else {
+				continue;
+			};
+			let path = String::from(unsafe { StringRef::from_id(raw_types::strings::StringId(path)) });
+			if let Some(at) = path.rfind("/proc/") {
+				let renamed = leaked_string(&format!("{}/{}", &path[..at], &path[at + "/proc/".len()..])).map_err(fail)?;
+				match staged.entries.get_mut(&proc) {
+					Some(e) => e.0[ProcEntryWords::PATH] = renamed,
+					None => paths.push((proc, renamed))
+				}
+			}
+		}
+
 		Some(NewProcOnType {
 			type_id,
 			field: type_fields::PROCS,
 			map_entries,
 			relinked,
+			paths,
 			after: None
 		})
 	};
@@ -1408,6 +1429,7 @@ fn new_verb_on_type(type_path: &str, id: u32, at: usize, entry: &mut ProcEntryWo
 		field: type_fields::VERBS,
 		map_entries: vec![],
 		relinked,
+		paths: vec![],
 		after
 	})
 }
@@ -1741,10 +1763,23 @@ fn prepare_new_var(
 
 	if !new.type_path.is_empty() {
 		let type_id = find_type(&new.type_path).map_err(fail)?;
+		// Retain declarations on moved-from subtypes and their descendants.
+		// Any other declaration of that name is a duplicate.
+		let moved_from = new
+			.moved_from
+			.iter()
+			.map(|path| find_type(path))
+			.collect::<Result<Vec<u32>, String>>()
+			.map_err(fail)?;
+		let mut kept = vec![];
 		for sub in type_vars.subtree(type_id).map_err(fail)? {
 			let declared = type_vars.declared(sub).map_err(fail)?.clone();
 			let names: Vec<u32> = declared.chunks(2).map(|pair| type_vars.name_of(pair[0])).collect();
 			match names.binary_search(&name) {
+				Ok(_) if type_and_ancestors(sub).iter().any(|t| moved_from.contains(t)) => {
+					kept.push(sub);
+					continue;
+				}
 				Ok(_) => {
 					return Err(fail(format!(
 						"{} already has a var of that name (a duplicate definition)",
@@ -1768,6 +1803,9 @@ fn prepare_new_var(
 				table.splice(at * 4..at * 4, [name, id, value.0, value.1]);
 			}
 		}
+		if let Some(warning) = moved_var_warning(&new.type_path, &new.var, &kept) {
+			warnings.push(warning);
+		}
 	}
 
 	if new.type_path.is_empty() || new.flags & STATIC != 0 {
@@ -1776,6 +1814,28 @@ fn prepare_new_var(
 
 	added.vars.push(PreparedNewVar { id, name, value });
 	Ok(())
+}
+
+/// Warn about retained runtime declarations after a var moves to an ancestor.
+fn moved_var_warning(declaring: &str, var: &str, kept: &[u32]) -> Option<String> {
+	// Only topmost moved-from types are needed; their descendants inherit them.
+	let tops: Vec<String> = kept
+		.iter()
+		.filter(|&&t| !type_and_ancestors(t).iter().skip(1).any(|a| kept.contains(a)))
+		.map(|&t| type_path(t))
+		.collect();
+	if tops.is_empty() {
+		return None;
+	}
+	let (they, them) = if tops.len() == 1 { ("its", "it") } else { ("their", "them") };
+	Some(format!(
+		"{}: var {} moved here; {} and {} subtypes retain runtime declarations, values and var IDs. Rebuild to give {} the new declaration",
+		declaring,
+		var,
+		tops.join(", "),
+		they,
+		them
+	))
 }
 
 /// Update variable declaration flags on a type and its subtypes.
@@ -1988,6 +2048,9 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 
 			for &proc in &on_type.relinked {
 				runtime_tables::set_proc_entry_word(raw_types::procs::ProcId(proc), ProcEntryWords::NEXT_OVERRIDE, id);
+			}
+			for &(proc, path) in &on_type.paths {
+				runtime_tables::set_proc_entry_word(raw_types::procs::ProcId(proc), ProcEntryWords::PATH, path);
 			}
 		}
 
