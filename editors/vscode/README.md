@@ -349,6 +349,8 @@ for attach sessions to avoid competing with the launching session's reloads.
 - `auxtools.addToTerminalPath`: add the launcher directory to terminal `PATH`
   so commands such as `auxtools log` work there. Relaunch existing terminals
   to apply changes. Default: `true`.
+- `auxtools.notifications`: set any category to `false` to hide its notifications:
+  - `reconnect`: reconnect players after a skin or script reload.
 
 ## License
 

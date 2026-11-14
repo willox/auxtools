@@ -20,6 +20,12 @@ function settings() {
 	return vscode.workspace.getConfiguration("auxtools");
 }
 
+// Whether this notification category is enabled.
+function notifies(kind) {
+	const chosen = settings().get("notifications") || {};
+	return chosen[kind] !== false;
+}
+
 // Resolve the launcher from settings or bundled platform binaries.
 function launcherPath(context) {
 	const configured = settings().get("launcherPath");
@@ -332,11 +338,11 @@ async function reboot() {
 // Offer reconnect after a skin reload.
 async function skinReloaded(event) {
 	const { file, clients, hosted } = event.body;
-	if (!clients) {
+	if (!clients || !notifies("reconnect")) {
 		return;
 	}
 	const message = hosted
-		? `Skin ${file} reloaded. Reboot to update Dream Seeker's interface.`
+		? `Skin ${file} updated. Reboot the world to update DreamSeeker's interface.`
 		: `Skin ${file} reloaded. ${clients} connected ${clients === 1 ? "player needs" : "players need"} to reconnect to load the new interface.`;
 	const action = hosted ? "Reboot" : "Reconnect";
 	if ((await vscode.window.showInformationMessage(message, action)) === action) {
@@ -347,11 +353,11 @@ async function skinReloaded(event) {
 // Offer reconnect after a client script reload.
 async function scriptReloaded(event) {
 	const { clients, hosted } = event.body;
-	if (!clients) {
+	if (!clients || !notifies("reconnect")) {
 		return;
 	}
 	const message = hosted
-		? "Client script reloaded. Reboot to update Dream Seeker's script."
+		? "Client script updated. Reboot the world to update DreamSeeker's script."
 		: `Client script reloaded. ${clients} connected ${clients === 1 ? "player needs" : "players need"} to reconnect to load the new script.`;
 	const action = hosted ? "Reboot" : "Reconnect";
 	if ((await vscode.window.showInformationMessage(message, action)) === action) {

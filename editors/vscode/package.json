@@ -114,6 +114,20 @@
 					"type": "boolean",
 					"default": true,
 					"markdownDescription": "Add the launcher directory to VS Code terminals' `PATH` so `auxtools` commands are available."
+				},
+				"auxtools.notifications": {
+					"type": "object",
+					"markdownDescription": "Show notifications by category.",
+					"properties": {
+						"reconnect": {
+							"type": "boolean",
+							"description": "Offer to reconnect players after a skin or client script reload."
+						}
+					},
+					"additionalProperties": false,
+					"default": {
+						"reconnect": true
+					}
 				}
 			}
 		},
