@@ -132,6 +132,17 @@ pub fn not_built(request: &HotReloadRequest) -> Vec<String> {
 			named.code(&init.nodes, &init.params, &init.statics);
 		}
 	}
+	for var in &request.redeclared {
+		if let Some(value) = &var.value {
+			named.value(value);
+		}
+		if let Some(init) = &var.init {
+			named.code(&init.nodes, &init.params, &init.statics);
+		}
+	}
+	if let Some(init) = &request.global_init {
+		named.code(&init.code.nodes, &init.code.params, &init.code.statics);
+	}
 	for default in &request.var_defaults {
 		named.value(&default.value);
 	}

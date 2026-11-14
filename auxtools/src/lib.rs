@@ -27,7 +27,7 @@ pub mod version;
 mod weak_value;
 
 use std::sync::{
-	atomic::{AtomicBool, Ordering},
+	atomic::{AtomicBool, AtomicU32, Ordering},
 	Mutex, OnceLock
 };
 
@@ -248,9 +248,32 @@ pub fn at_proc_calls(work: fn() -> bool) {
 	PROC_CALL_WORK_PENDING.store(true, Ordering::Relaxed);
 }
 
-/// Entry point for every DM proc call, with its `src` tag. The first
-/// call completes `init_on_world_load`.
-pub(crate) fn on_proc_call(src: raw_types::values::ValueTag) {
+/// Proc of the world's startup call while `WorldLoad::ready` runs.
+static STARTING: Mutex<Option<raw_types::procs::ProcId>> = Mutex::new(None);
+
+/// Proc of the pending startup call during [`WorldLoad::ready`], before
+/// its code runs. Code replaced by `ready` runs in that call. It can be
+/// an internal proc absent from the world's proc table.
+pub fn starting_call() -> Option<raw_types::procs::ProcId> {
+	*STARTING.lock().unwrap()
+}
+
+/// Proc whose replacement code the startup call should run
+/// (see [`start_runs_new_code`]).
+static START_RUNS_NEW: AtomicU32 = AtomicU32::new(u32::MAX);
+
+/// Run code replaced by `ready` in the pending startup call, whose frame
+/// already exists (see [`hooks::calls_bypass_detour`]). Replacement code
+/// must not need more locals than the frame already has.
+pub fn start_runs_new_code(proc: raw_types::procs::ProcId) {
+	START_RUNS_NEW.store(proc.0, Ordering::Relaxed);
+}
+
+/// Entry point for every DM proc call, with its proc and `src` tag.
+/// The first eligible call completes `init_on_world_load`. Return true
+/// when the call should run its proc's replacement code
+/// (see [`start_runs_new_code`]).
+pub(crate) fn on_proc_call(proc: raw_types::procs::ProcId, src: raw_types::values::ValueTag) -> bool {
 	if PROC_CALL_WORK_PENDING.load(Ordering::Relaxed) {
 		// Taken out first: the work can make proc calls of its own
 		let work = std::mem::take(&mut *PROC_CALL_WORK.lock().unwrap());
@@ -261,38 +284,44 @@ pub(crate) fn on_proc_call(src: raw_types::values::ValueTag) {
 	}
 
 	if !WORLD_LOAD_PENDING.load(Ordering::Relaxed) {
-		return;
+		return false;
 	}
 	// During loading, BYOND holds type entries while running init procs on
 	// InitVarRecorders. Wait until these calls finish before changing types.
 	// The next call still precedes global initialization, map atom creation
 	// and world/New.
 	if src == raw_types::values::ValueTag::InitVarRecorder {
-		return;
+		return false;
 	}
 	// Still the world that's ending, if it has what only that one was given
 	{
 		let mut ending = ENDING_WORLD.lock().unwrap();
 		if let Some((id, entry)) = *ending {
 			if runtime_tables::proc_entry(id) == Some(entry) {
-				return;
+				return false;
 			}
 		}
 		*ending = None;
 	}
 	WORLD_LOAD_PENDING.store(false, Ordering::Relaxed);
 	let Some(on_load) = WORLD_LOAD.get() else {
-		return;
+		return false;
 	};
 
+	START_RUNS_NEW.store(u32::MAX, Ordering::Relaxed);
 	match try_init_with(Some(on_load.prepare)) {
-		Ok(()) => (on_load.ready)(),
+		Ok(()) => {
+			*STARTING.lock().unwrap() = Some(proc);
+			(on_load.ready)();
+			*STARTING.lock().unwrap() = None;
+		}
 		Err(e) => {
 			hooks::clear_hooks();
 			proc::clear_procs();
 			(on_load.failed)(&e);
 		}
 	}
+	START_RUNS_NEW.swap(u32::MAX, Ordering::Relaxed) == proc.0
 }
 
 byond_ffi_fn! { auxtools_shutdown(_input) {

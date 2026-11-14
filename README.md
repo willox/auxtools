@@ -49,7 +49,9 @@ Hot reload supports proc bodies, proc and verb additions, proc removals, new typ
 
 Existing calls finish on their original bytecode. Existing instances retain their verbs and built-in values; computed defaults apply to new instances. Changed world settings and client settings stored in the world record, such as `client.control_freak`, take effect after restart.
 
-After reboot, reloads are restored before world code runs. Reloads introducing resources absent from the build wait until `world/New`, so global initializers and map atoms run the built code.
+After reboot, the launcher restores reloads before the world runs its code. Reloads introducing resource files absent from the build wait until `world/New`, so map atoms run the built code.
+
+Running globals and statics keep their values when their initializers change. After reboot, updated initializers run once before map creation. Existing initializers keep the build's order; additions follow their preceding var in dmasm's order, which does not yet match DreamMaker exactly. New statics in deferred reloads initialize at `world/New`.
 
 Saving an icon, sound or other referenced resource reloads it, including files found through `FILE_DIR`. Existing appearances redraw with the new file; recompiled code and defaults use it too. Stored values and generated assets keep their old resources. Shared resources need a rebuild to separate them. After reboot, resource edits are restored at `world/New`. Reloaded `FILE_DIR` resources use paths relative to the world directory rather than their source spelling. See the [extension documentation](editors/vscode/README.md#icons-sounds-and-other-files) for details and limits.
 

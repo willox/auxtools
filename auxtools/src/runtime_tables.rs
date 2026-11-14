@@ -1430,6 +1430,13 @@ pub fn add_global_vars(vars: &[(u32, u32)]) -> Result<(), String> {
 	Ok(())
 }
 
+/// Var IDs listed by `global.vars`.
+pub fn global_var_ids() -> Result<Vec<u32>, String> {
+	let current = unsafe { *functions()?.global_vars.clone()? };
+	let words = misc_words(current).ok_or_else(|| format!("global-var misc entry {} is missing", current))?;
+	Ok(words.chunks(2).map(|pair| pair[0]).collect())
+}
+
 /// How many var ids there are.
 pub fn variable_count() -> u32 {
 	unsafe { *crate::raw_types::funcs::VARIABLE_NAME_COUNT }

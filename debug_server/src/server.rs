@@ -2976,7 +2976,35 @@ impl Server {
 				}
 			}
 			if !files.is_empty() || !self.waiting_reloads.is_empty() {
-				self.waiting_reloads.push(request.clone());
+				// Replace global initialization before it runs, including new
+				// globals. Defer new statics until the rest allocates their
+				// slots.
+				let mut waiting = request.clone();
+				let mut early = vec![];
+				if let Some(init) = &request.global_init {
+					let (globals, others) = request.new_vars.iter().cloned().partition(|var| var.type_path.is_empty());
+					let (init, left) = crate::hot_reload::early_global_init(init, request);
+					if left > 0 {
+						early.push(format!(
+							"(global init): {} new static vars will initialize with the deferred reload at world/New",
+							left
+						));
+					}
+					let alone = HotReloadRequest {
+						global_init: Some(init),
+						new_vars: globals,
+						..Default::default()
+					};
+					if crate::world_resources::not_built(&alone).is_empty() {
+						let result = self.apply_hot_reload(&alone);
+						if result.applied {
+							waiting.global_init = None;
+							waiting.new_vars = others;
+						}
+						early.extend(result.errors.into_iter().chain(result.warnings));
+					}
+				}
+				self.waiting_reloads.push(waiting);
 				let why = if files.is_empty() {
 					"queued behind an earlier reload; applies as world/New starts".to_owned()
 				} else {
@@ -2988,12 +3016,17 @@ impl Server {
 				return HotReloadResult {
 					applied: true,
 					errors: vec![],
-					warnings: vec![why],
+					warnings: std::iter::once(why).chain(early).collect(),
 					skipped: vec![],
 					resources: vec![]
 				};
 			}
 		}
+		self.apply_hot_reload(request)
+	}
+
+	/// Applies a hot reload now
+	fn apply_hot_reload(&mut self, request: &HotReloadRequest) -> HotReloadResult {
 		// Replace only each file's current resource ID, from the last reload
 		// or the client's built IDs. Held values retain older IDs; do not
 		// replace IDs shared with other files.

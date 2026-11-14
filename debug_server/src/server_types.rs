@@ -1026,7 +1026,11 @@ pub struct HotReloadRequest {
 	pub resources: Vec<HotReloadResource>,
 	/// `FILE_DIR` paths, searched after the world's directory.
 	#[serde(default)]
-	pub resource_dirs: Vec<String>
+	pub resource_dirs: Vec<String>,
+	/// Replacement global initialization for rebooted worlds, applied before
+	/// the original global init proc runs.
+	#[serde(default)]
+	pub global_init: Option<dmasm::reload::GlobalInit>
 }
 
 /// Edited file, cached as a new resource. Update appearances using `ids`
@@ -1073,6 +1077,7 @@ impl HotReloadRequest {
 			+ self.builtin_inherited.len()
 			+ self.reparented.len()
 			+ self.resources.len()
+			+ self.global_init.is_some() as usize
 	}
 
 	pub const fn is_empty(&self) -> bool {

@@ -340,7 +340,7 @@ impl Code {
 			match current.reload_file(&self.root, &file) {
 				Ok(reload) => {
 					watching.edited_since_built.insert(file);
-					return match self.reload(&reload.changes, current, current, vec![]) {
+					return match self.reload(&reload.changes, current, current, vec![], false) {
 						None => false,
 						Some(true) => {
 							let current = match watching.applied.as_mut() {
@@ -383,7 +383,7 @@ impl Code {
 			watching.files.add(&self.root, &file, self.parse_started.get());
 		}
 
-		match self.reload(&changes, &new, watching.applied.as_ref().unwrap_or(&watching.built), vec![]) {
+		match self.reload(&changes, &new, watching.applied.as_ref().unwrap_or(&watching.built), vec![], false) {
 			None => false,
 			Some(true) => {
 				self.watch_named(watching);
@@ -469,7 +469,8 @@ impl Code {
 		};
 		let mut changes = diff(&watching.built, &current, Some(&watching.edited_since_built));
 		refuse_hidden(&watching.built, &current, &mut changes);
-		let Some(applied) = self.reload(&changes, &current, &watching.built, vec![]) else {
+		restarted(&mut changes);
+		let Some(applied) = self.reload(&changes, &current, &watching.built, vec![], true) else {
 			return false;
 		};
 		if applied {
@@ -549,7 +550,7 @@ impl Code {
 			});
 		}
 		self.reloaded_resources.borrow_mut().clear();
-		match self.reload(&changes, current, current, resources) {
+		match self.reload(&changes, current, current, resources, false) {
 			None => false,
 			Some(true) => {
 				let reloaded = self.reloaded_resources.take();
@@ -659,8 +660,9 @@ impl Code {
 	}
 
 	/// Apply `changes` from `before` to `snapshot` through the adapter.
-	/// Return `None` if the adapter disconnects.
-	fn reload(&self, changes: &Changes, snapshot: &Snapshot, before: &Snapshot, resources: Vec<HotReloadResource>) -> Option<bool> {
+	/// Return `None` on disconnect. When `restarted`, replace the global init
+	/// proc before global initializers run.
+	fn reload(&self, changes: &Changes, snapshot: &Snapshot, before: &Snapshot, resources: Vec<HotReloadResource>, restarted: bool) -> Option<bool> {
 		if !changes.refused.is_empty() {
 			self.log("rejected; rebuild required for these changes:");
 			let refused = placed(&changes.refused, snapshot);
@@ -675,6 +677,9 @@ impl Code {
 			return self.send(refused).then_some(false);
 		}
 		let mut request = reload_request(changes);
+		if restarted {
+			request.global_init = changes.global_init.clone();
+		}
 		without_existing_statics(&mut request, before);
 		*self.named_resources.borrow_mut() = resource_names(&request);
 		let files: Vec<String> = resources.iter().map(|r| r.path.clone()).collect();
@@ -776,6 +781,14 @@ impl Code {
 	}
 }
 
+/// Use the current global and static initializers after reboot
+/// (see `HotReloadRequest::global_init`).
+pub fn restarted(changes: &mut Changes) {
+	changes
+		.warnings
+		.retain(|note| !note.ends_with(": changed global initializer applies only after a restart"));
+}
+
 /// Resource literals referenced by a reload's code and defaults.
 fn resource_names(request: &HotReloadRequest) -> Vec<String> {
 	/// Collect resource names while resolving other assembly operands.
@@ -864,6 +877,17 @@ fn resource_names(request: &HotReloadRequest) -> Vec<String> {
 		if let Some(init) = &var.init {
 			named.code(&init.nodes, &init.statics);
 		}
+	}
+	for var in &request.redeclared {
+		if let Some(value) = &var.value {
+			named.value(value);
+		}
+		if let Some(init) = &var.init {
+			named.code(&init.nodes, &init.statics);
+		}
+	}
+	if let Some(init) = &request.global_init {
+		named.code(&init.code.nodes, &init.code.statics);
 	}
 	named.0
 }
@@ -1176,7 +1200,8 @@ pub fn reload_request(changes: &Changes) -> HotReloadRequest {
 		builtin_inherited: changes.builtin_inherited.clone(),
 		reparented: changes.reparented.clone(),
 		resources: vec![],
-		resource_dirs: vec![]
+		resource_dirs: vec![],
+		global_init: None
 	}
 }
 

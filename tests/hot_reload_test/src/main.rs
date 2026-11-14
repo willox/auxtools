@@ -223,7 +223,8 @@ fn reload_request(changes: &Changes) -> Request {
 		builtin_inherited: changes.builtin_inherited.clone(),
 		reparented: changes.reparented.clone(),
 		resources: vec![],
-		resource_dirs: vec![]
+		resource_dirs: vec![],
+		global_init: None
 	})
 }
 
