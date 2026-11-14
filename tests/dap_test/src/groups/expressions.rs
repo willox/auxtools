@@ -291,6 +291,13 @@ pub fn run() {
 	]);
 	ok("global, static and const evaluation");
 
+	// Built-in stddef.dm macros remain available alongside source macros.
+	gives(&mut world, &[
+		("TILE_BOUND | COLORSPACE_HSV", "257"),
+		("length(REGEX_QUOTE(\"a.b\"))", "4")
+	]);
+	ok("stddef.dm macro evaluation");
+
 	gives(&mut world, &[
 		("leaf(4)", "10"),
 		("middle(1)", "14"),

@@ -23,7 +23,10 @@ fn stddef_init() -> Result<(), String> {
 
 	unsafe {
 		match CStr::from_ptr(stddef_fn(std::ptr::null())).to_str() {
-			Ok(str) => STDDEF = Some(str),
+			Ok(str) => {
+				STDDEF = Some(str);
+				crate::macros::set_builtin(crate::macros::builtin_macros(str));
+			}
 			Err(e) => {
 				return Err(format!("Couldn't convert STDDEF from CStr: {}", e));
 			}
