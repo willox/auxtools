@@ -3,8 +3,9 @@
 //! with its cleanup code.
 //!
 //! Layouts are based on 516.1688, with older-build differences documented
-//! locally. Patterns were checked on Windows and Linux builds 515.1637,
-//! 515.1647, 516.1659, 516.1685 and 516.1688.
+//! locally. Patterns were checked on every Windows and Linux build from
+//! 515.1637 to 516.1688, and the tables on 515.1637, 515.1647, 516.1659,
+//! 516.1685, 516.1686 and 516.1688.
 
 use std::ffi::c_void;
 
@@ -151,9 +152,10 @@ struct Functions {
 	alloc_shared: extern "C" fn(usize) -> *mut c_void,
 	free_shared: extern "C" fn(*mut c_void) -> bool,
 	copy_shared: extern "C" fn(*mut c_void) -> *mut c_void,
-	/// Works out a type's typepath value and lets `text2path` find it (none
-	/// before `TYPEPATH_BUILD`)
-	register_typepath: Option<extern "C" fn(u32)>,
+	/// Register a typepath for `text2path` (absent before `TYPEPATH_BUILD`).
+	/// Only type additions require this; proc and var additions can proceed
+	/// when it is unavailable.
+	register_typepath: Result<Option<extern "C" fn(u32)>, String>,
 	/// The size of a type table entry
 	type_stride: usize,
 	crt_realloc: extern "C" fn(*mut c_void, usize) -> *mut c_void,
@@ -435,10 +437,10 @@ mod recipes {
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
 	};
 
-	// Builds before 1687 don't check for NONE
+	// Builds before 1686 don't check for NONE
 	pub const REGISTER_TYPEPATH: Recipe = Recipe {
 		name: "register_typepath",
-		versions: VersionRange { min: 1687, max: 1688 },
+		versions: VersionRange { min: 1686, max: 1688 },
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 57 8B 7D 08 3B 3D ?? ?? ?? ?? 0F 83 ?? ?? ?? ?? 81 FF FF FF 00 00 0F 84 ?? ?? ?? ?? 56 69 F7 98 00 00 00 03 35 ?? ?? ?? ?? 0F \
@@ -450,7 +452,7 @@ mod recipes {
 
 	pub const REGISTER_TYPEPATH_OLD: Recipe = Recipe {
 		name: "register_typepath",
-		versions: VersionRange { min: 1641, max: 1686 },
+		versions: VersionRange { min: 1641, max: 1685 },
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"55 8B EC 57 8B 7D 08 3B 3D ?? ?? ?? ?? 0F 83 ?? ?? ?? ?? 56 69 F7 98 00 00 00 03 35 ?? ?? ?? ?? 0F 84 ?? ?? ?? ?? 80 BE 8C 00 00 00 00 \
@@ -491,9 +493,11 @@ fn resolve() -> Result<Functions, String> {
 			free_shared: std::mem::transmute(find(&FREE_SHARED)?),
 			copy_shared: std::mem::transmute(find(&COPY_SHARED)?),
 			register_typepath: if build < TYPEPATH_BUILD {
-				None
+				Ok(None)
 			} else {
-				Some(std::mem::transmute(find(&REGISTER_TYPEPATH).or_else(|_| find(&REGISTER_TYPEPATH_OLD))?))
+				find(&REGISTER_TYPEPATH)
+					.or_else(|_| find(&REGISTER_TYPEPATH_OLD))
+					.map(|address| Some(std::mem::transmute::<usize, extern "C" fn(u32)>(address)))
 			},
 			type_stride: type_stride(build),
 			crt_realloc: std::mem::transmute(crt_realloc),
@@ -737,10 +741,10 @@ mod recipes {
 		extract: Extract::AbsMem(OperandSelect::NthAbsMem(1))
 	};
 
-	// Builds before 1687 don't check for NONE
+	// Builds before 1686 don't check for NONE
 	pub const REGISTER_TYPEPATH: Recipe = Recipe {
 		name: "register_typepath",
-		versions: VersionRange { min: 1687, max: 1688 },
+		versions: VersionRange { min: 1686, max: 1688 },
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"53 83 EC 18 8B 44 24 20 3B 05 ?? ?? ?? ?? 73 ?? 3D FF FF 00 00 74 ?? 69 D8 94 00 00 00 03 1D ?? ?? ?? ?? 74 ?? 80 BB 8C 00 00 00 00 74 \
@@ -752,7 +756,7 @@ mod recipes {
 
 	pub const REGISTER_TYPEPATH_OLD: Recipe = Recipe {
 		name: "register_typepath",
-		versions: VersionRange { min: 1644, max: 1686 },
+		versions: VersionRange { min: 1644, max: 1685 },
 		anchor: Anchor::Signature(
 			SignatureTreatment::NoOffset,
 			"53 83 EC 18 8B 44 24 20 3B 05 ?? ?? ?? ?? 73 ?? 69 D8 94 00 00 00 03 1D ?? ?? ?? ?? 74 ?? 80 BB 8C 00 00 00 00 74 ?? 8D 44 24 08 83 EC \
@@ -920,13 +924,10 @@ fn resolve() -> Result<Functions, String> {
 			free_shared: std::mem::transmute(find(&FREE_SHARED)?),
 			copy_shared: std::mem::transmute(find(&COPY_SHARED)?),
 			register_typepath: if build < TYPEPATH_BUILD {
-				None
+				Ok(None)
 			} else {
-				Some(std::mem::transmute(crate::find_recipe_of(&[
-					REGISTER_TYPEPATH,
-					REGISTER_TYPEPATH_OLD,
-					REGISTER_TYPEPATH_EARLY
-				])?))
+				crate::find_recipe_of(&[REGISTER_TYPEPATH, REGISTER_TYPEPATH_OLD, REGISTER_TYPEPATH_EARLY])
+					.map(|address| Some(std::mem::transmute::<usize, extern "C" fn(u32)>(address)))
 			},
 			type_stride: type_stride(build),
 			crt_realloc: std::mem::transmute::<unsafe extern "C" fn(*mut c_void, usize) -> *mut c_void, _>(realloc),
@@ -958,9 +959,15 @@ fn functions() -> Result<&'static Functions, String> {
 	}
 }
 
-/// Whether this build of BYOND has everything here.
+/// Check hot reload support excluding type registration
+/// (see [`types_available`]).
 pub fn available() -> Result<(), String> {
 	functions().map(|_| ())
+}
+
+/// Whether this build of BYOND has everything [`add_type`] needs.
+pub fn types_available() -> Result<(), String> {
+	functions()?.register_typepath.as_ref().map(|_| ()).map_err(Clone::clone)
 }
 
 /// A proc's table entry.
@@ -1467,6 +1474,7 @@ pub fn add_variable(name: u32, tag: u8, data: u32) -> Result<u32, String> {
 pub fn add_type(parent: u32, path: u32) -> Result<u32, String> {
 	use type_fields::*;
 	let functions = functions()?;
+	let register_typepath = functions.register_typepath.clone()?;
 	unsafe {
 		let count = *functions.type_count as usize;
 		if parent as usize >= count {
@@ -1519,7 +1527,7 @@ pub fn add_type(parent: u32, path: u32) -> Result<u32, String> {
 			}
 		}
 		*word(count, INIT_SEGMENTS) = 0;
-		if functions.register_typepath.is_some() {
+		if register_typepath.is_some() {
 			*word(count, TYPEPATH) = 0;
 			*word(count, TYPEPATH + 4) = 0;
 		}
@@ -1573,7 +1581,7 @@ pub fn add_type(parent: u32, path: u32) -> Result<u32, String> {
 		// parent. Its index is the mob typepath value. Older builds without
 		// stored typepath values resolve it by type ID.
 		let mobs = std::slice::from_raw_parts(*functions.mobs, *functions.mob_count as usize);
-		let mob = match functions.register_typepath {
+		let mob = match register_typepath {
 			Some(register) => {
 				if *(word(parent as usize, TYPEPATH) as *const u8) == 0 {
 					register(parent);
@@ -1593,7 +1601,7 @@ pub fn add_type(parent: u32, path: u32) -> Result<u32, String> {
 				..from
 			})?;
 		}
-		if let Some(register) = functions.register_typepath {
+		if let Some(register) = register_typepath {
 			register(count as u32);
 		}
 		Ok(count as u32)

@@ -1451,6 +1451,7 @@ pub fn add_types(new_types: &[NewType]) -> Result<usize, Vec<String>> {
 		return Ok(0);
 	}
 	runtime_tables::available().map_err(|e| vec![format!("hot reloading isn't available on this build of BYOND: {}", e)])?;
+	runtime_tables::types_available().map_err(|e| vec![format!("adding types isn't available on this build of BYOND: {}", e)])?;
 	code_changed();
 
 	let mut added = 0;
