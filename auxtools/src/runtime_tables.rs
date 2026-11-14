@@ -1298,8 +1298,14 @@ fn named_procs_in(map: *mut ProcNameMap, key: u32) -> Result<Vec<u32>, String> {
 
 /// Replace a type's proc name entry, inserting it if absent.
 /// Release the old shared buffer and transfer ownership of the new one.
+/// A map BYOND hasn't built yet is left alone: it builds it from the type's
+/// procs, and links their `..()` chains, as the world loads.
 pub fn set_named_procs(type_id: u32, key: u32, procs: &[u32]) -> Result<(), String> {
-	set_named_procs_in(name_map(type_id)?, key, procs)
+	let map = name_map(type_id)?;
+	if unsafe { (*map).built } == 0 {
+		return Ok(());
+	}
+	set_named_procs_in(map, key, procs)
 }
 
 /// Whether BYOND has built the world proc name map. Construction occurs

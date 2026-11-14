@@ -481,6 +481,49 @@ fn types_changed_before_reboot() {
 	let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Restore an override before map creation. BYOND has not built proc-name
+/// maps yet; inserting it there as well caused duplicate entries and
+/// recursive ..() calls when BYOND later built the map.
+fn override_restored_before_map() {
+	let dir = copy_of_the_world("override_restored_before_map");
+	std::fs::write(
+		dir.join("placed.dm"),
+		"var/placed_news = 0\n\n/obj/placed\n\n/obj/placed/New()\n\tplaced_news++\n\t..()\n\n/datum/rb_over\n"
+	)
+	.unwrap();
+	std::fs::write(
+		dir.join("placed.dmm"),
+		"\"a\" = (/turf,/area)\n\"b\" = (/obj/placed,/turf,/area)\n\n(1,1,1) = {\"\naab\n\"}\n"
+	)
+	.unwrap();
+	let dme = dir.join("dap_test_host.dme");
+	let text = std::fs::read_to_string(&dme).unwrap() + "#include \"placed.dm\"\n#include \"placed.dmm\"\n";
+	std::fs::write(&dme, text).unwrap();
+	let built = Command::new(crate::paths::find_dm()).with_byond_paths().arg(&dme).status().unwrap();
+	assert!(built.success(), "dreammaker build of {} failed", dir.display());
+
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.catch_runtimes(false);
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	edit(
+		&mut world,
+		"placed.dm",
+		"/datum/rb_over\n",
+		"/datum/rb_over\n\n/datum/rb_over/New()\n\tplaced_news += 10\n\t..()\n"
+	);
+	let made = |world: &mut World| world.eval_global("var/before = placed_news\nnew /datum/rb_over\nplaced_news - before");
+	assert_eq!(made(&mut world), "10");
+	for count in 2..=3 {
+		reboot(&mut world, count);
+		assert_eq!(world.eval_global("placed_news"), "1", "map atom was not constructed exactly once");
+		assert_eq!(made(&mut world), "10");
+	}
+	ok("override restoration before map creation");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Wait for a resource reload report.
 fn resource_saved(world: &mut World, dir: &std::path::Path, version: &str) {
 	let before = world.count("Hot reload: reloaded lamp.dmi");
@@ -586,6 +629,7 @@ pub fn run() {
 	starting_at_world_new();
 	parent_changed_alone();
 	types_changed_before_reboot();
+	override_restored_before_map();
 	resource_files();
 	nothing_to_run();
 
