@@ -5,6 +5,7 @@
 
 // public so `byond_ffi_fn!` can reach it from another crate
 #[doc(hidden)]
+pub mod appearance_tables;
 pub mod byond_ffi;
 mod bytecode_manager;
 pub mod debug;
