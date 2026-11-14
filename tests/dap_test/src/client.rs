@@ -36,7 +36,7 @@ pub fn library_path() -> PathBuf {
 /// The program that runs the worlds: `LAUNCHER_TEST_SERVER`, or the one whose
 /// output the launcher can pass on
 pub fn server() -> String {
-	std::env::var("LAUNCHER_TEST_SERVER").unwrap_or_else(|_| if cfg!(windows) { "dd" } else { "dreamdaemon" }.to_owned())
+	std::env::var("LAUNCHER_TEST_SERVER").unwrap_or_else(|_| "dreamdaemon".to_owned())
 }
 
 /// The program's arguments, when `LAUNCHER_TEST_ARGS` replaces them

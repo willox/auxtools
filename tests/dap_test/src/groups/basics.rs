@@ -271,7 +271,7 @@ fn refusals() {
 
 	let why = launcher.refused("launch", json!({ "byondPath": byond }));
 	assert!(
-		why.contains("specify the world to launch"),
+		why.contains("specify dme or dmb to select a world"),
 		"unexpected missing-world diagnostic: {:?}",
 		why
 	);
@@ -283,7 +283,7 @@ fn refusals() {
 	);
 	let why = launcher.refused("launch", json!({ "dme": host_file("not_built.dme"), "byondPath": byond }));
 	assert!(
-		why.contains("there's no") && why.contains("not_built.dmb"),
+		why.contains("file not found: ") && why.contains("not_built.dmb"),
 		"launching a world that isn't built said {:?}",
 		why
 	);

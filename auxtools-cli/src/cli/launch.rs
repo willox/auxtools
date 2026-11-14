@@ -63,12 +63,16 @@ pub fn launch(args: &args::Launch, replaces_args: bool) -> Result<()> {
 	}
 
 	let program = match &args.server {
-		Some(name) => serde_json::from_value::<Server>(json!(name))
-			.map_err(|_| format!("invalid value '{}' for --server: expected dd, dreamdaemon, or dreamseeker.", name))?,
+		Some(name) => serde_json::from_value::<Server>(json!(name)).map_err(|_| {
+			format!(
+				"invalid value '{}' for --server: expected dreamdaemon, dreamdaemon-gui, or dreamseeker.",
+				name
+			)
+		})?,
 		None => Server::default_for_platform()
 	};
 	if args.port.is_some() && program == Server::DreamSeeker && cfg!(windows) {
-		return Err("--port cannot be used with DreamSeeker. Use --server dd or --server dreamdaemon.".into());
+		return Err("--port cannot be used with DreamSeeker. Use --server dreamdaemon.".into());
 	}
 	let options = Options {
 		dmb,

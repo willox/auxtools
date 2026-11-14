@@ -1028,7 +1028,7 @@ pub fn run() {
 
 	// Resolve a pending function breakpoint when reload adds the proc.
 	let set = world.function_breakpoints(&["/proc/later"]);
-	assert_eq!(set[0]["message"], "there's no /proc/later", "{}", set[0]);
+	assert_eq!(set[0]["message"], "proc not found: /proc/later", "{}", set[0]);
 	world.drop_events("breakpoint");
 	edit(
 		&mut world,

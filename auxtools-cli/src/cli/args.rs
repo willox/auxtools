@@ -130,10 +130,11 @@ pub struct Launch {
 	#[arg(
 		long,
 		value_name = "PROGRAM",
-		help = "Select dd, dreamdaemon, or dreamseeker.\n[default: dreamseeker on Windows; DreamDaemon on Linux]\nLinux supports DreamDaemon only."
+		help = "Select dreamdaemon, dreamdaemon-gui, or dreamseeker.\n[default: dreamdaemon]\nOn Windows, dreamdaemon runs dd.exe and \
+		        dreamdaemon-gui runs DreamDaemon.exe\nwith its window. Linux supports DreamDaemon only."
 	)]
 	pub server: Option<String>,
-	#[arg(long, value_name = "N", value_parser = port, help = "Set the listening port for dd or DreamDaemon.")]
+	#[arg(long, value_name = "N", value_parser = port, help = "Set the listening port for DreamDaemon.")]
 	pub port: Option<u16>,
 	#[arg(
 		long,

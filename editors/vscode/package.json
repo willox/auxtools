@@ -51,11 +51,6 @@
 		],
 		"commands": [
 			{
-				"command": "auxtools.debugDreamSeeker",
-				"title": "Debug in DreamSeeker",
-				"category": "auxtools"
-			},
-			{
 				"command": "auxtools.debugDreamDaemon",
 				"title": "Debug in DreamDaemon",
 				"category": "auxtools"
@@ -78,10 +73,6 @@
 		],
 		"menus": {
 			"commandPalette": [
-				{
-					"command": "auxtools.debugDreamSeeker",
-					"when": "isWindows"
-				},
 				{
 					"command": "auxtools.pickWorld",
 					"when": "false"
@@ -134,16 +125,19 @@
 							"server": {
 								"type": "string",
 								"enum": [
-									"dreamseeker",
 									"dreamdaemon",
+									"dreamdaemon-gui",
+									"dreamseeker",
 									"dd"
 								],
 								"enumDescriptions": [
+									"Console DreamDaemon (dd.exe on Windows), with output in the Debug Console",
+									"Windowed DreamDaemon (Windows), with output in its own window",
 									"Host and join the world in DreamSeeker (Windows)",
-									"DreamDaemon",
-									"Console DreamDaemon (dd.exe on Windows), with output in the Debug Console"
+									"Alias for dreamdaemon"
 								],
-								"description": "BYOND host program. Defaults to DreamSeeker on Windows and DreamDaemon on Linux."
+								"default": "dreamdaemon",
+								"description": "BYOND host program. Default: DreamDaemon (dd.exe on Windows)."
 							},
 							"defines": {
 								"type": "array",
@@ -160,7 +154,7 @@
 							},
 							"noDebug": {
 								"type": "boolean",
-								"description": "Run without debugging. Hot reload remains available, as with Run Without Debugging.",
+								"description": "Run without debugging.",
 								"default": false
 							},
 							"sleepingThreads": {
@@ -178,7 +172,7 @@
 								"items": {
 									"type": "string"
 								},
-								"description": "Arguments after the .dmb, replacing the defaults: -trusted, plus -close for windowed DreamDaemon on Windows."
+								"description": "Arguments after the .dmb, replacing the defaults: -trusted, plus -close for dreamdaemon-gui on Windows."
 							},
 							"env": {
 								"type": "object",
@@ -234,21 +228,11 @@
 						"type": "auxtools",
 						"request": "launch",
 						"name": "Debug world",
-						"dmb": "${workspaceFolder}/${workspaceFolderBasename}.dmb"
+						"dmb": "${workspaceFolder}/${workspaceFolderBasename}.dmb",
+						"server": "dreamdaemon"
 					}
 				],
 				"configurationSnippets": [
-					{
-						"label": "auxtools: Debug in DreamSeeker",
-						"description": "Debug the built world in DreamSeeker",
-						"body": {
-							"type": "auxtools",
-							"request": "launch",
-							"name": "Debug in DreamSeeker",
-							"dmb": "^\"\\${workspaceFolder}/${1:world}.dmb\"",
-							"server": "dreamseeker"
-						}
-					},
 					{
 						"label": "auxtools: Debug in DreamDaemon",
 						"description": "Debug the built world in DreamDaemon",

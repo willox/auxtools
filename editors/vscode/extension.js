@@ -122,18 +122,14 @@ async function pickWorld(context) {
 	return picked && picked.pid;
 }
 
-function defaultServer() {
-	return process.platform === "win32" ? "dreamseeker" : "dreamdaemon";
-}
-
 // A launch configuration for a .dmb. Its .dme is the one next to it.
-function launchConfiguration(dmb, server, name) {
+function launchConfiguration(dmb, name) {
 	return {
 		type: DEBUG_TYPE,
 		request: "launch",
 		name: name || `Debug ${path.basename(dmb)}`,
 		dmb,
-		server: server || defaultServer(),
+		server: "dreamdaemon",
 	};
 }
 
@@ -145,8 +141,7 @@ class ConfigurationProvider {
 	async provideDebugConfigurations(folder) {
 		const found = await findFiles(".dmb", folder);
 		const dmb = found.length > 0 ? found[0].fsPath : "${workspaceFolder}/${workspaceFolderBasename}.dmb";
-		const servers = process.platform === "win32" ? ["dreamseeker", "dreamdaemon"] : ["dreamdaemon"];
-		return servers.map((server) => launchConfiguration(dmb, server, `Debug in ${server === "dreamseeker" ? "DreamSeeker" : "DreamDaemon"}`));
+		return [launchConfiguration(dmb, "Debug in DreamDaemon")];
 	}
 
 	// Resolve missing configuration values, including launches without launch.json.
@@ -199,18 +194,15 @@ async function attach() {
 	});
 }
 
-// A command that debugs a world from one of the workspace's .dmb files
-function startCommand(server) {
-	return async () => {
-		const editor = vscode.window.activeTextEditor;
-		const folder = editor ? vscode.workspace.getWorkspaceFolder(editor.document.uri) : undefined;
-		const dmb = await pickWorldFile(folder);
-		if (!dmb) {
-			return;
-		}
-		const name = `Debug ${path.basename(dmb.fsPath)}`;
-		await vscode.debug.startDebugging(vscode.workspace.getWorkspaceFolder(dmb), launchConfiguration(dmb.fsPath, server, name));
-	};
+// Debug the selected world in DreamDaemon.
+async function debugInDreamDaemon() {
+	const editor = vscode.window.activeTextEditor;
+	const folder = editor ? vscode.workspace.getWorkspaceFolder(editor.document.uri) : undefined;
+	const dmb = await pickWorldFile(folder);
+	if (!dmb) {
+		return;
+	}
+	await vscode.debug.startDebugging(vscode.workspace.getWorkspaceFolder(dmb), launchConfiguration(dmb.fsPath));
 }
 
 // Report unsaved files so the launcher can distinguish editor line numbers
@@ -302,8 +294,7 @@ function activate(context) {
 		vscode.debug.registerDebugAdapterDescriptorFactory(DEBUG_TYPE, new AdapterFactory(context)),
 		vscode.debug.registerDebugConfigurationProvider(DEBUG_TYPE, provider),
 		vscode.debug.registerDebugConfigurationProvider(DEBUG_TYPE, provider, vscode.DebugConfigurationProviderTriggerKind.Dynamic),
-		vscode.commands.registerCommand("auxtools.debugDreamSeeker", startCommand("dreamseeker")),
-		vscode.commands.registerCommand("auxtools.debugDreamDaemon", startCommand("dreamdaemon")),
+		vscode.commands.registerCommand("auxtools.debugDreamDaemon", debugInDreamDaemon),
 		vscode.commands.registerCommand("auxtools.attach", attach),
 		vscode.commands.registerCommand("auxtools.reconnectClients", () => reconnectClients()),
 		vscode.debug.onDidReceiveDebugSessionCustomEvent((event) => {

@@ -295,7 +295,7 @@ fn start(options: &Options) -> Result<Game, String> {
 	};
 	Game::start(
 		Launch {
-			program: bin.join(Server::Dd.program()),
+			program: bin.join(Server::DreamDaemon.program()),
 			dmb: &options.dmb,
 			args: &options.args,
 			env: &HashMap::new(),

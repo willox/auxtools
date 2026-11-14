@@ -1,20 +1,11 @@
-//! Drives the launcher the way VS Code would, in the Debug Adapter Protocol,
-//! against a world with none of auxtools' procs in it: it has to load the
-//! debugger itself, stop at breakpoints, pick up again after the world
-//! reboots, and go away when the world ends. Then a world launched without
-//! debugging is found with `--list`, two more launchers attach to it at once,
-//! and the first hot reloads it. Then the launcher's command line pauses it
-//! and looks around, a command at a time. Last, the command line starts
-//! worlds itself (`launch`, in the foreground and in the background), reboots
-//! them and stops them.
+//! Exercise launcher startup, breakpoints, reboots, hot reload, concurrent
+//! attachments and CLI commands against worlds without embedded debugger procs.
 //!
-//! Build the launcher and the debug library first:
-//! `cargo build -p auxtools-cli -p debug_server -p launcher_test`, then run
-//! this from the repository's root with `BYOND_PATH` set.
-//! `LAUNCHER_TEST_SERVER` picks the program on Windows (`dd` unless set:
-//! `dreamseeker` and `dreamdaemon` need a display). `LAUNCHER_TEST_ARGS`
-//! replaces the program's arguments (Windows' DreamDaemon asks before it runs a
-//! world `-trusted`).
+//! Build `auxtools-cli`, `debug_server` and `launcher_test`, then run from the
+//! repository root with `BYOND_PATH` set. On Windows, `LAUNCHER_TEST_SERVER`
+//! selects the host (default `dreamdaemon`, meaning dd.exe). DreamSeeker and
+//! windowed DreamDaemon need a display. `LAUNCHER_TEST_ARGS` overrides host
+//! arguments, including trusted-mode options.
 
 // The debug client, which dap_test uses more of
 #[allow(dead_code)]
@@ -158,7 +149,7 @@ fn main() {
 	launcher.event("terminated");
 	launcher.event("exited");
 	// The programs with windows show world.log in them
-	if server == "dd" || cfg!(unix) {
+	if server == "dreamdaemon" || server == "dd" || cfg!(unix) {
 		assert!(
 			launcher.output.contains("launcher test: world/New"),
 			"the world's output wasn't passed on"

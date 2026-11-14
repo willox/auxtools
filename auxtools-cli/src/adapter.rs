@@ -738,17 +738,17 @@ impl Adapter {
 			.dmb
 			.clone()
 			.or_else(|| args.dme.as_ref().map(|dme| dme.with_extension("dmb")))
-			.ok_or("specify the world to launch with dme or dmb")?;
+			.ok_or("specify dme or dmb to select a world")?;
 
 		let bin = byond::bin_dir(args.byond_path.as_deref())?;
 		let server = args.server.unwrap_or_else(Server::default_for_platform);
 		let program = bin.join(server.program());
 		if !program.is_file() {
-			return Err(format!("there's no {} in {}", server.program(), bin.display()));
+			return Err(format!("{} was not found in {}", server.program(), bin.display()));
 		}
 
 		if !dmb.is_file() {
-			return Err(format!("there's no {}", dmb.display()));
+			return Err(format!("file not found: {}", dmb.display()));
 		}
 
 		let library = match args.debug_library {
@@ -1868,7 +1868,7 @@ impl Adapter {
 			Ok(None) => Breakpoint {
 				id: Some(id),
 				verified: false,
-				message: Some(format!("there's no {}", name)),
+				message: Some(format!("proc not found: {}", name)),
 				..Default::default()
 			},
 			Err(e) => Breakpoint {
@@ -2801,7 +2801,7 @@ fn unexpected(response: AuxResponse) -> String {
 /// Default arguments passed after the `.dmb` unless overridden.
 pub fn default_args(server: Server) -> Vec<String> {
 	match server {
-		Server::DreamDaemon if cfg!(windows) => vec!["-trusted".to_owned(), "-close".to_owned()],
+		Server::DreamDaemonGui if cfg!(windows) => vec!["-trusted".to_owned(), "-close".to_owned()],
 		_ => vec!["-trusted".to_owned()]
 	}
 }

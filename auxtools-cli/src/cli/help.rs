@@ -198,8 +198,8 @@ Exit codes:
   The journal retains only the most recent few thousand entries.
   --follow reconnects across reboots and ends when the world exits.
   Runtime logging does not require pausing the world.
-  Captured output is available from dd and DreamDaemon launchers; DreamSeeker
-  does not expose output for the launcher to capture.
+  Captured output is available from DreamDaemon (dd.exe on Windows);
+  DreamSeeker and windowed DreamDaemon do not expose it to the launcher.
 
 Output:
   JSON entries contain number, time (Unix milliseconds), world_time

@@ -4,16 +4,15 @@ Debug BYOND worlds in VS Code with [auxtools](https://github.com/auxtools/auxtoo
 Supports breakpoints, stepping, runtime errors, sleeping proc stacks, variable
 inspection, expression evaluation, disassembly and experimental hot reload.
 
-The launcher loads the debugger without changes to your world's source. Windows
-supports DreamSeeker and DreamDaemon; Linux supports DreamDaemon. Install a DM
-language extension alongside it for syntax highlighting and language features.
+The launcher loads the debugger without changes to your world's source. Worlds
+run in DreamDaemon (`dd.exe` on Windows). Install a DM language extension
+alongside it for syntax highlighting and language features.
 
 ## Start debugging
 
-Build your world, then press F5. The extension runs the `.dmb` in DreamSeeker on
-Windows or DreamDaemon on Linux. If several worlds are available, select one.
-You can also use **auxtools: Debug in DreamSeeker** or **auxtools: Debug in
-DreamDaemon** from the command palette.
+Build your world, then press F5 or use **auxtools: Debug in DreamDaemon**.
+The extension runs the `.dmb` in DreamDaemon and asks you to select a world
+when needed.
 
 **Run Without Debugging** (Ctrl+F5) disables breakpoints and stepping while keeping
 hot reload enabled. You can also set `"noDebug": true` in a launch configuration.
@@ -35,18 +34,18 @@ provides templates:
 | --- | --- |
 | `dmb` | Compiled world to run. |
 | `dme` | Project environment; defaults to the `.dme` beside the `.dmb`. Its directory is the source root. |
-| `server` | `dreamseeker`, `dreamdaemon` or `dd`. `dd` uses Windows' console DreamDaemon. |
+| `server` | Default: `dreamdaemon` (`dd.exe` on Windows). Windows also supports `dreamdaemon-gui` for windowed DreamDaemon and `dreamseeker` to host in DreamSeeker. `dd` remains an alias for `dreamdaemon`. |
 | `defines` | Build defines as `NAME` or `NAME=VALUE`. Use the same `-D` values as DreamMaker so hot reload parses the same source. |
 | `noDebug` | Disable debugging. Default: `false`. |
 | `hotReload` | Reload source changes on save. Default: `true`. |
 | `sleepingThreads` | Maximum sleeping procs shown in the call stack. Default: `100`. |
 | `byondPath` | Optional BYOND installation path. |
-| `args` | Arguments after the `.dmb`, replacing the defaults: `-trusted`, plus `-close` for windowed DreamDaemon on Windows. |
+| `args` | Arguments after the `.dmb`, replacing the defaults: `-trusted`, plus `-close` for `dreamdaemon-gui` on Windows. |
 | `env` | Environment variables for the world. |
 | `debugLibrary` | Path to a custom debug library. |
 
-Linux DreamDaemon and Windows `dd.exe` send output to the Debug Console.
-DreamSeeker and windowed DreamDaemon display output in their own windows.
+DreamDaemon sends output to the Debug Console. DreamSeeker and `dreamdaemon-gui`
+display output in their own windows.
 The debugger reconnects after `world.Reboot()` and restores breakpoints and reloads.
 
 **Stop** requests shutdown through `world/Del()`, allowing cleanup such as saving.
@@ -54,8 +53,8 @@ After five seconds, the launcher terminates the process. Press **Stop** again or
 use **Disconnect** to terminate a launched world immediately. Attached worlds
 follow the [attach behavior](#attach-to-a-running-world) below.
 
-Windows DreamDaemon may prompt before running in trusted mode. Select
-"Don't ask me this again" to suppress that prompt.
+Windowed DreamDaemon (`dreamdaemon-gui`) may prompt before running in trusted
+mode. Select "Don't ask me this again" to suppress that prompt.
 
 ## Breakpoints
 

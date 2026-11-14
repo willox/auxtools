@@ -4,15 +4,18 @@ use std::path::{Path, PathBuf};
 
 /// Which BYOND program hosts the world
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub enum Server {
 	/// The client, which hosts the world itself (Windows only)
+	#[serde(rename = "dreamseeker")]
 	DreamSeeker,
-	/// DreamDaemon, with its window on Windows
+	/// Console DreamDaemon (`dd.exe` on Windows), with captured output.
+	/// `dd` remains an alias for `dreamdaemon`.
+	#[serde(rename = "dreamdaemon", alias = "dd")]
 	DreamDaemon,
-	/// Windows' DreamDaemon without a window (`dd.exe`), whose output can be
-	/// shown
-	Dd
+	/// Windowed DreamDaemon (`dreamdaemon.exe` on Windows), with output
+	/// in its own window.
+	#[serde(rename = "dreamdaemon-gui")]
+	DreamDaemonGui
 }
 
 impl Server {
@@ -21,8 +24,8 @@ impl Server {
 		if cfg!(windows) {
 			match self {
 				Self::DreamSeeker => "dreamseeker.exe",
-				Self::DreamDaemon => "dreamdaemon.exe",
-				Self::Dd => "dd.exe"
+				Self::DreamDaemon => "dd.exe",
+				Self::DreamDaemonGui => "dreamdaemon.exe"
 			}
 		} else {
 			// Linux has the one
@@ -31,11 +34,7 @@ impl Server {
 	}
 
 	pub const fn default_for_platform() -> Self {
-		if cfg!(windows) {
-			Self::DreamSeeker
-		} else {
-			Self::DreamDaemon
-		}
+		Self::DreamDaemon
 	}
 }
 
