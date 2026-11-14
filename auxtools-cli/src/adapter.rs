@@ -150,6 +150,8 @@ struct LaunchArguments {
 	/// Swap changed code into the world as files are saved
 	#[serde(default = "yes")]
 	hot_reload: bool,
+	/// DreamDaemon port, passed before `args` or default arguments.
+	port: Option<u16>,
 	/// Command-line arguments after the `.dmb`, replacing the defaults.
 	args: Option<Vec<String>>,
 	#[serde(default)]
@@ -751,6 +753,10 @@ impl Adapter {
 			return Err(format!("file not found: {}", dmb.display()));
 		}
 
+		if args.port.is_some() && server == Server::DreamSeeker && cfg!(windows) {
+			return Err("port is unsupported with DreamSeeker; use server dreamdaemon".to_owned());
+		}
+
 		let library = match args.debug_library {
 			Some(library) => library,
 			None => default_library()?
@@ -764,7 +770,9 @@ impl Adapter {
 			hot_reload: args.hot_reload
 		});
 
-		let game_args = args.args.unwrap_or_else(|| default_args(server));
+		// BYOND expects the port before other arguments.
+		let mut game_args: Vec<String> = args.port.iter().map(u16::to_string).collect();
+		game_args.extend(args.args.unwrap_or_else(|| default_args(server)));
 		// Debugged worlds wait for breakpoints. Hot reload also requires a wait
 		// after reboot; release the initial launch as soon as we connect.
 		let launch = Launch {

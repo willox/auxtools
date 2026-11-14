@@ -40,6 +40,7 @@ provides templates:
 | `hotReload` | Reload source changes on save. Default: `true`. |
 | `sleepingThreads` | Maximum sleeping procs shown in the call stack. Default: `100`. |
 | `byondPath` | Optional BYOND installation path. |
+| `port` | Listening port. If omitted, DreamDaemon chooses a free port when the process starts. |
 | `args` | Arguments after the `.dmb`, replacing the defaults: `-trusted`, plus `-close` for `dreamdaemon-gui` on Windows. |
 | `env` | Environment variables for the world. |
 | `debugLibrary` | Path to a custom debug library. |

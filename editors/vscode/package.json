@@ -167,6 +167,12 @@
 								"type": "string",
 								"description": "BYOND installation path. Overrides auxtools.byondPath and automatic discovery."
 							},
+							"port": {
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 65535,
+								"description": "Listening port. If omitted, DreamDaemon chooses a free port when the process starts."
+							},
 							"args": {
 								"type": "array",
 								"items": {

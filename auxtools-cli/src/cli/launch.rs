@@ -206,10 +206,8 @@ fn run(options: &Options, detached: bool) -> Result<()> {
 	let server = options.server.as_deref().map_or(Server::default_for_platform(), |name| {
 		serde_json::from_value(json!(name)).unwrap_or(Server::default_for_platform())
 	});
-	// A port goes first, as BYOND's servers take it, and adds to the
-	// program's default arguments; what follows `--` replaces them
-	let mut args: Vec<String> = options.port.iter().map(u16::to_string).collect();
-	args.extend(options.args.clone().unwrap_or_else(|| adapter::default_args(server)));
+	// Arguments after `--` replace the host's defaults.
+	let args = options.args.clone().unwrap_or_else(|| adapter::default_args(server));
 	let mut launch = json!({
 		"noDebug": true,
 		"dmb": options.dmb,
@@ -224,6 +222,9 @@ fn run(options: &Options, detached: bool) -> Result<()> {
 	}
 	if let Some(server) = &options.server {
 		launch["server"] = json!(server);
+	}
+	if let Some(port) = options.port {
+		launch["port"] = json!(port);
 	}
 	let _ = inputs.send(request(1, "initialize", json!({ "clientID": "auxtools launch" })));
 	let _ = inputs.send(request(2, "launch", launch));
