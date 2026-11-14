@@ -13,12 +13,12 @@ use std::{
 };
 
 use auxtools_cli::server_types::{
-	HotReloadInitProc, HotReloadLines, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, Macro, ProcRef, RemovedVar,
-	SkinRequest
+	HotReloadInitProc, HotReloadLines, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadResource, HotReloadVarDefault, Macro, ProcRef,
+	ReloadedResource, RemovedVar, SkinRequest
 };
 use dmasm::reload::{diff, Changes, ParseOptions, ProcKey, Snapshot};
 
-use crate::{adapter::Input, dap::Output, skin::Skin};
+use crate::{adapter::Input, dap::Output, resources::Resources, skin::Skin};
 
 /// How often to look for changed files
 const INTERVAL: Duration = Duration::from_millis(500);
@@ -85,7 +85,9 @@ pub enum Command {
 	/// A world connected with this BYOND version and connection generation.
 	Connected { byond: (u32, u32), world: u64 },
 	/// Whether the last reload was applied
-	Reloaded(bool)
+	Reloaded(bool),
+	/// Resources cached by the last reload; sent before `Reloaded`.
+	Resources(Vec<ReloadedResource>)
 }
 
 pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>) -> mpsc::Sender<Command> {
@@ -111,7 +113,9 @@ pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>
 				world: Cell::new(0),
 				parsed: Cell::new(false),
 				parse_started: Cell::new(SystemTime::UNIX_EPOCH),
-				macros: RefCell::new(None)
+				macros: RefCell::new(None),
+				resource_dirs: RefCell::new(vec![]),
+				reloaded_resources: RefCell::new(vec![])
 			};
 			code.run();
 		})
@@ -135,7 +139,11 @@ struct Code {
 	/// Start time of the last full parse.
 	parse_started: Cell<SystemTime>,
 	/// The macros the world was last given
-	macros: RefCell<Option<Vec<Macro>>>
+	macros: RefCell<Option<Vec<Macro>>>,
+	/// `FILE_DIR` search paths for resource lookups.
+	resource_dirs: RefCell<Vec<String>>,
+	/// Resource IDs reported by the last reload.
+	reloaded_resources: RefCell<Vec<ReloadedResource>>
 }
 
 /// Track running source and pending disk changes.
@@ -148,7 +156,11 @@ struct Watching {
 	/// Current running source when it differs from `built`.
 	applied: Option<Snapshot>,
 	files: Watched,
-	skin: Skin
+	skin: Skin,
+	/// Watched resource files and their current IDs.
+	resources: Resources,
+	/// Original resource IDs, used after reboot.
+	built_resources: Resources
 }
 
 impl Code {
@@ -181,7 +193,7 @@ impl Code {
 					self.world.set(world);
 					break byond;
 				}
-				Ok(Command::Reloaded(_)) => {}
+				Ok(Command::Reloaded(_) | Command::Resources(_)) => {}
 				Err(_) => return
 			}
 		};
@@ -205,13 +217,21 @@ impl Code {
 		self.warn_of_errors(&built);
 		let files = files(&built, &self.options.dme);
 		self.warn_of_later_edits(&files, dmb_modified);
+		let resources = self.read_resources(&files);
+		let mut watched = files.clone();
+		watched.extend(resources.files.keys().cloned());
 		let mut watching = Watching {
-			files: Watched::new(&self.root, &files, self.parse_started.get()),
+			files: Watched::new(&self.root, &watched, self.parse_started.get()),
 			skin: Skin::built(&self.root, built.skin()),
 			dmb_modified,
 			edited_since_built: HashSet::new(),
 			applied: None,
-			built
+			built,
+			built_resources: Resources {
+				files: resources.files.clone(),
+				dirs: resources.dirs.clone()
+			},
+			resources
 		};
 		let took = started.elapsed();
 		// Send macros before reporting readiness.
@@ -239,7 +259,7 @@ impl Code {
 			let wait = INTERVAL.max(watching.files.took * (LOOKING_SHARE - 1));
 			match self.commands.recv_timeout(wait) {
 				Ok(Command::Connected { world, .. }) => self.connected(world),
-				Ok(Command::Reloaded(_)) => {}
+				Ok(Command::Reloaded(_) | Command::Resources(_)) => {}
 				Err(mpsc::RecvTimeoutError::Disconnected) => return,
 				Err(mpsc::RecvTimeoutError::Timeout) => {
 					if !self.look(watching) {
@@ -280,6 +300,14 @@ impl Code {
 		self.log(format!("changed: {}", shown.join(", ")));
 
 		watching.skin.take_edit(&mut changed);
+		// Resource files, then code, then the skin
+		let resource_files: Vec<PathBuf> = changed.iter().filter(|f| watching.resources.files.contains_key(*f)).cloned().collect();
+		if !resource_files.is_empty() {
+			changed.retain(|f| !watching.resources.files.contains_key(f));
+			if !self.reload_resources(watching, &resource_files) {
+				return false;
+			}
+		}
 		if !changed.is_empty() && !self.reload_code(watching, changed) {
 			return false;
 		}
@@ -299,7 +327,7 @@ impl Code {
 			match current.reload_file(&self.root, &file) {
 				Ok(reload) => {
 					watching.edited_since_built.insert(file);
-					return match self.reload(&reload.changes, current, current) {
+					return match self.reload(&reload.changes, current, current, vec![]) {
 						None => false,
 						Some(true) => {
 							let current = match watching.applied.as_mut() {
@@ -340,7 +368,7 @@ impl Code {
 			watching.files.add(&self.root, &file, self.parse_started.get());
 		}
 
-		match self.reload(&changes, &new, watching.applied.as_ref().unwrap_or(&watching.built)) {
+		match self.reload(&changes, &new, watching.applied.as_ref().unwrap_or(&watching.built), vec![]) {
 			None => false,
 			Some(true) => {
 				self.send(Event::Changed);
@@ -371,10 +399,16 @@ impl Code {
 					self.warn_of_errors(&built);
 					let files = files(&built, &self.options.dme);
 					self.warn_of_later_edits(&files, dmb_modified);
-					for file in files {
-						watching.files.add(&self.root, &file, self.parse_started.get());
+					let resources = self.read_resources(&files);
+					for file in files.iter().chain(resources.files.keys()) {
+						watching.files.add(&self.root, file, self.parse_started.get());
 					}
 					watching.skin = Skin::built(&self.root, built.skin());
+					watching.built_resources = Resources {
+						files: resources.files.clone(),
+						dirs: resources.dirs.clone()
+					};
+					watching.resources = resources;
 					watching.built = built;
 				}
 				Err(e) => self.log(format!("couldn't read the code: {}", e))
@@ -384,7 +418,8 @@ impl Code {
 			return self.send(Event::Changed) && self.give_macros();
 		}
 
-		// Whatever was reloaded went with the old world
+		// A reboot resets the resource cache. Restore edits once the world
+		// has loaded its own resources.
 		watching.applied = None;
 		watching.built.clear_patches();
 		// Restore the skin before clients log in.
@@ -392,8 +427,15 @@ impl Code {
 		if !self.reload_skin(watching, true) {
 			return false;
 		}
+		watching.resources.restarted(&watching.built_resources);
+		let resource_files: Vec<PathBuf> = watching
+			.resources
+			.edited_since_built(&self.root)
+			.into_iter()
+			.map(|(path, _)| path)
+			.collect();
 		if watching.edited_since_built.is_empty() {
-			return self.ready();
+			return self.restore_resources(watching, &resource_files) && self.ready();
 		}
 
 		self.log("world rebooted; restoring source changes since the build");
@@ -406,19 +448,102 @@ impl Code {
 		};
 		let mut changes = diff(&watching.built, &current, Some(&watching.edited_since_built));
 		refuse_hidden(&watching.built, &current, &mut changes);
-		let Some(applied) = self.reload(&changes, &current, &watching.built) else {
+		let Some(applied) = self.reload(&changes, &current, &watching.built, vec![]) else {
 			return false;
 		};
-		if !self.ready() {
+		if applied {
+			watching.applied = Some(current);
+			watching.built.clear_patches();
+		}
+		if !self.restore_resources(watching, &resource_files) || !self.ready() {
 			return false;
 		}
-		if !applied {
+		// Send evaluation macros after releasing the world.
+		!applied || self.give_macros()
+	}
+
+	/// Read resources from the world's `.dmb` and `.rsc`. Warn about edits
+	/// since the build; leave them unchanged until the next save.
+	fn read_resources(&self, sources: &[PathBuf]) -> Resources {
+		let resources = match Resources::read(&self.root, &self.options.dmb, sources) {
+			Ok(resources) => resources,
+			Err(e) => {
+				self.log(format!("resource watching unavailable: {}", e));
+				Resources::default()
+			}
+		};
+		*self.resource_dirs.borrow_mut() = resources.dirs.clone();
+		let mut edited: Vec<String> = resources
+			.edited_since_built(&self.root)
+			.iter()
+			.map(|(path, _)| path.display().to_string())
+			.collect();
+		if !edited.is_empty() {
+			edited.sort();
+			self.log(format!(
+				"resource files changed before launch: {}. The world uses the built versions; rebuild or save the files again to apply edits",
+				edited.join(", ")
+			));
+		}
+		resources
+	}
+
+	/// Restore resource edits after reboot. The world applies them once its
+	/// data is loaded, before its atoms' New(). Return false on disconnect.
+	fn restore_resources(&self, watching: &mut Watching, files: &[PathBuf]) -> bool {
+		if files.is_empty() {
 			return true;
 		}
-		watching.applied = Some(current);
-		watching.built.clear_patches();
-		// Send evaluation macros after releasing the world.
-		self.give_macros()
+		self.log("restoring resource files changed since the build");
+		self.reload_resources(watching, files)
+	}
+
+	/// Reload edited resources and recompile their code and default users.
+	/// The world caches new IDs and updates appearances using the old IDs.
+	/// Return false on disconnect.
+	fn reload_resources(&self, watching: &mut Watching, files: &[PathBuf]) -> bool {
+		let changed = watching.resources.changed(&self.root, files);
+		if changed.is_empty() {
+			return true;
+		}
+		let current = watching.applied.as_ref().unwrap_or(&watching.built);
+		let mut changes = Changes::default();
+		let mut resources = vec![];
+		for (path, _) in &changed {
+			let file = &watching.resources.files[path];
+			merge(&mut changes, current.resource_users(&file.names));
+			let (ids, sharing) = watching.resources.replaced(path);
+			if !sharing.is_empty() {
+				let sharing: Vec<String> = sharing.iter().map(|other| other.display().to_string()).collect();
+				self.log(format!(
+					"{} shares a resource ID with {} (same bytes); appearances are unchanged. Rebuild to separate them",
+					path.display(),
+					sharing.join(", ")
+				));
+			}
+			resources.push(HotReloadResource {
+				path: path.to_string_lossy().replace('\\', "/"),
+				ids
+			});
+		}
+		self.reloaded_resources.borrow_mut().clear();
+		match self.reload(&changes, current, current, resources) {
+			None => false,
+			Some(true) => {
+				let reloaded = self.reloaded_resources.take();
+				for (path, crc) in &changed {
+					let name = path.to_string_lossy().replace('\\', "/");
+					match reloaded.iter().find(|r| r.path == name) {
+						Some(r) => watching.resources.reloaded(path, r.id, *crc),
+						// A loading world defers the reload and tracks the
+						// resource ID itself.
+						None => watching.resources.shown(path, *crc)
+					}
+				}
+				self.send(Event::Changed)
+			}
+			Some(false) => true
+		}
 	}
 
 	/// Warn that parse errors make the source baseline incomplete.
@@ -503,7 +628,7 @@ impl Code {
 
 	/// Apply `changes` from `before` to `snapshot` through the adapter.
 	/// Return `None` if the adapter disconnects.
-	fn reload(&self, changes: &Changes, snapshot: &Snapshot, before: &Snapshot) -> Option<bool> {
+	fn reload(&self, changes: &Changes, snapshot: &Snapshot, before: &Snapshot, resources: Vec<HotReloadResource>) -> Option<bool> {
 		if !changes.refused.is_empty() {
 			self.log("rejected; rebuild required for these changes:");
 			let refused = placed(&changes.refused, snapshot);
@@ -519,6 +644,9 @@ impl Code {
 		}
 		let mut request = reload_request(changes);
 		without_existing_statics(&mut request, before);
+		let files: Vec<String> = resources.iter().map(|r| r.path.clone()).collect();
+		request.resources = resources;
+		request.resource_dirs = self.resource_dirs.borrow().clone();
 		// The running world determines whether removed vars actually exist.
 		let notes: Vec<String> = changes.warnings.iter().filter(|note| removed_var(note).is_none()).cloned().collect();
 		if request.is_empty() && request.removed_vars.is_empty() {
@@ -535,7 +663,7 @@ impl Code {
 
 		if !self.send(Event::Reload {
 			request: Box::new(request),
-			summary: Summary::of(changes),
+			summary: Summary::of(changes).with_resources(files),
 			notes,
 			world: self.world.get()
 		}) {
@@ -544,6 +672,7 @@ impl Code {
 		loop {
 			match self.commands.recv() {
 				Ok(Command::Reloaded(applied)) => return Some(applied),
+				Ok(Command::Resources(reloaded)) => *self.reloaded_resources.borrow_mut() = reloaded,
 				// The adapter rejects reloads prepared before a reboot;
 				// `catch_up` will prepare them for the new world.
 				Ok(Command::Connected { world, .. }) => self.connected(world),
@@ -575,11 +704,30 @@ impl Code {
 					}
 					return true;
 				}
+				Ok(Command::Resources(_)) => {}
 				Ok(Command::Connected { world, .. }) => self.connected(world),
 				Err(_) => return false
 			}
 		}
 	}
+}
+
+/// Merge a resource file's required changes into the existing changes.
+fn merge(changes: &mut Changes, more: Changes) {
+	for reload in more.reloads {
+		if !changes.reloads.iter().any(|r| r.proc == reload.proc) {
+			changes.reloads.push(reload);
+		}
+	}
+	changes.var_defaults.extend(more.var_defaults);
+	changes.builtin_defaults.extend(more.builtin_defaults);
+	for init in more.init_procs {
+		if !changes.init_procs.iter().any(|i| i.type_path == init.type_path) {
+			changes.init_procs.push(init);
+		}
+	}
+	changes.warnings.extend(more.warnings);
+	changes.refused.extend(more.refused);
 }
 
 /// Format unresolved snapshot errors without lines for comparison.
@@ -732,6 +880,15 @@ impl Summary {
 			parts,
 			line_moves: changes.line_moves.len()
 		}
+	}
+
+	/// List cached resource files before code changes.
+	fn with_resources(mut self, files: Vec<String>) -> Self {
+		if !files.is_empty() {
+			self.parts
+				.insert(0, ("reloaded", files.into_iter().map(|f| (f, None)).collect(), "resource files"));
+		}
+		self
 	}
 
 	/// Format the summary, excluding removed procs listed in `skipped`.

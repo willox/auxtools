@@ -1,14 +1,11 @@
-//! The resource table of a compiled world: the CRC of each resource id.
+//! Read a compiled world's resource table (resource IDs to CRCs).
 //!
-//! A `.dmb` is one stream of tables without lengths, and the resource table
-//! comes last, so it is found by reading every table before it in the order
-//! DreamMaker writes them: the header, the map, the types, the mobs, the
-//! strings, the misc lists, the procs, the vars, the init procs, the
-//! instances, the extra turfs and the world's own settings. Two checks make
-//! sure the walk followed the file: the string table's byte count and checksum
-//! must match the ones the file gives, and the resource table must end exactly
-//! at the end of the file. A file that fails either gives nothing, rather than
-//! ids that could name another file.
+//! A `.dmb` has no table lengths. Walk the preceding tables in DreamMaker's
+//! order to reach the final resource table. Check the string table's byte
+//! count and checksum, and require the resource table to end at EOF.
+//! Reject mismatches to avoid resolving an ID to the wrong file.
+//!
+//! Shared with auxtools-cli, which needs the same IDs for watched files.
 
 /// Why a `.dmb`'s resource table couldn't be read
 pub type Error = String;

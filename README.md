@@ -51,6 +51,8 @@ Existing calls finish on their original bytecode. Existing instances retain thei
 
 After reboot, reloads are restored before world code runs. Reloads introducing resources absent from the build wait until `world/New`, so global initializers and map atoms run the built code.
 
+Saving an icon, sound or other referenced resource reloads it, including files found through `FILE_DIR`. Existing appearances redraw with the new file; recompiled code and defaults use it too. Stored values and generated assets keep their old resources. Shared resources need a rebuild to separate them. After reboot, resource edits are restored at `world/New`. Reloaded `FILE_DIR` resources use paths relative to the world directory rather than their source spelling. See the [extension documentation](editors/vscode/README.md#icons-sounds-and-other-files) for details and limits.
+
 Saving the `.dmf` skin updates the interface sent at login. Connected clients need to reconnect; `auxtools reconnect` requests this, or reboots Dream Seeker-hosted worlds.
 
 Proc-body edits can use a single-file parse. Other edits trigger a full project parse. See the [extension documentation](editors/vscode/README.md#hot-reload-experimental) for reload limits and the [hot reload tests](tests/hot_reload_test) for supported cases.

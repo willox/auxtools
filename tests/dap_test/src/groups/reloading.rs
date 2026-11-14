@@ -22,7 +22,7 @@ pub fn copy_of_the_world(name: &str) -> PathBuf {
 				copy(&path, &copy_to);
 			} else if path
 				.extension()
-				.is_some_and(|e| e == "dm" || e == "dme" || e == "dmb" || e == "rsc" || e == "dmi")
+				.is_some_and(|e| ["dm", "dme", "dmb", "rsc", "dmi"].contains(&e.to_str().unwrap_or_default()))
 			{
 				std::fs::copy(&path, copy_to).unwrap();
 			}
@@ -438,12 +438,62 @@ fn parent_changed_alone() {
 	let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Wait for a resource reload report.
+fn resource_saved(world: &mut World, dir: &std::path::Path, version: &str) {
+	let before = world.count("Hot reload: reloaded lamp.dmi");
+	std::fs::copy(dir.join(version), dir.join("lamp.dmi")).unwrap();
+	// As an editor saves it: Windows keeps the copied file's time
+	let saved = std::fs::File::options().write(true).open(dir.join("lamp.dmi")).unwrap();
+	saved.set_modified(std::time::SystemTime::now()).unwrap();
+	world.wait_until("the resource reload", |output| {
+		output.matches("Hot reload: reloaded lamp.dmi").count() > before
+	});
+}
+
+/// An icon saved while the world runs, then after a reboot
+fn resource_files() {
+	let dir = copy_of_the_world("resources");
+	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
+	world.configure();
+	world.wait_output("Hot reload: watching");
+	assert_eq!(world.eval_global("make_lamps()"), "\"made\"");
+	assert_eq!(world.eval_global("lamp_states()"), "\"on,off\"");
+
+	// Existing appearances, resource literals and newly created instances.
+	resource_saved(&mut world, &dir, "lamp_edited.dmi");
+	let new = "\"on,off,new\"";
+	assert_eq!(world.eval_global("lamp_states()"), new);
+	assert_eq!(world.eval_global("states_of(early_lamp.icon)"), new);
+	assert_eq!(world.eval_global("states_of(placed_lamp.icon)"), new);
+	assert_eq!(world.eval_global("overlay_states()"), new);
+	assert_eq!(world.eval_global("var/obj/lamp/L = new\nstates_of(L.icon)"), new);
+	ok("icon reload on existing and new instances");
+
+	// Restore the icon after reboot, including appearances made while loading.
+	world.run("reboot");
+	world.wait_count("dap: world/New", 2);
+	world.wait_output("Hot reload: restoring resource files changed since the build");
+	assert_eq!(world.eval_global("states_of(early_lamp.icon)"), new);
+	assert_eq!(world.eval_global("lamp_states()"), new);
+	ok("saved icon restored after reboot");
+
+	// A later save must replace the restored resource ID too.
+	resource_saved(&mut world, &dir, "lamp_third.dmi");
+	let third = "\"on,off,third\"";
+	assert_eq!(world.eval_global("states_of(early_lamp.icon)"), third);
+	assert_eq!(world.eval_global("lamp_states()"), third);
+	ok("icon saved again after reboot");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
 pub fn run() {
 	saved_without_reloading();
 	built_in_taken_away();
 	behind_the_clients_back();
 	starting_at_world_new();
 	parent_changed_alone();
+	resource_files();
 
 	let dir = copy_of_the_world("reloading");
 	let mut world = World::launch_as(json!({ "supportsInvalidatedEvent": true }), dir.clone(), json!({ "hotReload": true }));

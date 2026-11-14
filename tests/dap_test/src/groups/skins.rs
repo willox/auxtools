@@ -74,6 +74,13 @@ pub fn run() {
 	world.wait_output("The world restarted");
 	let (_, text) = skin(&mut world);
 	assert_eq!(text, text_of(&dir, "skin.dmf"));
+	// Skin changes must not enter resource reloads and defer code until
+	// world/New.
+	assert!(
+		!world.output.contains("reloaded skin.dmf") && !world.output.contains("doesn't have (skin.dmf)"),
+		"the skin was reloaded as a resource file:\n{}",
+		world.output
+	);
 	ok("skin reload after reboot");
 
 	std::fs::write(dir.join("other.dmf"), SKIN.replace("first", "other")).unwrap();

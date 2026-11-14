@@ -232,6 +232,43 @@ Breakpoints follow statements after edits from VS Code, other editors or checkou
 The VS Code extension reports unsaved files to the launcher. Other DAP clients
 that do not report this state use on-disk line numbers for new breakpoints.
 
+### Icons, sounds and other files
+
+Saving an icon, sound or other referenced resource reloads it. Files are found
+in the `.dme` directory, then in `FILE_DIR` order, as DreamMaker does. Existing
+appearances, overlays, images and mouse pointers redraw with the new file.
+Recompiled code and defaults use the new resource.
+
+Stored values retain old resources: vars, lists, `/icon` and `/sound` datums,
+mutable appearances, and objects later made from those values. Files with
+identical content share a resource ID and cannot be replaced independently; a
+warning requests a rebuild.
+
+After reboot, resource edits and dependent code wait until `world/New`, so map
+atoms use the built versions. Edits made before launch are reported but left
+alone until the next save.
+
+Reloaded `FILE_DIR` resources use paths relative to the world directory. For
+example, `"[icon]"` and `browse_rsc()` use `icons/lamp.dmi` where a rebuild uses
+the source spelling `lamp.dmi`.
+
+Resource reloads modify BYOND's appearance tree and require a validated build.
+Builds newer than 516.1688 are refused for this operation, even though the rest
+of the debugger is attempted.
+
+Generated assets and caches need the codebase to regenerate them or a rebuild:
+
+- Runtime-generated icons (`icon()` and its procs), including tgstation's
+  greyscale items and tgui spritesheets, have their own resource content.
+- Startup caches, such as tgstation's HUD styles and sound groups, retain old
+  resources even after reboot: global initialization runs before resource edits
+  are restored.
+- Files sent through `browse_rsc()` or an asset cache reach clients when the
+  codebase sends them again.
+
+Files generated while the world runs, such as tgstation's map preview icons, are
+watched and reloaded too.
+
 ### Skins
 
 Saving the last `.dmf` included by the `.dme` updates the login skin and

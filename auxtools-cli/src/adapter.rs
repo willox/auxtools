@@ -370,6 +370,8 @@ pub struct Adapter {
 	waiting: HashSet<String>,
 	/// Time the pending reload's source changes were read.
 	reload_seen: Option<std::time::SystemTime>,
+	/// Resources cached by the last reload.
+	reloaded_resources: Vec<aux::ReloadedResource>,
 	/// Files already reported as changed since the world was built.
 	said_changed: HashSet<String>,
 	next_breakpoint_id: i64,
@@ -452,6 +454,7 @@ pub fn serve(out: Output, inputs: mpsc::Sender<Input>, receiver: &mpsc::Receiver
 		deferred: HashSet::new(),
 		waiting: HashSet::new(),
 		reload_seen: None,
+		reloaded_resources: vec![],
 		world_texts: HashMap::new(),
 		world_as_of: None,
 		said_changed: HashSet::new(),
@@ -1098,6 +1101,7 @@ impl Adapter {
 					self.reload(*request, &summary, notes)
 				};
 				if let Some(code) = &self.code {
+					let _ = code.send(code::Command::Resources(std::mem::take(&mut self.reloaded_resources)));
 					let _ = code.send(code::Command::Reloaded(applied));
 				}
 			}
@@ -1149,6 +1153,7 @@ impl Adapter {
 				return false;
 			}
 		};
+		self.reloaded_resources = result.resources.clone();
 		// Exclude removals for procs absent from the running world.
 		let summary = summary.text(&result.skipped);
 		// Applied removals unlink global procs from name lookup, but direct
