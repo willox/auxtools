@@ -232,6 +232,7 @@ fn capabilities() {
 		"supportsInstructionBreakpoints",
 		"supportsLoadedSourcesRequest",
 		"supportsLogPoints",
+		"supportsRestartRequest",
 		"supportsSetExpression",
 		"supportsSetVariable",
 		"supportsSteppingGranularity",

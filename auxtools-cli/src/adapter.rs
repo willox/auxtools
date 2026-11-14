@@ -34,6 +34,7 @@ use crate::{
 mod data;
 mod files;
 mod journal;
+mod restart;
 mod script;
 mod skin;
 
@@ -89,7 +90,15 @@ pub enum Input {
 		generation: u64,
 		reason: String
 	},
-	Code(code::Event),
+	/// Source worker event, tagged with the worker number.
+	Code {
+		worker: u64,
+		event: code::Event
+	},
+	/// Requested reboot still pending on connection `generation`.
+	RebootOverdue {
+		generation: u64
+	},
 	/// Another client hot reloaded the world
 	CodeChanged {
 		generation: u64
@@ -131,7 +140,7 @@ pub enum Input {
 	Quit
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct LaunchArguments {
 	#[serde(default)]
@@ -160,6 +169,54 @@ struct LaunchArguments {
 	debug_library: Option<PathBuf>,
 	/// Maximum sleeping procs to include in the thread list.
 	sleeping_threads: Option<u32>
+}
+
+/// Validated launch configuration.
+struct Prepared {
+	program: PathBuf,
+	dmb: PathBuf,
+	dme: Option<PathBuf>,
+	library: PathBuf,
+	/// Host arguments following the `.dmb`.
+	args: Vec<String>
+}
+
+impl Prepared {
+	fn of(args: &LaunchArguments) -> Result<Self, String> {
+		let dme = args.dme.clone().or_else(|| args.dmb.as_ref().map(|dmb| dmb.with_extension("dme")));
+		let dmb = args
+			.dmb
+			.clone()
+			.or_else(|| args.dme.as_ref().map(|dme| dme.with_extension("dmb")))
+			.ok_or("specify dme or dmb to select a world")?;
+
+		let bin = byond::bin_dir(args.byond_path.as_deref())?;
+		let server = args.server.unwrap_or_else(Server::default_for_platform);
+		let program = bin.join(server.program());
+		if !program.is_file() {
+			return Err(format!("{} was not found in {}", server.program(), bin.display()));
+		}
+		if !dmb.is_file() {
+			return Err(format!("file not found: {}", dmb.display()));
+		}
+		let library = match &args.debug_library {
+			Some(library) => library.clone(),
+			None => default_library()?
+		};
+		if args.port.is_some() && server == Server::DreamSeeker && cfg!(windows) {
+			return Err("port is unsupported with DreamSeeker; use server dreamdaemon".to_owned());
+		}
+		// BYOND expects the port before other arguments.
+		let mut game_args: Vec<String> = args.port.iter().map(u16::to_string).collect();
+		game_args.extend(args.args.clone().unwrap_or_else(|| default_args(server)));
+		Ok(Self {
+			program,
+			dmb,
+			dme,
+			library,
+			args: game_args
+		})
+	}
 }
 
 #[derive(Deserialize)]
@@ -311,11 +368,19 @@ pub struct Adapter {
 	pid: Option<u32>,
 	/// The world the adapter launched
 	game: Option<Game>,
+	/// Configuration used to launch the current world.
+	launched: Option<LaunchArguments>,
+	/// Pending configuration for relaunch after process exit.
+	relaunching: Option<(LaunchArguments, Prepared)>,
+	/// Session-requested reboot; suppress its expected disconnect message.
+	rebooting: bool,
 
 	/// Parse options retained until the first connection.
 	code_settings: Option<CodeSettings>,
 	/// Source worker thread, while active.
 	code: Option<mpsc::Sender<code::Command>>,
+	/// Current source worker number.
+	code_worker: u64,
 	hot_reload: bool,
 	/// Whether the initial source parse has finished, successfully or
 	/// otherwise.
@@ -429,8 +494,12 @@ pub fn serve(out: Output, inputs: mpsc::Sender<Input>, receiver: &mpsc::Receiver
 		debugging: true,
 		pid: None,
 		game: None,
+		launched: None,
+		relaunching: None,
+		rebooting: false,
 		code_settings: None,
 		code: None,
+		code_worker: 0,
 		hot_reload: false,
 		code_read: false,
 		watching: false,
@@ -514,7 +583,13 @@ impl Adapter {
 				}
 			}
 			Input::Unavailable { generation, reason } => self.debugger_unavailable(generation, &reason),
-			Input::Code(event) => self.code_event(event),
+			// Ignore events from replaced workers.
+			Input::Code { worker, event } => {
+				if worker == self.code_worker {
+					self.code_event(event);
+				}
+			}
+			Input::RebootOverdue { generation } => self.reboot_overdue(generation),
 			Input::WorldOutput(lines) => self.journal_output(lines),
 			Input::Logged { message, file, line } => {
 				// Include the source location so the client can create a link.
@@ -549,11 +624,15 @@ impl Adapter {
 				}
 			}
 			Input::GameExited(code) => {
+				self.game = None;
+				if let Some((args, prepared)) = self.relaunching.take() {
+					self.relaunched(args, prepared);
+					return true;
+				}
 				match code {
 					Some(code) => self.out.console(format!("The world exited with code {}", code)),
 					None => self.out.console("The world was terminated")
 				}
-				self.game = None;
 				self.ended(code.unwrap_or(-1));
 			}
 			Input::TerminateOverdue { process } => {
@@ -618,6 +697,7 @@ impl Adapter {
 			"setBreakpoints" => arguments(args).and_then(|args| self.set_breakpoints(args)),
 			"auxtoolsUnsaved" => arguments(args).and_then(|args| self.unsaved_changed(args)),
 			"auxtoolsReconnect" => self.reconnect_clients(),
+			"restart" => arguments(args).and_then(|args| self.restart(args)),
 			"setFunctionBreakpoints" => arguments(args).and_then(|args| self.set_function_breakpoints(args)),
 			"setInstructionBreakpoints" => arguments(args).and_then(|args| self.set_instruction_breakpoints(args)),
 			"setExceptionBreakpoints" => arguments(args).and_then(|args| self.set_exception_breakpoints(args)),
@@ -697,6 +777,7 @@ impl Adapter {
 			supportsExceptionInfoRequest: Some(true),
 			supportTerminateDebuggee: Some(true),
 			supportsTerminateRequest: Some(true),
+			supportsRestartRequest: Some(true),
 			supportsBreakpointLocationsRequest: Some(true),
 			supportsDataBreakpoints: Some(true),
 			supportsLoadedSourcesRequest: Some(true),
@@ -735,52 +816,42 @@ impl Adapter {
 		if self.pid.is_some() {
 			return Err("a world is already running".to_owned());
 		}
-		let dme = args.dme.clone().or_else(|| args.dmb.as_ref().map(|dmb| dmb.with_extension("dme")));
-		let dmb = args
-			.dmb
-			.clone()
-			.or_else(|| args.dme.as_ref().map(|dme| dme.with_extension("dmb")))
-			.ok_or("specify dme or dmb to select a world")?;
+		let prepared = Prepared::of(&args)?;
+		self.start(args, prepared)?;
+		Ok(Value::Null)
+	}
 
-		let bin = byond::bin_dir(args.byond_path.as_deref())?;
-		let server = args.server.unwrap_or_else(Server::default_for_platform);
-		let program = bin.join(server.program());
-		if !program.is_file() {
-			return Err(format!("{} was not found in {}", server.program(), bin.display()));
-		}
-
-		if !dmb.is_file() {
-			return Err(format!("file not found: {}", dmb.display()));
-		}
-
-		if args.port.is_some() && server == Server::DreamSeeker && cfg!(windows) {
-			return Err("port is unsupported with DreamSeeker; use server dreamdaemon".to_owned());
-		}
-
-		let library = match args.debug_library {
-			Some(library) => library,
-			None => default_library()?
-		};
-
+	/// Start the validated launch. Reuse the source worker on restart
+	/// when its settings are unchanged.
+	fn start(&mut self, args: LaunchArguments, prepared: Prepared) -> Result<(), String> {
 		self.debugging = !args.no_debug;
 		self.sleeping_threads = args.sleeping_threads.unwrap_or(aux::DEFAULT_SLEEPING_STACKS);
-		self.code_settings = Some(CodeSettings {
-			dme: dme.filter(|dme| dme.is_file()),
-			defines: args.defines,
-			hot_reload: args.hot_reload
+		let same_code = self.launched.as_ref().is_some_and(|old| {
+			// Parse options depend on the BYOND build.
+			(&old.dme, &old.dmb, &old.defines, old.hot_reload, &old.byond_path)
+				== (&args.dme, &args.dmb, &args.defines, args.hot_reload, &args.byond_path)
 		});
+		if !same_code {
+			self.drop_code();
+			// The new worker sends its own macros.
+			self.macros = None;
+			self.code_read = false;
+			self.watching = false;
+			self.code_settings = Some(CodeSettings {
+				dme: prepared.dme.clone().filter(|dme| dme.is_file()),
+				defines: args.defines.clone(),
+				hot_reload: args.hot_reload
+			});
+		}
 
-		// BYOND expects the port before other arguments.
-		let mut game_args: Vec<String> = args.port.iter().map(u16::to_string).collect();
-		game_args.extend(args.args.unwrap_or_else(|| default_args(server)));
 		// Debugged worlds wait for breakpoints. Hot reload also requires a wait
 		// after reboot; release the initial launch as soon as we connect.
 		let launch = Launch {
-			program,
-			dmb: &dmb,
-			args: &game_args,
+			program: prepared.program,
+			dmb: &prepared.dmb,
+			args: &prepared.args,
 			env: &args.env,
-			debug: Some((library, self.debugging || args.hot_reload))
+			debug: Some((prepared.library, self.debugging || args.hot_reload))
 		};
 		let (out, inputs, files) = (self.out.clone(), self.inputs.clone(), self.files.clone());
 		let batch = journal::batch_output(self.inputs.clone());
@@ -812,15 +883,16 @@ impl Adapter {
 		)?;
 		self.pid = Some(game.pid());
 		self.game = Some(game);
+		self.launched = Some(args);
 		self.out.event(dap::ProcessEvent {
-			name: dmb.to_string_lossy().into_owned(),
+			name: prepared.dmb.to_string_lossy().into_owned(),
 			systemProcessId: self.pid.unwrap_or_default(),
 			isLocalProcess: true,
 			startMethod: "launch".to_owned()
 		});
 		self.progress_start(STARTING, "Starting the world".to_owned());
 		self.started(None);
-		Ok(Value::Null)
+		Ok(())
 	}
 
 	fn attach(&mut self, args: AttachArguments) -> Handled {
@@ -866,8 +938,9 @@ impl Adapter {
 
 	/// The world is running: connect to it, unless that's done
 	fn started(&mut self, stream: Option<Stream>) {
-		// Without debugging, there are no breakpoints to wait for
-		if !self.debugging {
+		// Without debugging, there are no breakpoints to wait for. Send the
+		// event once per session, including across relaunches.
+		if !self.debugging && !self.initialized {
 			self.initialized = true;
 			self.out.event(InitializedEvent);
 		}
@@ -901,9 +974,12 @@ impl Adapter {
 					let _ = inputs.send(Input::Connected { generation, stream });
 					return;
 				}
-				// The launched world's exit is heard about anyway
-				if !launched && !local::alive(pid) {
-					let _ = inputs.send(Input::ProcessGone);
+				// The launched process has its own exit event. A restart
+				// connects to the replacement process.
+				if !local::alive(pid) {
+					if !launched {
+						let _ = inputs.send(Input::ProcessGone);
+					}
 					return;
 				}
 				std::thread::sleep(CONNECT_INTERVAL);
@@ -959,6 +1035,7 @@ impl Adapter {
 		// A responding world either recovered from failed shutdown or started
 		// anew.
 		self.shutting_down = false;
+		self.rebooting = false;
 		self.send_output();
 		self.give_macros();
 		self.follow_reloads();
@@ -985,7 +1062,7 @@ impl Adapter {
 				// disconnection.
 				None => {
 					self.hot_reload = false;
-					self.code = None;
+					self.drop_code();
 				}
 			}
 		}
@@ -1023,6 +1100,13 @@ impl Adapter {
 		}
 	}
 
+	/// Stop the source worker, ignore its queued events and end its progress.
+	fn drop_code(&mut self) {
+		self.code = None;
+		self.code_worker += 1;
+		self.progress_end(READING);
+	}
+
 	/// Resolve and parse the project source for hot reload.
 	/// The world supplies proc locations independently.
 	fn start_code(&mut self, settings: CodeSettings) {
@@ -1053,7 +1137,8 @@ impl Adapter {
 			hot_reload: settings.hot_reload
 		};
 		self.progress_start(READING, "Parsing project source".to_owned());
-		self.code = Some(code::start(options, self.out.clone(), self.inputs.clone()));
+		self.code_worker += 1;
+		self.code = Some(code::start(options, self.out.clone(), self.inputs.clone(), self.code_worker));
 	}
 
 	fn code_event(&mut self, event: code::Event) {
@@ -1341,7 +1426,7 @@ impl Adapter {
 			// Shutdown ends the session when the process exits. Suppress
 			// reconnect messages while its socket still accepts and immediately
 			// closes connections.
-			if !self.shutting_down {
+			if !self.shutting_down && !self.rebooting {
 				self.out.console(format!("Debug server disconnected ({}); waiting to reconnect", reason));
 				self.progress_start(RESTARTING, "Waiting to reconnect".to_owned());
 			}
@@ -1428,6 +1513,11 @@ impl Adapter {
 			return Ok(Value::Null);
 		};
 		if self.ending {
+			// Stop during restart shutdown cancels the relaunch.
+			if self.relaunching.take().is_some() {
+				self.progress_end(RESTARTING);
+				self.out.console("Restart cancelled: the world is stopping");
+			}
 			return Ok(Value::Null);
 		}
 		self.ending = true;

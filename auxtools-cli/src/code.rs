@@ -97,7 +97,8 @@ pub enum Command {
 	Resources(Vec<ReloadedResource>)
 }
 
-pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>) -> mpsc::Sender<Command> {
+/// Start source worker `worker`, which tags its events with that number.
+pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>, worker: u64) -> mpsc::Sender<Command> {
 	// The client knows files by their full paths
 	if let Ok(dme) = std::path::absolute(&options.dme) {
 		options.dme = dme;
@@ -115,6 +116,7 @@ pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>
 				options,
 				out,
 				inputs,
+				worker,
 				commands: receiver,
 				reconnected: Cell::new(false),
 				world: Cell::new(0),
@@ -137,6 +139,8 @@ struct Code {
 	root: PathBuf,
 	out: Arc<Output>,
 	inputs: mpsc::Sender<Input>,
+	/// Worker number included in events.
+	worker: u64,
 	commands: mpsc::Receiver<Command>,
 	/// A reboot occurred while awaiting a reload response.
 	reconnected: Cell<bool>,
@@ -186,7 +190,7 @@ impl Code {
 	}
 
 	fn send(&self, event: Event) -> bool {
-		self.inputs.send(Input::Code(event)).is_ok()
+		self.inputs.send(Input::Code { worker: self.worker, event }).is_ok()
 	}
 
 	fn parse(&self) -> Result<Snapshot, String> {

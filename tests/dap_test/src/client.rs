@@ -25,6 +25,22 @@ pub fn next_to_us(name: &str) -> PathBuf {
 	path
 }
 
+/// Launch configuration for `dme`, extended by `more`.
+pub fn launch_arguments(byond: &Path, dme: &Path, more: Value) -> Value {
+	let mut arguments = json!({
+		"dme": dme,
+		"byondPath": byond,
+		"server": server(),
+		"debugLibrary": library_path(),
+		"args": test_args(),
+		"hotReload": false
+	});
+	for (name, value) in more.as_object().unwrap() {
+		arguments[name] = value.clone();
+	}
+	arguments
+}
+
 pub fn launcher_path() -> PathBuf {
 	next_to_us(if cfg!(windows) { "auxtools.exe" } else { "auxtools" })
 }
@@ -453,18 +469,7 @@ impl Launcher {
 	/// program, and waits for the launcher to ask for breakpoints. `more` adds
 	/// to the launch's arguments, or replaces them.
 	pub fn launch(&mut self, byond: &Path, dme: &Path, more: Value) {
-		let mut arguments = json!({
-			"dme": dme,
-			"byondPath": byond,
-			"server": server(),
-			"debugLibrary": library_path(),
-			"args": test_args(),
-			"hotReload": false
-		});
-		for (name, value) in more.as_object().unwrap() {
-			arguments[name] = value.clone();
-		}
-		self.request("launch", arguments);
+		self.request("launch", launch_arguments(byond, dme, more));
 		self.event("initialized");
 	}
 

@@ -78,9 +78,7 @@ impl Adapter {
 		match self.request(&AuxRequest::Reconnect)? {
 			AuxResponse::Reconnect(Ok(aux::Reconnected::Clients(clients))) => Ok(serde_json::json!({ "reconnected": clients })),
 			AuxResponse::Reconnect(Ok(aux::Reconnected::Hosted)) => {
-				self.out.console("Rebooting the Dream Seeker-hosted world to load the update");
-				// Reboot closes the connection without a response.
-				self.debuggee()?.eval_unanswered("world.Reboot()".to_owned())?;
+				self.reboot()?;
 				Ok(serde_json::json!({ "rebooted": true }))
 			}
 			AuxResponse::Reconnect(Err(e)) => Err(e),
