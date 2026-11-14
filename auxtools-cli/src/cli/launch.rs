@@ -30,8 +30,9 @@ use crate::{
 pub const WORLD_FAILED: i32 = 4;
 /// How long `--detach` waits for the world to be up
 const COMING_UP: Duration = Duration::from_secs(120);
-/// Readiness protocol for the detached launcher: `ready PID` or `failed WHY`
-/// on stdout; all other output goes to the log.
+/// Readiness protocol for the detached launcher: `ready PID`, `unavailable PID
+/// WHY` (it runs without the debugger) or `failed WHY` on stdout; all other
+/// output goes to the log.
 const DETACHED: &str = "--detached";
 
 /// What `launch` was asked for
@@ -177,6 +178,12 @@ fn run(options: &Options, detached: bool) -> Result<()> {
 				}
 				outcome.ready = true;
 			}
+			Note::Unavailable(why) => {
+				if detached && !outcome.ready {
+					say_to_starter(&format!("unavailable {} {}", outcome.pid.unwrap_or_default(), why.replace('\n', " ")));
+				}
+				outcome.ready = true;
+			}
 			Note::Failed { command, message } if command == "launch" => {
 				if detached {
 					say_to_starter(&format!("failed {}", message));
@@ -311,12 +318,23 @@ fn detach(options: &Options, as_json: bool) -> Result<()> {
 			));
 		}
 	};
-	if let Some(pid) = line.as_deref().and_then(|line| line.strip_prefix("ready ")) {
+	let started = match line.as_deref().map(|line| line.split_once(' ').unwrap_or((line, ""))) {
+		Some(("ready", pid)) => Some((pid, None)),
+		Some(("unavailable", said)) => Some(said.split_once(' ').map_or((said, Some("")), |(pid, why)| (pid, Some(why)))),
+		_ => None
+	};
+	if let Some((pid, unavailable)) = started {
 		let pid: u32 = pid.parse().unwrap_or_default();
 		if as_json {
-			say!("{}", json!({ "pid": pid, "launcher": launcher_pid, "log": log }));
+			say!(
+				"{}",
+				json!({ "pid": pid, "launcher": launcher_pid, "log": log, "unavailable": unavailable })
+			);
 		} else {
-			say!("pid {}: started", pid);
+			match unavailable {
+				Some(why) => say!("pid {}: running without debugging: {}. Use 'auxtools stop' to terminate it.", pid, why),
+				None => say!("pid {}: started", pid)
+			}
 			say!("launcher: pid {}", launcher_pid);
 			say!("log: {}", log.display());
 		}

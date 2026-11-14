@@ -207,6 +207,11 @@ fn list(as_json: bool) -> Result<()> {
 		}
 		say!("{}", line.trim_end());
 	}
+	for world in &worlds {
+		if let Some(why) = &world.unavailable {
+			say!("pid {}: debugger initialization failed: {}", world.pid, why);
+		}
+	}
 	Ok(())
 }
 
@@ -354,7 +359,9 @@ pub struct World {
 	/// What `wait pause` adds to the JSON of a pause
 	waited: Map<String, Value>,
 	/// How long to wait for each response (`--response-timeout`).
-	patience: Duration
+	patience: Duration,
+	/// Reported debugger initialization failure, if any.
+	unavailable: Option<String>
 }
 
 impl World {
@@ -380,7 +387,8 @@ impl World {
 			show_instruction: false,
 			json: None,
 			waited: Map::new(),
-			patience: args::DEFAULT_RESPONSE_TIMEOUT
+			patience: args::DEFAULT_RESPONSE_TIMEOUT,
+			unavailable: None
 		})
 	}
 
@@ -511,6 +519,17 @@ impl World {
 			};
 			match response.map_err(|_| hung_up())? {
 				Response::Disconnect => return Err(hung_up()),
+				Response::Unavailable { reason } => {
+					let failure = Failure(
+						1,
+						format!(
+							"debugger initialization failed for pid {}: {}. The world is running; use 'auxtools stop' to terminate it.",
+							self.pid, reason
+						)
+					);
+					self.unavailable = Some(reason);
+					return Err(failure);
+				}
 				Response::Notification { message } => self.notes.push(message),
 				Response::CodeChanged => self.reloaded = true,
 				// Report each breakpoint condition error once; failed hits are

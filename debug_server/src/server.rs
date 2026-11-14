@@ -500,14 +500,14 @@ impl Server {
 	}
 
 	/// Tells whoever connects that there's no debugger, and why
-	pub fn refuse(message: String) {
+	pub fn refuse(reason: String) {
 		let Ok(events) = Self::take_events() else {
 			return;
 		};
 		thread::spawn(move || {
 			while let Ok(event) = events.recv() {
 				if let Event::Connected(_, mut connection) = event {
-					for response in [Response::Notification { message: message.clone() }, Response::Disconnect] {
+					for response in [Response::Unavailable { reason: reason.clone() }, Response::Disconnect] {
 						if Self::send(&mut connection, &response).is_err() {
 							break;
 						}

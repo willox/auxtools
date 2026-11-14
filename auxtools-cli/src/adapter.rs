@@ -59,6 +59,8 @@ const FUNCTION_BREAKPOINTS: &str = "<functions>";
 const STARTING: &str = "starting";
 const READING: &str = "reading";
 const RESTARTING: &str = "restarting";
+/// Response to requests when debugger initialization failed.
+const UNAVAILABLE: &str = "debugger initialization failed";
 /// Retry interval while waiting for the debug server to listen.
 const CONNECT_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -79,6 +81,11 @@ pub enum Input {
 	/// The world announced shutdown rather than reboot.
 	ShuttingDown {
 		generation: u64
+	},
+	/// Debugger initialization failure; reconnecting cannot recover it.
+	Unavailable {
+		generation: u64,
+		reason: String
 	},
 	Code(code::Event),
 	/// Another client hot reloaded the world
@@ -324,6 +331,8 @@ pub struct Adapter {
 	generation: u64,
 	/// Termination requested; do not reconnect.
 	ending: bool,
+	/// Permanent debugger initialization failure. The world continues running.
+	unavailable: bool,
 	/// Suppress reconnect messages after shutdown until a world responds again.
 	shutting_down: bool,
 	/// Delay world configuration until the source worker finishes.
@@ -426,6 +435,7 @@ pub fn serve(out: Output, inputs: mpsc::Sender<Input>, receiver: &mpsc::Receiver
 		debuggee: None,
 		generation: 0,
 		ending: false,
+		unavailable: false,
 		shutting_down: false,
 		waiting_for_code: false,
 		initialized: false,
@@ -496,6 +506,7 @@ impl Adapter {
 					self.shutting_down = true;
 				}
 			}
+			Input::Unavailable { generation, reason } => self.debugger_unavailable(generation, &reason),
 			Input::Code(event) => self.code_event(event),
 			Input::WorldOutput(lines) => self.journal_output(lines),
 			Input::Logged { message, file, line } => {
@@ -861,7 +872,7 @@ impl Adapter {
 
 	/// Connects to the world when it listens, in the background
 	fn connect(&mut self) {
-		let Some(pid) = self.pid else {
+		let Some(pid) = self.pid.filter(|_| !self.unavailable) else {
 			return;
 		};
 		self.generation += 1;
@@ -1304,6 +1315,40 @@ impl Adapter {
 		}
 	}
 
+	/// Report initialization failure once and stop reconnecting. Launched
+	/// worlds continue until stopped; attached sessions end without stopping
+	/// the world.
+	fn debugger_unavailable(&mut self, generation: u64, reason: &str) {
+		if self.debuggee.as_ref().is_none_or(|d| d.generation != generation) {
+			return;
+		}
+		if let Some(mut debuggee) = self.debuggee.take() {
+			debuggee.gone();
+		}
+		self.unavailable = true;
+		self.waiting_for_code = false;
+		self.set.lock().unwrap().clear();
+		self.progress_end(STARTING);
+		self.progress_end(RESTARTING);
+		let process = self.world_process().unwrap_or_default();
+		self.out
+			.console(format!("Debugger initialization failed for process {}: {}", process, reason));
+		if self.game.is_none() {
+			self.out.console("The world is running without debugging. Detaching from this session.");
+			self.pid = None;
+			self.out.event(TerminatedEvent::default());
+			return;
+		}
+		self.out
+			.console("The world is running without debugging or hot reload. Stop the session to terminate it.");
+		// Allow the client to finish configuration without a debug server.
+		if !self.initialized {
+			self.initialized = true;
+			self.out.event(InitializedEvent);
+		}
+		self.out.unavailable(reason);
+	}
+
 	fn disconnect(&mut self, terminate: Option<bool>) {
 		// Preserve the pause if other debugging clients remain; otherwise
 		// resume.
@@ -1377,6 +1422,10 @@ impl Adapter {
 				}
 				let _ = inputs.send(Input::ProcessGone);
 			});
+		} else if self.unavailable {
+			self.out
+				.console(format!("Cannot call world.Del() without the debugger; terminating process {}", process));
+			self.kill_world();
 		} else {
 			self.out.console(format!("Debug server disconnected; terminating process {}", process));
 			self.kill_world();
@@ -1385,7 +1434,18 @@ impl Adapter {
 	}
 
 	fn debuggee(&mut self) -> Result<&mut Debuggee, String> {
-		self.debuggee.as_mut().ok_or_else(|| "debug server disconnected".to_owned())
+		match self.unavailable {
+			true => Err(UNAVAILABLE.to_owned()),
+			false => self.debuggee.as_mut().ok_or_else(|| "debug server disconnected".to_owned())
+		}
+	}
+
+	/// Reason a breakpoint or watch cannot currently be set.
+	const fn not_connected(&self) -> &'static str {
+		match self.unavailable {
+			true => UNAVAILABLE,
+			false => "world is not running"
+		}
 	}
 
 	fn request(&mut self, request: &AuxRequest) -> Result<AuxResponse, String> {
@@ -1602,7 +1662,7 @@ impl Adapter {
 				continue;
 			}
 			if self.debuggee.is_none() {
-				breakpoints.push(unverified("world is not running"));
+				breakpoints.push(unverified(self.not_connected()));
 				continue;
 			}
 			let hit = match hit_condition(hit.as_deref()) {

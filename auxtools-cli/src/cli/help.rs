@@ -63,10 +63,13 @@ ARGS  Arguments passed to the BYOND program. Replace the
   Interrupt once to request graceful shutdown; interrupt again to force exit.
   The launcher does not compile the DMB or pause execution. Other CLI commands
   and editors can attach to the world. Use reboot to load a rebuilt DMB.
+  If the debug library cannot start in the world (an unsupported BYOND
+  build), the launcher says why and the world runs without it until stopped.
 
 Output:
   Detached mode reports the world's process ID, the launcher's process ID, and
-  the launcher's log file. JSON contains pid, launcher, and log.
+  the launcher's log file. JSON contains pid, launcher, log, and unavailable:
+  why the debug library could not start, or null.
 
 Exit codes:
   0  Startup completed in detached mode, or the foreground world exited with 0.
@@ -86,9 +89,11 @@ Exit codes:
   protocol compatibility, and responsiveness. An empty JSON array means no
   worlds were found. Worlds with compatible=false require a matching CLI version.
   A world record contains pid, program, dmb, args, cwd, protocol, compatible,
-  and responsive. responsive is false if the world did not answer within
-  5 seconds; its dmb, args, and cwd are then unknown. Incompatible worlds
-  are not queried and have responsive=null."
+  responsive, and unavailable. responsive is false if the world did not answer
+  within 5 seconds; its dmb, args, and cwd are then unknown. Incompatible
+  worlds are not queried and have responsive=null. unavailable says why the
+  debug library could not start in the world, which can then only be stopped,
+  and is null otherwise."
 	},
 	Page {
 		path: &["status"],
@@ -123,7 +128,8 @@ Exit codes:
   the debugger available, and stop reports the failure.
   Include --kill in the initial request for a forced fallback.
   With --kill, forced termination starts when the graceful deadline passes,
-  or at once when world.Del() fails.
+  or at once when world.Del() fails. A world the debug library could not
+  start in cannot call world.Del(), and is terminated at once.
   Success depends on the process exiting within the additional kill timeout.
 
 Output:

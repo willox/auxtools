@@ -68,6 +68,8 @@ fn ended_by(world: &mut World, until: Instant) -> Result<bool> {
 				.into())
 			}
 			Ok(_) => {}
+			// No debugger is available to request world.Del().
+			Err(e) if world.unavailable.is_some() => return Err(e),
 			// Debugger disconnection can precede process exit.
 			Err(_) => return Ok(gone_by(world.pid, until))
 		}
@@ -91,8 +93,8 @@ pub fn stop(world: &mut World, args: &args::Stop) -> Result<()> {
 	if ask(world, "world.Del()").is_err() && local::alive(pid) {
 		return Err(format!("cannot send the shutdown request: the connection to the world with pid {} ended.", pid).into());
 	}
-	// With --kill, force termination after either a timeout or failed
-	// world.Del().
+	// With --kill, force termination on timeout or world.Del() failure.
+	// An unavailable debugger cannot call world.Del().
 	let failed = match ended_by(world, Instant::now() + timeout) {
 		Ok(true) => {
 			done(
@@ -103,10 +105,11 @@ pub fn stop(world: &mut World, args: &args::Stop) -> Result<()> {
 			return Ok(());
 		}
 		Ok(false) => None,
+		Err(_) if world.unavailable.is_some() => None,
 		Err(e) if args.kill => Some(e),
 		Err(e) => return Err(e)
 	};
-	if !args.kill {
+	if !args.kill && world.unavailable.is_none() {
 		return Err(Failure(
 			TIMED_OUT,
 			format!(
@@ -119,9 +122,13 @@ pub fn stop(world: &mut World, args: &args::Stop) -> Result<()> {
 	}
 	local::kill(pid);
 	if gone_by(pid, Instant::now() + kill_timeout) {
-		match failed {
-			Some(_) => eprintln!("world.Del() failed with a runtime error; the process was terminated."),
-			None => eprintln!("graceful shutdown timed out after {}; the process was terminated.", seconds_text(timeout))
+		match (&world.unavailable, failed) {
+			(Some(why), _) => eprintln!(
+				"process terminated because debugger initialization failed: {}. world.Del() could not be called.",
+				why
+			),
+			(None, Some(_)) => eprintln!("world.Del() failed with a runtime error; the process was terminated."),
+			(None, None) => eprintln!("graceful shutdown timed out after {}; the process was terminated.", seconds_text(timeout))
 		}
 		done(
 			args.json,

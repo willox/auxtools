@@ -381,7 +381,13 @@ pub enum Response {
 	StepEnded,
 	/// Whether ownership was granted, or a diagnostic identifying the existing
 	/// owner.
-	Reloader(Result<(), String>)
+	Reloader(Result<(), String>),
+	/// Permanent initialization failure, sent on connection instead of a
+	/// response, followed by `Disconnect`. The world continues without
+	/// the debugger for the lifetime of the process.
+	Unavailable {
+		reason: String
+	}
 }
 
 /// Journal entry retained across reboots for the process lifetime.

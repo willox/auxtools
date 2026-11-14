@@ -372,5 +372,5 @@ fn spawn_done(_: &Value, _: &Value, args: Vec<Value>) -> auxtools::DMResult {
 /// Report initialization failure to connecting clients.
 fn failed(error: &str) {
 	eprintln!("auxtools: couldn't start the debugger: {}", error);
-	Server::refuse(format!("auxtools couldn't start: {}", error));
+	Server::refuse(error.to_owned());
 }

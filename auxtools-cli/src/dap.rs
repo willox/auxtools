@@ -61,6 +61,8 @@ pub enum Note {
 	Process(u32),
 	/// World connected and source watching initialized, if enabled.
 	Ready,
+	/// Debugger initialization failure; the world continues running.
+	Unavailable(String),
 	/// The world ended, with this exit code (-1 if it was killed)
 	Exited(i64)
 }
@@ -156,6 +158,14 @@ impl Output {
 	pub fn ready(&self) {
 		if let To::Plain(to) = &self.to {
 			to(Note::Ready);
+		}
+	}
+
+	/// The world is running without a debugger (see `Note::Unavailable`).
+	/// Report the reason in the console.
+	pub fn unavailable(&self, reason: &str) {
+		if let To::Plain(to) = &self.to {
+			to(Note::Unavailable(reason.to_owned()));
 		}
 	}
 

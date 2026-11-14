@@ -107,6 +107,7 @@ fn main() {
 
 	command_line_shape();
 	another_version();
+	no_debugger();
 
 	let mut launcher = Launcher::start();
 	launcher.initialize();
@@ -599,6 +600,94 @@ fn another_version() {
 	let _ = plain.kill();
 	let _ = plain.wait();
 	println!("ok: incompatible protocol discovery and attach rejection");
+}
+
+/// An unavailable debugger reports its initialization failure once and
+/// disconnects. The launcher must stop reconnecting, list the reason and
+/// allow stop to terminate the world.
+fn no_debugger() {
+	use auxtools_cli::{local, server_types::Response};
+	use interprocess::local_socket::{prelude::*, GenericNamespaced, ListenerOptions};
+
+	const WHY: &str = "Couldn't find current_execution_context (BYOND 516.1600 is outside the checked range 1637..=1688)";
+	let mut plain = Command::new(paths::find_dreamdaemon())
+		.with_byond_paths()
+		.arg(host_file("launcher_test_host.dmb"))
+		.args(test_args().unwrap_or_else(|| vec!["-trusted".to_owned()]))
+		.stdout(std::process::Stdio::null())
+		.stderr(std::process::Stdio::null())
+		.spawn()
+		.unwrap();
+	let pid = plain.id();
+	let listener = ListenerOptions::new()
+		.name(local::world_name(pid).to_ns_name::<GenericNamespaced>().unwrap())
+		.create_sync()
+		.unwrap();
+	// Match the debug library's initialization-failure response; keep the
+	// connection until the client closes it.
+	std::thread::spawn(move || {
+		for mut client in listener.incoming().flatten() {
+			std::thread::spawn(move || {
+				let _ = local::send(&mut client, &Response::Unavailable { reason: WHY.to_owned() });
+				let _ = local::send(&mut client, &Response::Disconnect);
+				let _ = std::io::copy(&mut client, &mut std::io::sink());
+			});
+		}
+	});
+
+	let mut launcher = Launcher::start();
+	launcher.initialize();
+	launcher.request("attach", json!({ "processId": pid }));
+	launcher.event("terminated");
+	// Allow time for an incorrect reconnection attempt.
+	std::thread::sleep(Duration::from_secs(1));
+	launcher.has_event("output");
+	let said = format!("Debugger initialization failed for process {}: {}", pid, WHY);
+	assert!(
+		launcher.count(&said) == 1 && launcher.output.contains("Detaching from this session") && !launcher.output.contains("reconnect"),
+		"attaching said {}",
+		launcher.output
+	);
+	launcher.disconnect(json!({}));
+	assert!(plain.try_wait().unwrap().is_none(), "ending the session ended the world");
+	println!("ok: initialization failure reported once on attach");
+
+	let (code, list) = launcher_command(&["list", "--json"]);
+	assert_eq!(code, 0, "{}", list);
+	let worlds: serde_json::Value = serde_json::from_str(&list).unwrap();
+	let listed = worlds
+		.as_array()
+		.unwrap()
+		.iter()
+		.find(|world| world["pid"] == pid)
+		.unwrap_or_else(|| panic!("the world without the debugger isn't listed: {}", list));
+	assert_eq!((&listed["compatible"], &listed["unavailable"]), (&json!(true), &json!(WHY)), "{}", listed);
+	let pid_text = pid.to_string();
+	let (code, printed) = launcher_command(&["--pid", &pid_text, "status"]);
+	assert_eq!(code, 1, "{}", printed);
+	assert!(
+		printed.contains(&format!(
+			"error: debugger initialization failed for pid {}: {}. The world is running; use 'auxtools stop' to terminate it.",
+			pid, WHY
+		)),
+		"status said {}",
+		printed
+	);
+	println!("ok: CLI reports debugger initialization failure");
+
+	let (code, printed) = launcher_command(&["--pid", &pid_text, "stop", "--json"]);
+	assert_eq!(code, 0, "{}", printed);
+	assert!(
+		printed.contains(r#"{"killed":true,"pid":"#) && printed.contains("world.Del() could not be called"),
+		"stop said {}",
+		printed
+	);
+	let deadline = Instant::now() + Duration::from_secs(10);
+	while plain.try_wait().unwrap().is_none() {
+		assert!(Instant::now() < deadline, "the world is still running after stop");
+		std::thread::sleep(Duration::from_millis(100));
+	}
+	println!("ok: stop without debugger");
 }
 
 /// The rest of the command line: the other steps, the stacks, a frame's
