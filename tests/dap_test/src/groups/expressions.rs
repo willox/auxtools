@@ -564,5 +564,25 @@ pub fn run() {
 	assert!(!world.has_event("stopped"));
 	world.run_through("plain");
 	ok("evaluation while running");
+
+	// Evaluation failures must not reach a paused caller's catch.
+	world.run_to("caught", "/caught_inside", "caught_stop");
+	let frame = world.frame_id();
+	for context in ["repl", "watch"] {
+		let why = world.refused("evaluate", json!({ "expression": "text + 1", "frameId": frame, "context": context }));
+		assert!(
+			why.starts_with("runtime error: type mismatch"),
+			"unexpected result in {}: {:?}",
+			context,
+			why
+		);
+	}
+	world.resume_through("caught");
+	assert!(
+		world.output.contains("dap: caught_inside gave a\n") && !world.output.contains("dap: sc_caught caught"),
+		"evaluation changed the paused caller's control flow:\n{}",
+		world.output
+	);
+	ok("evaluation error isolation");
 	world.end();
 }

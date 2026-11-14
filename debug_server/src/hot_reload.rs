@@ -2155,7 +2155,14 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 			continue;
 		};
 		stub.set_bytecode(bytecode);
-		match stub.call(&[]) {
+		// Keep initializer failures out of paused callers' try blocks.
+		let ends = crate::WORLD_ENDS.load(std::sync::atomic::Ordering::Relaxed);
+		let tries = crate::server::Server::hide_tries();
+		let result = stub.call(&[]);
+		if crate::WORLD_ENDS.load(std::sync::atomic::Ordering::Relaxed) == ends {
+			crate::server::Server::show_tries(tries);
+		}
+		match result {
 			Ok(value) => {
 				if let Err(e) = runtime_tables::set_global_value(id, value) {
 					warnings.push(format!("{}: {}", name, e));

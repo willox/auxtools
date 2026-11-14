@@ -61,7 +61,23 @@ var/breakpoint_armed = FALSE
 	x += 1
 	return x
 
+// Pause beneath a caller's try block for a reload.
+var/caught_armed = FALSE
+var/caught_by_tick = null
+var/caught_done = 0
+
+/proc/caught_target()
+	var/y = 1
+	y += 1 // @caught_target
+	caught_done = y
+
 /proc/tick()
+	if (caught_armed)
+		caught_armed = FALSE
+		try
+			caught_target()
+		catch (var/exception/e)
+			caught_by_tick = e.name
 	if (breakpoint_armed)
 		breakpoint_armed = FALSE
 		breakpoint_target()

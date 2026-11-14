@@ -484,6 +484,40 @@ fn main() {
 	wait_for(&mut client, "breakpoint_armed", "0");
 	println!("ok: remove remapped breakpoint by original offset");
 
+	// An initializer failure during a paused reload must not reach the
+	// caller's catch when execution resumes.
+	let line = source.line_of("reload.dm", "\ty += 1");
+	let offset = offset_of(&mut client, "/caught_target", line);
+	let at = InstructionRef {
+		proc: ProcRef {
+			path: "/caught_target".to_owned(),
+			override_id: 0
+		},
+		offset
+	};
+	let response = client.request(Request::BreakpointSet {
+		instruction: at.clone(),
+		condition: None,
+		hit: None,
+		log: None
+	});
+	assert!(matches!(response, Response::BreakpointSet { .. }), "{:?}", response);
+	eval(&mut client, "caught_armed = TRUE");
+	assert_eq!(client.expect_pause(), BreakpointReason::Breakpoint);
+	let changes = source.edit(
+		"reload.dm",
+		"var/caught_done = 0",
+		"var/caught_done = 0\nvar/init_fails = fails_now()\n\n/proc/fails_now()\n\tCRASH(\"initializer failed\")"
+	);
+	let result = reload(&mut watcher, &changes);
+	assert!(result.applied, "{:?}", result);
+	let response = client.request(Request::BreakpointUnset { instruction: at });
+	assert!(matches!(response, Response::BreakpointUnset { success: true, .. }), "{:?}", response);
+	client.resume();
+	wait_for(&mut client, "caught_done", "2");
+	assert_eq!(eval(&mut client, "caught_by_tick"), "null");
+	println!("ok: initializer error isolation");
+
 	// Moving a proc between files must preserve its statement breakpoints.
 	let line = source.line_of("reload.dm", "\tx += 1");
 	let offset = offset_of(&mut client, "/breakpoint_target", line);

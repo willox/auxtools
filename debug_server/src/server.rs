@@ -2658,20 +2658,51 @@ impl Server {
 	/// Temporarily size the stub's locals table for this call. Sleeping
 	/// frames retain the locals allocated when they started.
 	pub(crate) fn call_with_locals(proc: &Proc, locals: &[String], args: &[&Value]) -> Result<Result<Value, Runtime>, String> {
-		if locals.is_empty() {
-			return Ok(proc.call(args));
-		}
 		use auxtools::runtime_tables::{self, ProcEntryWords};
-		let none = runtime_tables::proc_entry(proc.id).ok_or("couldn't read the stub's proc entry")?.0[ProcEntryWords::LOCALS];
-		let table = hot_reload::locals_table(locals, none)?;
-		runtime_tables::set_proc_entry_word(proc.id, ProcEntryWords::LOCALS, table);
 		let ends = crate::WORLD_ENDS.load(std::sync::atomic::Ordering::Relaxed);
+		let none = match locals.is_empty() {
+			true => None,
+			false => {
+				let none = runtime_tables::proc_entry(proc.id).ok_or("couldn't read the stub's proc entry")?.0[ProcEntryWords::LOCALS];
+				let table = hot_reload::locals_table(locals, none)?;
+				runtime_tables::set_proc_entry_word(proc.id, ProcEntryWords::LOCALS, table);
+				Some(none)
+			}
+		};
+		let tries = Self::hide_tries();
 		let result = proc.call(args);
 		// (a world the code ended has procs of its own by now)
 		if crate::WORLD_ENDS.load(std::sync::atomic::Ordering::Relaxed) == ends {
-			runtime_tables::set_proc_entry_word(proc.id, ProcEntryWords::LOCALS, none);
+			Self::show_tries(tries);
+			if let Some(none) = none {
+				runtime_tables::set_proc_entry_word(proc.id, ProcEntryWords::LOCALS, none);
+			}
 		}
 		Ok(result)
+	}
+
+	/// Temporarily hide the running stack's try blocks during debugger
+	/// evaluation. Otherwise BYOND delivers evaluation errors to a paused
+	/// caller's catch when execution resumes. Return frame state to restore.
+	pub(crate) fn hide_tries() -> Vec<(*mut raw_types::procs::ExecutionContext, u32)> {
+		let mut hidden = vec![];
+		let mut at = unsafe { *raw_types::funcs::CURRENT_EXECUTION_CONTEXT };
+		while !at.is_null() {
+			let handler = unsafe { *(*at).throw_handler() };
+			if handler != 0 {
+				hidden.push((at, handler));
+				unsafe { *(*at).throw_handler_mut() = 0 };
+			}
+			at = unsafe { *(*at).parent_context() };
+		}
+		hidden
+	}
+
+	/// Restore the try blocks hidden by `hide_tries`.
+	pub(crate) fn show_tries(tries: Vec<(*mut raw_types::procs::ExecutionContext, u32)>) {
+		for (ctx, handler) in tries {
+			unsafe { *(*ctx).throw_handler_mut() = handler };
+		}
 	}
 
 	/// Whether a frame is still on one of the world's stacks, running or
