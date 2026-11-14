@@ -144,7 +144,7 @@
 								"items": {
 									"type": "string"
 								},
-								"description": "Build defines as NAME or NAME=VALUE. Must match DreamMaker for hot reload.",
+								"description": "Build defines as NAME, NAME=VALUE or DreamMaker -D arguments. Must match the build. If omitted, uses flags from the SS13 Build Flags extension if present. Use [] to disable automatic flags.",
 								"default": []
 							},
 							"hotReload": {
@@ -212,7 +212,7 @@
 								"items": {
 									"type": "string"
 								},
-								"description": "Build defines as NAME or NAME=VALUE. Must match DreamMaker.",
+								"description": "Build defines as NAME, NAME=VALUE or DreamMaker -D arguments. Must match the build. If omitted, uses flags from the SS13 Build Flags extension if present. Use [] to disable automatic flags.",
 								"default": []
 							},
 							"hotReload": {

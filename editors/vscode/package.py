@@ -33,7 +33,7 @@ PLATFORMS = [
 	("linux", "i686-unknown-linux-gnu", ["auxtools", "libdebug_server.so"]),
 ]
 
-EXTENSION_FILES = ["package.json", "extension.js", "expression.js", "unsaved.js", "langclient.js", "README.md"]
+EXTENSION_FILES = ["package.json", "extension.js", "expression.js", "unsaved.js", "buildflags.js", "langclient.js", "README.md"]
 
 
 def manifest(package):

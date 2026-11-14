@@ -44,7 +44,7 @@ provides templates:
 | `dmb` | Compiled world to run. |
 | `dme` | Project environment; defaults to the `.dme` beside the `.dmb`. Its directory is the source root. |
 | `server` | Default: `dreamdaemon` (`dd.exe` on Windows). Windows also supports `dreamdaemon-gui` for windowed DreamDaemon and `dreamseeker` to host in DreamSeeker. `dd` remains an alias for `dreamdaemon`. |
-| `defines` | Build defines as `NAME` or `NAME=VALUE`. Use the same `-D` values as DreamMaker so hot reload parses the same source. |
+| `defines` | Match the build's defines: `NAME`, `NAME=VALUE` or strings of DreamMaker arguments such as `-DA -DB=2`. When omitted, uses flags from the [SS13 Build Flags extension](https://github.com/spacestation13/SS13-BuildFlags) if present. |
 | `noDebug` | Disable debugging. Default: `false`. |
 | `hotReload` | Reload source changes on save. Default: `true`. |
 | `sleepingThreads` | Maximum sleeping procs shown in the call stack. Default: `100`. |
@@ -53,6 +53,9 @@ provides templates:
 | `args` | Arguments after the `.dmb`, replacing the defaults: `-trusted`, plus `-close` for `dreamdaemon-gui` on Windows. |
 | `env` | Environment variables for the world. |
 | `debugLibrary` | Override `auxtools.debugLibrary` for this launch. If neither is set, use the library bundled with the extension. |
+
+Set `"defines": []` to disable automatic flags. To combine SS13 Build Flags
+with additional defines, use `"defines": ["${command:ss13BuildFlags.current}", "MORE"]`.
 
 DreamDaemon sends output to the Debug Console. DreamSeeker and `dreamdaemon-gui`
 display output in their own windows.

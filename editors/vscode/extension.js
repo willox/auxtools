@@ -11,6 +11,7 @@ const path = require("path");
 const vscode = require("vscode");
 const { expressionAt } = require("./expression");
 const { UnsavedFiles } = require("./unsaved");
+const buildFlags = require("./buildflags");
 const langclient = require("./langclient");
 
 const DEBUG_TYPE = "auxtools";
@@ -188,6 +189,22 @@ class ConfigurationProvider {
 		}
 		if (!config.debugLibrary && settings().get("debugLibrary")) {
 			config.debugLibrary = settings().get("debugLibrary");
+		}
+		// Hot reload needs the same defines used for the build.
+		if (config.defines === undefined) {
+			const selected = await buildFlags.selected(vscode);
+			if (selected) {
+				config.defines = selected;
+			}
+		}
+		return config;
+	}
+
+	// Explicit SS13 Build Flags substitutions return several -D arguments
+	// in one string; split them before passing them to the parser.
+	resolveDebugConfigurationWithSubstitutedVariables(folder, config) {
+		if (Array.isArray(config.defines)) {
+			config.defines = config.defines.flatMap((define) => (/^\s*-D/.test(define) ? buildFlags.defines(define) : define.trim() ? [define] : []));
 		}
 		return config;
 	}
