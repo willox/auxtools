@@ -171,8 +171,8 @@ Exit codes:
 		sections: "Behavior:
   Hot reload gives a changed .dmf skin or client script to clients when they
   log in; connected clients keep what they have. This command asks each one
-  to reconnect, as Dream Seeker's .reconnect does. The world sees each client log
-  out and in again. A world Dream Seeker hosts is rebooted instead, since its
+  to reconnect, as DreamSeeker's .reconnect does. The world sees each client log
+  out and in again. A world DreamSeeker hosts is rebooted instead, since its
   own window can't reconnect without restarting the world; the command then
   returns when the new world starts running.
 
@@ -198,8 +198,8 @@ Exit codes:
   The journal retains only the most recent few thousand entries.
   --follow reconnects across reboots and ends when the world exits.
   Runtime logging does not require pausing the world.
-  Captured output is available from dd and DreamDaemon launchers; DreamSeeker
-  does not expose output for the launcher to capture.
+  Captured output is available from DreamDaemon (dd.exe on Windows);
+  DreamSeeker and windowed DreamDaemon do not expose it to the launcher.
 
 Output:
   JSON entries contain number, time (Unix milliseconds), world_time

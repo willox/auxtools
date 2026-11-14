@@ -165,7 +165,7 @@ pub fn reconnect(world: &mut World, args: &args::Reconnect) -> Result<()> {
 		}
 		Response::Reconnect(Ok(Reconnected::Hosted)) => {
 			if !args.json {
-				eprintln!("Dream Seeker hosts the world: rebooting it instead.");
+				eprintln!("DreamSeeker hosts the world: rebooting it instead.");
 			}
 			reboot(world, &args::Reboot {
 				timeout: args.timeout,

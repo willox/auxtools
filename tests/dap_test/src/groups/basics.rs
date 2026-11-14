@@ -45,7 +45,7 @@ fn asked_to_end() {
 		"expected one world/Del() call; output:\n{}",
 		world.output
 	);
-	assert!(world.output.contains("Requested shutdown"), "missing shutdown diagnostic");
+	assert!(world.output.contains("Stopping the world"), "missing shutdown diagnostic");
 	assert!(
 		took < grace && !world.output.contains("Shutdown timed out"),
 		"the world was ended, {:?} on",
@@ -143,7 +143,10 @@ fn told_along_the_way() {
 	let mut world = World::launch_as(json!({ "supportsProgressReporting": true }), host_file(""), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
+	// The source worker prints that itself; the adapter reports `active` after
+	// handling the worker's earlier events, which end the parse's progress.
+	while world.event("auxtoolsReload")["body"]["state"] != "active" {}
 	let events = progress(&mut world);
 	for id in ["starting", "reading"] {
 		let (start, end) = (
@@ -232,6 +235,7 @@ fn capabilities() {
 		"supportsInstructionBreakpoints",
 		"supportsLoadedSourcesRequest",
 		"supportsLogPoints",
+		"supportsRestartRequest",
 		"supportsSetExpression",
 		"supportsSetVariable",
 		"supportsSteppingGranularity",
@@ -271,7 +275,7 @@ fn refusals() {
 
 	let why = launcher.refused("launch", json!({ "byondPath": byond }));
 	assert!(
-		why.contains("specify the world to launch"),
+		why.contains("specify dme or dmb to select a world"),
 		"unexpected missing-world diagnostic: {:?}",
 		why
 	);
@@ -283,7 +287,7 @@ fn refusals() {
 	);
 	let why = launcher.refused("launch", json!({ "dme": host_file("not_built.dme"), "byondPath": byond }));
 	assert!(
-		why.contains("there's no") && why.contains("not_built.dmb"),
+		why.contains("file not found: ") && why.contains("not_built.dmb"),
 		"launching a world that isn't built said {:?}",
 		why
 	);

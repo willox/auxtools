@@ -27,7 +27,7 @@ fn script(world: &mut World) -> (String, Vec<String>, String) {
 
 /// Wait for a client script reload report.
 fn told(world: &mut World) {
-	world.wait_output("Hot reload: client script updated for new logins");
+	world.wait_output("Hot reload: client script updated.");
 	let event = world.event("auxtoolsScript");
 	assert_eq!(event["body"], json!({ "clients": 0, "hosted": false }), "{}", event);
 }
@@ -46,7 +46,7 @@ pub fn run() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	let (text, files, full) = script(&mut world);
 	assert_ne!(text, "none");
 	assert_eq!(files.len(), 1, "{:?}", files);
@@ -77,9 +77,10 @@ pub fn run() {
 	assert_eq!(script(&mut world).2, "<style>x {}</style>\n\n<style>third {}</style>");
 	ok("client script restoration");
 
+	world.drop_events("auxtoolsReload");
 	world.run("reboot");
 	world.wait_count("dap: world/New", 2);
-	world.wait_output("Hot reload: client script restored after reboot");
+	world.reloaded("client script");
 	world.wait_output("The world restarted");
 	assert_eq!(script(&mut world).2, "<style>x {}</style>\n\n<style>third {}</style>");
 	ok("client script reload after reboot");

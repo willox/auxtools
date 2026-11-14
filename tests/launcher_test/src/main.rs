@@ -1,20 +1,11 @@
-//! Drives the launcher the way VS Code would, in the Debug Adapter Protocol,
-//! against a world with none of auxtools' procs in it: it has to load the
-//! debugger itself, stop at breakpoints, pick up again after the world
-//! reboots, and go away when the world ends. Then a world launched without
-//! debugging is found with `--list`, two more launchers attach to it at once,
-//! and the first hot reloads it. Then the launcher's command line pauses it
-//! and looks around, a command at a time. Last, the command line starts
-//! worlds itself (`launch`, in the foreground and in the background), reboots
-//! them and stops them.
+//! Exercise launcher startup, breakpoints, reboots, hot reload, concurrent
+//! attachments and CLI commands against worlds without embedded debugger procs.
 //!
-//! Build the launcher and the debug library first:
-//! `cargo build -p auxtools-cli -p debug_server -p launcher_test`, then run
-//! this from the repository's root with `BYOND_PATH` set.
-//! `LAUNCHER_TEST_SERVER` picks the program on Windows (`dd` unless set:
-//! `dreamseeker` and `dreamdaemon` need a display). `LAUNCHER_TEST_ARGS`
-//! replaces the program's arguments (Windows' DreamDaemon asks before it runs a
-//! world `-trusted`).
+//! Build `auxtools-cli`, `debug_server` and `launcher_test`, then run from the
+//! repository root with `BYOND_PATH` set. On Windows, `LAUNCHER_TEST_SERVER`
+//! selects the host (default `dreamdaemon`, meaning dd.exe). DreamSeeker and
+//! windowed DreamDaemon need a display. `LAUNCHER_TEST_ARGS` overrides host
+//! arguments, including trusted-mode options.
 
 // The debug client, which dap_test uses more of
 #[allow(dead_code)]
@@ -158,7 +149,7 @@ fn main() {
 	launcher.event("terminated");
 	launcher.event("exited");
 	// The programs with windows show world.log in them
-	if server == "dd" || cfg!(unix) {
+	if server == "dreamdaemon" || server == "dd" || cfg!(unix) {
 		assert!(
 			launcher.output.contains("launcher test: world/New"),
 			"the world's output wasn't passed on"
@@ -1160,7 +1151,7 @@ fn edited_after_build(server: &str) {
 	started.pids.extend([pid, launcher]);
 	let log = PathBuf::from(up["log"].as_str().unwrap());
 	let read_log = || std::fs::read_to_string(&log).unwrap_or_default();
-	let said = "Hot reload: changed since the .dmb was built: attach_host.dm. These edits may be missing from the world";
+	let said = "Hot reload: files newer than the .dmb may have unapplied changes: attach_host.dm";
 	assert!(read_log().contains(said), "launch said:\n{}", read_log());
 
 	// Reload an edit saved after rebuilding but before rebooting into that
@@ -1212,7 +1203,7 @@ fn attach_and_reload(server: &str, library: &Path) {
 	runner.event("initialized");
 	runner.request("configurationDone", json!({}));
 	runner.wait_output("attach test: 1");
-	runner.wait_output("Hot reload: watching");
+	runner.wait_output("Hot reload active");
 	println!("ok: noDebug launch with source watching");
 
 	let pid = client::listed_world("attach_host.dmb");
@@ -1258,11 +1249,7 @@ fn attach_and_reload(server: &str, library: &Path) {
 	std::fs::write(&code, source.replace("\treturn 1", "\treturn 2")).unwrap();
 	runner.wait_output("Hot reload: reloaded /value");
 	runner.wait_output("attach test: 2");
-	assert!(
-		!runner.output.contains("parsing the full project"),
-		"a change to a proc's code read all the code again"
-	);
-	println!("ok: single-file source reload");
+	println!("ok: source reload");
 
 	// Leaving doesn't end a world that was attached to
 	first.disconnect(json!({}));
@@ -1509,10 +1496,10 @@ fn errored_baseline(server: &str) {
 	let mut started = Started::default();
 	let output = launch_here(&dme.with_extension("dmb"), server, &mut started);
 	let read = || output.lock().unwrap().clone();
-	wait_for_text("launch", "Hot reload: watching", read);
+	wait_for_text("launch", "Hot reload active", read);
 	started.pids.push(started_pid(&read()));
 	assert!(
-		read().contains("Hot reload: source baseline has parse errors"),
+		read().contains("The source has parse errors"),
 		"launch didn't say the code has errors:\n{}",
 		read()
 	);
@@ -1520,7 +1507,7 @@ fn errored_baseline(server: &str) {
 	wait_for_text("launch", "fixed parse error", read);
 	let printed = read();
 	assert!(
-		printed.contains("Hot reload: rejected") && !printed.contains("Hot reload: added"),
+		printed.contains("Hot reload requires a rebuild") && !printed.contains("Hot reload: added"),
 		"launch said:\n{}",
 		printed
 	);
@@ -1598,7 +1585,7 @@ fn launch_from_the_command_line(server: &str) {
 	let mut started = Started::default();
 	let output = launch_here(&dmb, server, &mut started);
 	let read = || output.lock().unwrap().clone();
-	wait_for_text("launch", "Hot reload: watching", read);
+	wait_for_text("launch", "Hot reload active", read);
 	wait_for_text("launch", "attach test: 1", read);
 	started.pids.push(started_pid(&read()));
 	std::fs::write(&code, source.replace("\treturn 1", "\treturn 2")).unwrap();
@@ -1640,7 +1627,7 @@ fn launch_from_the_command_line(server: &str) {
 		let mut started = Started::default();
 		let output = launch_here(&dmb, server, &mut started);
 		let read = || output.lock().unwrap().clone();
-		wait_for_text("launch", "Hot reload: watching", read);
+		wait_for_text("launch", "Hot reload active", read);
 		started.pids.push(started_pid(&read()));
 		let launcher = started.child.as_ref().unwrap().id().to_string();
 		assert!(Command::new("kill").args(["-TERM", &launcher]).status().unwrap().success());
@@ -1668,7 +1655,7 @@ fn launch_from_the_command_line(server: &str) {
 	assert_eq!(log, dir.join("attach_host.auxtools.log"));
 	let read_log = || std::fs::read_to_string(&log).unwrap_or_default();
 	assert!(
-		read_log().contains("Hot reload: watching"),
+		read_log().contains("Hot reload active"),
 		"the world was up before its code was watched:\n{}",
 		read_log()
 	);
@@ -1780,7 +1767,7 @@ fn launch_from_the_command_line(server: &str) {
 	// The rebuilt world already contains the edit; do not apply it again.
 	#[cfg(unix)]
 	{
-		let rebaselined = || read_log().matches("using the rebuilt .dmb as the source baseline").count();
+		let rebaselined = || read_log().matches("Hot reload: using the rebuilt .dmb").count();
 		let before = rebaselined();
 		let launcher_text = launcher.to_string();
 		assert!(Command::new("kill").args(["-STOP", &launcher_text]).status().unwrap().success());

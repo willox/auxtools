@@ -36,7 +36,7 @@ pub fn run() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	let (first, text) = skin(&mut world);
 	assert_eq!(text, SKIN);
 	ok("built skin");
@@ -54,23 +54,24 @@ pub fn run() {
 	world
 		.marks
 		.edit("skin.dmf", "title = \"first\"", "title = \"second\"\n\t\timage = 'new.png'");
-	world.wait_output("Hot reload: skin skin.dmf updated for new logins");
+	world.wait_output("Hot reload: skin skin.dmf updated.");
 	let told = world.event("auxtoolsSkin");
 	assert_eq!(told["body"], json!({ "file": "skin.dmf", "clients": 0, "hosted": false }), "{}", told);
 	let (second, text) = skin(&mut world);
 	assert_ne!(second, first);
 	assert_eq!(text, text_of(&dir, "skin.dmf"));
 	ok("skin reload");
-	world.wait_output("'new.png': new skin resources; rebuild to display it");
+	world.wait_output("'new.png' is new to the skin and needs a rebuild.");
 	ok("new skin image warnings");
 
 	let reconnected = world.request("auxtoolsReconnect", json!({}));
 	assert_eq!(reconnected, json!({ "reconnected": 0 }));
 	ok("reconnect skips unlogged connections");
 
+	world.drop_events("auxtoolsReload");
 	world.run("reboot");
 	world.wait_count("dap: world/New", 2);
-	world.wait_output("Hot reload: skin skin.dmf restored after reboot");
+	world.reloaded("skin skin.dmf");
 	world.wait_output("The world restarted");
 	let (_, text) = skin(&mut world);
 	assert_eq!(text, text_of(&dir, "skin.dmf"));
@@ -89,7 +90,7 @@ pub fn run() {
 		"#include \"skin.dmf\"\n",
 		"#include \"skin.dmf\"\n#include \"other.dmf\"\n"
 	);
-	world.wait_output("Hot reload: skin other.dmf updated for new logins");
+	world.wait_output("Hot reload: skin other.dmf updated.");
 	let (_, text) = skin(&mut world);
 	assert_eq!(text, text_of(&dir, "other.dmf"));
 	ok("last included skin");

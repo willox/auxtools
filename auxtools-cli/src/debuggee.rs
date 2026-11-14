@@ -212,11 +212,11 @@ impl Debuggee {
 							}
 						}
 
-						Response::Notification { message } => out.console(format!("[auxtools] {}", message)),
+						Response::Notification { message } => out.console(message),
 
 						// A breakpoint's condition failed: said once, and the
 						// world doesn't stop for it
-						Response::ConditionFailed { message } => out.console(format!("[auxtools] {}", message)),
+						Response::ConditionFailed { message } => out.console(message),
 
 						Response::BreakpointHit { .. } | Response::Resumed if !debugging => {}
 

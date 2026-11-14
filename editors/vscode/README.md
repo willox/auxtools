@@ -4,16 +4,32 @@ Debug BYOND worlds in VS Code with [auxtools](https://github.com/auxtools/auxtoo
 Supports breakpoints, stepping, runtime errors, sleeping proc stacks, variable
 inspection, expression evaluation, disassembly and experimental hot reload.
 
-The launcher loads the debugger without changes to your world's source. Windows
-supports DreamSeeker and DreamDaemon; Linux supports DreamDaemon. Install a DM
-language extension alongside it for syntax highlighting and language features.
+The launcher loads the debugger without changes to your world's source. Worlds
+run in DreamDaemon (`dd.exe` on Windows). Install a DM language extension
+alongside it for syntax highlighting and language features.
 
 ## Start debugging
 
-Build your world, then press F5. The extension runs the `.dmb` in DreamSeeker on
-Windows or DreamDaemon on Linux. If several worlds are available, select one.
-You can also use **auxtools: Debug in DreamSeeker** or **auxtools: Debug in
-DreamDaemon** from the command palette.
+Build your world, then press F5 or use **auxtools: Debug in DreamDaemon**.
+The extension runs the `.dmb` in DreamDaemon and asks you to select a world
+when needed.
+
+With the [DM language client](https://github.com/SpaceManiac/vscode-dm-langclient),
+F5 and **Debug in DreamDaemon** use its selected environment. Launch
+configurations use it too when `dmb` and `dme` are omitted.
+
+**Add Configuration...** uses the language client's full commands:
+`${command:dreammaker.getFilenameDmb}` and
+`${command:dreammaker.getFilenameDme}`, prefixed with `${workspaceFolder}/`.
+It also sets the language client's build task as `preLaunchTask`.
+
+On Windows, the extension opens DreamSeeker when it launches a world.
+Disable this with `auxtools.autoJoin`; **auxtools: Join with DreamSeeker**
+opens a client whenever needed. On Linux, the command offers the address
+to copy instead.
+
+Clients opened this way close with the world (`auxtools.closeDreamSeeker`).
+A reboot keeps them open to reconnect.
 
 **Run Without Debugging** (Ctrl+F5) disables breakpoints and stepping while keeping
 hot reload enabled. You can also set `"noDebug": true` in a launch configuration.
@@ -35,18 +51,22 @@ provides templates:
 | --- | --- |
 | `dmb` | Compiled world to run. |
 | `dme` | Project environment; defaults to the `.dme` beside the `.dmb`. Its directory is the source root. |
-| `server` | `dreamseeker`, `dreamdaemon` or `dd`. `dd` uses Windows' console DreamDaemon. |
-| `defines` | Build defines as `NAME` or `NAME=VALUE`. Use the same `-D` values as DreamMaker so hot reload parses the same source. |
+| `server` | Default: `dreamdaemon` (`dd.exe` on Windows). Windows also supports `dreamdaemon-gui` for windowed DreamDaemon and `dreamseeker` to host in DreamSeeker. `dd` remains an alias for `dreamdaemon`. |
+| `defines` | Match the build's defines: `NAME`, `NAME=VALUE` or strings of DreamMaker arguments such as `-DA -DB=2`. When omitted, uses flags from the [SS13 Build Flags extension](https://github.com/spacestation13/SS13-BuildFlags) if present. |
 | `noDebug` | Disable debugging. Default: `false`. |
 | `hotReload` | Reload source changes on save. Default: `true`. |
 | `sleepingThreads` | Maximum sleeping procs shown in the call stack. Default: `100`. |
 | `byondPath` | Optional BYOND installation path. |
-| `args` | Arguments after the `.dmb`, replacing the defaults: `-trusted`, plus `-close` for windowed DreamDaemon on Windows. |
+| `port` | Listening port. If omitted, DreamDaemon chooses a free port when the process starts. |
+| `args` | Arguments after the `.dmb`, replacing the defaults: `-trusted`, plus `-close` for `dreamdaemon-gui` on Windows. |
 | `env` | Environment variables for the world. |
-| `debugLibrary` | Path to a custom debug library. |
+| `debugLibrary` | Override `auxtools.debugLibrary` for this launch. If neither is set, use the library bundled with the extension. |
 
-Linux DreamDaemon and Windows `dd.exe` send output to the Debug Console.
-DreamSeeker and windowed DreamDaemon display output in their own windows.
+Set `"defines": []` to disable automatic flags. To combine SS13 Build Flags
+with additional defines, use `"defines": ["${command:ss13BuildFlags.current}", "MORE"]`.
+
+DreamDaemon sends output to the Debug Console. DreamSeeker and `dreamdaemon-gui`
+display output in their own windows.
 The debugger reconnects after `world.Reboot()` and restores breakpoints and reloads.
 
 **Stop** requests shutdown through `world/Del()`, allowing cleanup such as saving.
@@ -54,8 +74,17 @@ After five seconds, the launcher terminates the process. Press **Stop** again or
 use **Disconnect** to terminate a launched world immediately. Attached worlds
 follow the [attach behavior](#attach-to-a-running-world) below.
 
-Windows DreamDaemon may prompt before running in trusted mode. Select
-"Don't ask me this again" to suppress that prompt.
+**Restart** runs the configuration's `preLaunchTask`, then reboots the world
+with `world.Reboot()`. The process and port stay the same, players reconnect,
+and the world loads the `.dmb` and restores reloads. A build task can therefore
+rebuild the world before it reboots.
+
+If launch settings changed or the debugger disconnected, Restart stops the
+old process and launches a replacement. **auxtools: Reboot world** skips the
+build task and reboots in place, including in attached sessions.
+
+Windowed DreamDaemon (`dreamdaemon-gui`) may prompt before running in trusted
+mode. Select "Don't ask me this again" to suppress that prompt.
 
 ## Breakpoints
 
@@ -204,7 +233,15 @@ instruction, entering a callee if needed. **Step Out** returns to the caller.
 ## Hot reload (experimental)
 
 Saving a source file reloads supported changes, including during **Run Without
-Debugging**. The Debug Console reports results and changes requiring a rebuild.
+Debugging**. The status bar shows reload progress and results; click it for
+join, reconnect, restart, reboot and stop actions. The Debug Console reports
+each reload.
+
+Unsupported changes appear at their source lines in the Problems panel.
+The notification offers **Restart**, which runs `preLaunchTask` before
+restarting. The launcher does not build the world itself: configure a build
+task or rebuild manually. Startup warnings also identify files newer than
+the `.dmb`, whose edits may be missing from the world.
 
 After reboot, reloads are restored before world code runs. Reloads introducing
 resources absent from the build wait until `world/New`, so map atoms run the
@@ -282,7 +319,7 @@ watched and reloaded too.
 
 Saving the last `.dmf` included by the `.dme` updates the login skin and
 preserves it after reboot. Connected players must reconnect to load it. Use the
-reload notification or **auxtools: Reconnect players**. Dream Seeker-hosted
+reload notification or **auxtools: Reconnect players**. DreamSeeker-hosted
 worlds reboot instead because the host cannot reconnect independently. New image
 references absent from the build require a rebuild.
 
@@ -320,8 +357,23 @@ for attach sessions to avoid competing with the launching session's reloads.
 
 - `auxtools.byondPath`: BYOND installation directory. Discovery checks
   `BYOND_SYSTEM`, the registry, `Program Files`, `~/byond` and `/usr/local/byond`.
-- `auxtools.launcherPath`: custom launcher path.
-- `auxtools.debugLibrary`: custom debug library path.
+- `auxtools.launcherPath`: optional launcher override. Leave empty to use the
+  bundled launcher.
+- `auxtools.debugLibrary`: optional debug library override (`debug_server.dll`
+  or `libdebug_server.so`). Leave empty to use the library bundled with the
+  extension.
+- `auxtools.addToTerminalPath`: add the launcher directory to terminal `PATH`
+  so commands such as `auxtools log` work there. Relaunch existing terminals
+  to apply changes. Default: `true`.
+- `auxtools.autoJoin`: open DreamSeeker on a world when it starts (Windows).
+  Default: `true`.
+- `auxtools.closeDreamSeeker`: close clients opened by the extension when the
+  world process exits. Default: `true`.
+- `auxtools.notifications`: set any category to `false` to hide its notifications:
+  - `reconnect`: reconnect players after a skin or script reload.
+  - `join`: join offers when not joined automatically; copy the address if DreamSeeker is unavailable.
+  - `rebuild`: changes that hot reload cannot apply.
+  - `outdated`: edits that may be missing from the build.
 
 ## License
 

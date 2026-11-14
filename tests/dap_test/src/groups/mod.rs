@@ -11,6 +11,7 @@ pub mod logpoints;
 pub mod pausing;
 pub mod reboots;
 pub mod reloading;
+pub mod restarts;
 pub mod runtimes;
 pub mod scripts;
 pub mod sessions;

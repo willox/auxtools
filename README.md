@@ -13,7 +13,7 @@ Debug Server - Debug DM worlds from [VS Code](editors/vscode) or the command lin
 
 The debugger supports line, function, instruction and data breakpoints; conditional breakpoints and logpoints; runtime error breakpoints; line and instruction stepping; sleeping proc stacks; variable inspection and assignment; expression and proc-body evaluation; and disassembly. A journal records runtime errors, reloads, output and reboots.
 
-No changes to the world's source are required. `auxtools` launches a compiled `.dmb` in DreamSeeker, DreamDaemon or `dd.exe` with the debug library loaded. Build the world with your project's usual tools. After `world.Reboot()`, the launcher reconnects and restores breakpoints and reloads.
+No changes to the world's source are required. `auxtools` launches a compiled `.dmb` in DreamDaemon (`dd.exe` on Windows), windowed DreamDaemon or DreamSeeker with the debug library loaded. Build the world with your project's usual tools. After `world.Reboot()`, the launcher reconnects and restores breakpoints and reloads.
 
 Multiple debuggers can connect to the same world. Each session has independent breakpoints and runtime error settings. Pausing stops the world for every session; any session can resume it.
 
@@ -55,7 +55,7 @@ Running globals and statics keep their values when their initializers change. Af
 
 Saving an icon, sound or other referenced resource reloads it, including files found through `FILE_DIR`. Existing appearances redraw with the new file; recompiled code and defaults use it too. Stored values and generated assets keep their old resources. Shared resources need a rebuild to separate them. After reboot, resource edits are restored at `world/New`. Reloaded `FILE_DIR` resources use paths relative to the world directory rather than their source spelling. See the [extension documentation](editors/vscode/README.md#icons-sounds-and-other-files) for details and limits.
 
-Saving the `.dmf` skin updates the interface sent at login. Connected clients need to reconnect; `auxtools reconnect` requests this, or reboots Dream Seeker-hosted worlds.
+Saving the `.dmf` skin updates the interface sent at login. Connected clients need to reconnect; `auxtools reconnect` requests this, or reboots DreamSeeker-hosted worlds.
 
 Changes to `client/script` text also apply at login. Resource-file scripts and included `.dms` files require a rebuild.
 

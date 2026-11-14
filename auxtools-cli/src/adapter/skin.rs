@@ -34,36 +34,23 @@ impl Adapter {
 		};
 
 		if restored {
-			self.out.console(format!("Hot reload: skin {} restored after reboot", file));
 			self.journal_reload(true, format!("skin {} restored", file), vec![], vec![]);
 			return true;
 		}
-		let mut notes = vec![];
-		if reloaded.clients > 0 {
-			notes.push(if reloaded.hosted {
-				"Reboot to load the new skin in Dream Seeker's host window; auxtools reconnect does this".to_owned()
-			} else {
-				format!(
-					"{} the old interface until {}; run auxtools reconnect to load the new skin",
-					if reloaded.clients == 1 {
-						"1 connected client keeps".to_owned()
-					} else {
-						format!("{} connected clients keep", reloaded.clients)
-					},
-					if reloaded.clients == 1 { "it reconnects" } else { "they reconnect" }
-				)
-			});
-		}
+		let mut notes: Vec<String> = self.waiting_clients(reloaded.clients, reloaded.hosted, "skin").into_iter().collect();
 		if !images.is_empty() {
 			notes.push(format!(
-				"{}: new skin resources; rebuild to display {}",
+				"{} {} new to the skin and need{} a rebuild.",
 				images.iter().map(|name| format!("'{}'", name)).collect::<Vec<_>>().join(", "),
-				if images.len() == 1 { "it" } else { "them" }
+				if images.len() == 1 { "is" } else { "are" },
+				if images.len() == 1 { "s" } else { "" }
 			));
 		}
-
-		self.out.console(format!("Hot reload: skin {} updated for new logins", file));
-		self.notes(&notes);
+		self.out.console(format!(
+			"Hot reload: skin {} updated.{}",
+			file,
+			notes.iter().map(|n| format!(" {}", n)).collect::<String>()
+		));
 		self.journal_reload(true, format!("skin {}", file), vec![], notes);
 		self.out.event(SkinEvent {
 			file,
@@ -73,14 +60,25 @@ impl Adapter {
 		true
 	}
 
-	/// Reconnect clients to load the skin. Reboot Dream Seeker-hosted worlds.
+	/// Reconnect instructions for clients retaining the old skin or script.
+	/// Return none when no clients are connected.
+	pub(super) fn waiting_clients(&self, clients: u32, hosted: bool, what: &str) -> Option<String> {
+		// VS Code offers the action; CLI callers need the command.
+		let how = if self.out.to_client() { "" } else { " Run auxtools reconnect." };
+		match (clients, hosted) {
+			(0, _) => None,
+			(_, true) => Some(format!("Reboot the DreamSeeker-hosted world to load the new {}.{}", what, how)),
+			(1, false) => Some(format!("1 connected client needs to reconnect for the new {}.{}", what, how)),
+			(_, false) => Some(format!("{} connected clients need to reconnect for the new {}.{}", clients, what, how))
+		}
+	}
+
+	/// Reconnect clients to load the skin. Reboot DreamSeeker-hosted worlds.
 	pub(super) fn reconnect_clients(&mut self) -> Handled {
 		match self.request(&AuxRequest::Reconnect)? {
 			AuxResponse::Reconnect(Ok(aux::Reconnected::Clients(clients))) => Ok(serde_json::json!({ "reconnected": clients })),
 			AuxResponse::Reconnect(Ok(aux::Reconnected::Hosted)) => {
-				self.out.console("Rebooting the Dream Seeker-hosted world to load the update");
-				// Reboot closes the connection without a response.
-				self.debuggee()?.eval_unanswered("world.Reboot()".to_owned())?;
+				self.reboot()?;
 				Ok(serde_json::json!({ "rebooted": true }))
 			}
 			AuxResponse::Reconnect(Err(e)) => Err(e),

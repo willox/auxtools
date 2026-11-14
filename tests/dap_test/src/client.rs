@@ -25,6 +25,22 @@ pub fn next_to_us(name: &str) -> PathBuf {
 	path
 }
 
+/// Launch configuration for `dme`, extended by `more`.
+pub fn launch_arguments(byond: &Path, dme: &Path, more: Value) -> Value {
+	let mut arguments = json!({
+		"dme": dme,
+		"byondPath": byond,
+		"server": server(),
+		"debugLibrary": library_path(),
+		"args": test_args(),
+		"hotReload": false
+	});
+	for (name, value) in more.as_object().unwrap() {
+		arguments[name] = value.clone();
+	}
+	arguments
+}
+
 pub fn launcher_path() -> PathBuf {
 	next_to_us(if cfg!(windows) { "auxtools.exe" } else { "auxtools" })
 }
@@ -36,7 +52,7 @@ pub fn library_path() -> PathBuf {
 /// The program that runs the worlds: `LAUNCHER_TEST_SERVER`, or the one whose
 /// output the launcher can pass on
 pub fn server() -> String {
-	std::env::var("LAUNCHER_TEST_SERVER").unwrap_or_else(|_| if cfg!(windows) { "dd" } else { "dreamdaemon" }.to_owned())
+	std::env::var("LAUNCHER_TEST_SERVER").unwrap_or_else(|_| "dreamdaemon".to_owned())
 }
 
 /// The program's arguments, when `LAUNCHER_TEST_ARGS` replaces them
@@ -265,6 +281,19 @@ impl Launcher {
 		}
 	}
 
+	/// Wait for a successful reload whose summary contains `what`.
+	pub fn reloaded(&mut self, what: &str) -> Value {
+		let deadline = Instant::now() + TIMEOUT;
+		loop {
+			let event = self
+				.event_within("auxtoolsReload", deadline.saturating_duration_since(Instant::now()))
+				.unwrap_or_else(|| panic!("no successful reload reported for {}; output:\n{}", what, self.output));
+			if event["body"]["state"] == "reloaded" && event["body"]["summary"].as_str().is_some_and(|summary| summary.contains(what)) {
+				return event;
+			}
+		}
+	}
+
 	/// Whether an event of this name has come and not been taken
 	pub fn has_event(&mut self, name: &str) -> bool {
 		// Whatever has arrived is looked at first
@@ -453,18 +482,7 @@ impl Launcher {
 	/// program, and waits for the launcher to ask for breakpoints. `more` adds
 	/// to the launch's arguments, or replaces them.
 	pub fn launch(&mut self, byond: &Path, dme: &Path, more: Value) {
-		let mut arguments = json!({
-			"dme": dme,
-			"byondPath": byond,
-			"server": server(),
-			"debugLibrary": library_path(),
-			"args": test_args(),
-			"hotReload": false
-		});
-		for (name, value) in more.as_object().unwrap() {
-			arguments[name] = value.clone();
-		}
-		self.request("launch", arguments);
+		self.request("launch", launch_arguments(byond, dme, more));
 		self.event("initialized");
 	}
 

@@ -33,9 +33,12 @@ use crate::{
 
 mod data;
 mod files;
+mod join;
 mod journal;
+mod restart;
 mod script;
 mod skin;
+mod status;
 
 pub use journal::reload_by_another;
 
@@ -61,6 +64,7 @@ const FUNCTION_BREAKPOINTS: &str = "<functions>";
 const STARTING: &str = "starting";
 const READING: &str = "reading";
 const RESTARTING: &str = "restarting";
+const RELOADING: &str = "reloading";
 /// Response to requests when debugger initialization failed.
 const UNAVAILABLE: &str = "debugger initialization failed";
 /// Retry interval while waiting for the debug server to listen.
@@ -89,7 +93,15 @@ pub enum Input {
 		generation: u64,
 		reason: String
 	},
-	Code(code::Event),
+	/// Source worker event, tagged with the worker number.
+	Code {
+		worker: u64,
+		event: code::Event
+	},
+	/// Requested reboot still pending on connection `generation`.
+	RebootOverdue {
+		generation: u64
+	},
 	/// Another client hot reloaded the world
 	CodeChanged {
 		generation: u64
@@ -131,7 +143,7 @@ pub enum Input {
 	Quit
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct LaunchArguments {
 	#[serde(default)]
@@ -150,6 +162,8 @@ struct LaunchArguments {
 	/// Swap changed code into the world as files are saved
 	#[serde(default = "yes")]
 	hot_reload: bool,
+	/// DreamDaemon port, passed before `args` or default arguments.
+	port: Option<u16>,
 	/// Command-line arguments after the `.dmb`, replacing the defaults.
 	args: Option<Vec<String>>,
 	#[serde(default)]
@@ -158,6 +172,54 @@ struct LaunchArguments {
 	debug_library: Option<PathBuf>,
 	/// Maximum sleeping procs to include in the thread list.
 	sleeping_threads: Option<u32>
+}
+
+/// Validated launch configuration.
+struct Prepared {
+	program: PathBuf,
+	dmb: PathBuf,
+	dme: Option<PathBuf>,
+	library: PathBuf,
+	/// Host arguments following the `.dmb`.
+	args: Vec<String>
+}
+
+impl Prepared {
+	fn of(args: &LaunchArguments) -> Result<Self, String> {
+		let dme = args.dme.clone().or_else(|| args.dmb.as_ref().map(|dmb| dmb.with_extension("dme")));
+		let dmb = args
+			.dmb
+			.clone()
+			.or_else(|| args.dme.as_ref().map(|dme| dme.with_extension("dmb")))
+			.ok_or("specify dme or dmb to select a world")?;
+
+		let bin = byond::bin_dir(args.byond_path.as_deref())?;
+		let server = args.server.unwrap_or_else(Server::default_for_platform);
+		let program = bin.join(server.program());
+		if !program.is_file() {
+			return Err(format!("{} was not found in {}", server.program(), bin.display()));
+		}
+		if !dmb.is_file() {
+			return Err(format!("file not found: {}", dmb.display()));
+		}
+		let library = match &args.debug_library {
+			Some(library) => library.clone(),
+			None => default_library()?
+		};
+		if args.port.is_some() && server == Server::DreamSeeker && cfg!(windows) {
+			return Err("port is unsupported with DreamSeeker; use server dreamdaemon".to_owned());
+		}
+		// BYOND expects the port before other arguments.
+		let mut game_args: Vec<String> = args.port.iter().map(u16::to_string).collect();
+		game_args.extend(args.args.clone().unwrap_or_else(|| default_args(server)));
+		Ok(Self {
+			program,
+			dmb,
+			dme,
+			library,
+			args: game_args
+		})
+	}
 }
 
 #[derive(Deserialize)]
@@ -309,11 +371,23 @@ pub struct Adapter {
 	pid: Option<u32>,
 	/// The world the adapter launched
 	game: Option<Game>,
+	/// Configuration used to launch the current world.
+	launched: Option<LaunchArguments>,
+	/// Pending configuration for relaunch after process exit.
+	relaunching: Option<(LaunchArguments, Prepared)>,
+	/// Session-requested reboot; suppress its expected disconnect message.
+	rebooting: bool,
+	/// DreamSeeker processes opened for this world.
+	joined: join::Joined,
+	/// Last hot reload state reported to the client.
+	reload_status: status::ReloadStatus,
 
 	/// Parse options retained until the first connection.
 	code_settings: Option<CodeSettings>,
 	/// Source worker thread, while active.
 	code: Option<mpsc::Sender<code::Command>>,
+	/// Current source worker number.
+	code_worker: u64,
 	hot_reload: bool,
 	/// Whether the initial source parse has finished, successfully or
 	/// otherwise.
@@ -427,8 +501,14 @@ pub fn serve(out: Output, inputs: mpsc::Sender<Input>, receiver: &mpsc::Receiver
 		debugging: true,
 		pid: None,
 		game: None,
+		launched: None,
+		relaunching: None,
+		rebooting: false,
+		joined: join::Joined::default(),
+		reload_status: status::ReloadStatus::default(),
 		code_settings: None,
 		code: None,
+		code_worker: 0,
 		hot_reload: false,
 		code_read: false,
 		watching: false,
@@ -484,6 +564,7 @@ pub fn serve(out: Output, inputs: mpsc::Sender<Input>, receiver: &mpsc::Receiver
 	if let Some(game) = adapter.game.take() {
 		game.kill();
 	}
+	adapter.joined.world_ended();
 }
 
 fn arguments<T: for<'de> Deserialize<'de>>(arguments: Option<Value>) -> Result<T, String> {
@@ -512,7 +593,13 @@ impl Adapter {
 				}
 			}
 			Input::Unavailable { generation, reason } => self.debugger_unavailable(generation, &reason),
-			Input::Code(event) => self.code_event(event),
+			// Ignore events from replaced workers.
+			Input::Code { worker, event } => {
+				if worker == self.code_worker {
+					self.code_event(event);
+				}
+			}
+			Input::RebootOverdue { generation } => self.reboot_overdue(generation),
 			Input::WorldOutput(lines) => self.journal_output(lines),
 			Input::Logged { message, file, line } => {
 				// Include the source location so the client can create a link.
@@ -547,11 +634,15 @@ impl Adapter {
 				}
 			}
 			Input::GameExited(code) => {
+				self.game = None;
+				if let Some((args, prepared)) = self.relaunching.take() {
+					self.relaunched(args, prepared);
+					return true;
+				}
 				match code {
 					Some(code) => self.out.console(format!("The world exited with code {}", code)),
 					None => self.out.console("The world was terminated")
 				}
-				self.game = None;
 				self.ended(code.unwrap_or(-1));
 			}
 			Input::TerminateOverdue { process } => {
@@ -577,6 +668,7 @@ impl Adapter {
 	/// Report the world's exit before closing the launcher.
 	fn ended(&mut self, exit_code: i32) {
 		self.pid = None;
+		self.joined.world_ended();
 		if let Some(mut debuggee) = self.debuggee.take() {
 			debuggee.gone();
 		}
@@ -616,6 +708,9 @@ impl Adapter {
 			"setBreakpoints" => arguments(args).and_then(|args| self.set_breakpoints(args)),
 			"auxtoolsUnsaved" => arguments(args).and_then(|args| self.unsaved_changed(args)),
 			"auxtoolsReconnect" => self.reconnect_clients(),
+			"auxtoolsJoin" => arguments(args).and_then(|args| self.join(args)),
+			"auxtoolsReboot" => self.reboot(),
+			"restart" => arguments(args).and_then(|args| self.restart(args)),
 			"setFunctionBreakpoints" => arguments(args).and_then(|args| self.set_function_breakpoints(args)),
 			"setInstructionBreakpoints" => arguments(args).and_then(|args| self.set_instruction_breakpoints(args)),
 			"setExceptionBreakpoints" => arguments(args).and_then(|args| self.set_exception_breakpoints(args)),
@@ -695,6 +790,7 @@ impl Adapter {
 			supportsExceptionInfoRequest: Some(true),
 			supportTerminateDebuggee: Some(true),
 			supportsTerminateRequest: Some(true),
+			supportsRestartRequest: Some(true),
 			supportsBreakpointLocationsRequest: Some(true),
 			supportsDataBreakpoints: Some(true),
 			supportsLoadedSourcesRequest: Some(true),
@@ -733,46 +829,42 @@ impl Adapter {
 		if self.pid.is_some() {
 			return Err("a world is already running".to_owned());
 		}
-		let dme = args.dme.clone().or_else(|| args.dmb.as_ref().map(|dmb| dmb.with_extension("dme")));
-		let dmb = args
-			.dmb
-			.clone()
-			.or_else(|| args.dme.as_ref().map(|dme| dme.with_extension("dmb")))
-			.ok_or("specify the world to launch with dme or dmb")?;
+		let prepared = Prepared::of(&args)?;
+		self.start(args, prepared)?;
+		Ok(Value::Null)
+	}
 
-		let bin = byond::bin_dir(args.byond_path.as_deref())?;
-		let server = args.server.unwrap_or_else(Server::default_for_platform);
-		let program = bin.join(server.program());
-		if !program.is_file() {
-			return Err(format!("there's no {} in {}", server.program(), bin.display()));
-		}
-
-		if !dmb.is_file() {
-			return Err(format!("there's no {}", dmb.display()));
-		}
-
-		let library = match args.debug_library {
-			Some(library) => library,
-			None => default_library()?
-		};
-
+	/// Start the validated launch. Reuse the source worker on restart
+	/// when its settings are unchanged.
+	fn start(&mut self, args: LaunchArguments, prepared: Prepared) -> Result<(), String> {
 		self.debugging = !args.no_debug;
 		self.sleeping_threads = args.sleeping_threads.unwrap_or(aux::DEFAULT_SLEEPING_STACKS);
-		self.code_settings = Some(CodeSettings {
-			dme: dme.filter(|dme| dme.is_file()),
-			defines: args.defines,
-			hot_reload: args.hot_reload
+		let same_code = self.launched.as_ref().is_some_and(|old| {
+			// Parse options depend on the BYOND build.
+			(&old.dme, &old.dmb, &old.defines, old.hot_reload, &old.byond_path)
+				== (&args.dme, &args.dmb, &args.defines, args.hot_reload, &args.byond_path)
 		});
+		if !same_code {
+			self.drop_code();
+			// The new worker sends its own macros.
+			self.macros = None;
+			self.code_read = false;
+			self.watching = false;
+			self.code_settings = Some(CodeSettings {
+				dme: prepared.dme.clone().filter(|dme| dme.is_file()),
+				defines: args.defines.clone(),
+				hot_reload: args.hot_reload
+			});
+		}
 
-		let game_args = args.args.unwrap_or_else(|| default_args(server));
 		// Debugged worlds wait for breakpoints. Hot reload also requires a wait
 		// after reboot; release the initial launch as soon as we connect.
 		let launch = Launch {
-			program,
-			dmb: &dmb,
-			args: &game_args,
+			program: prepared.program,
+			dmb: &prepared.dmb,
+			args: &prepared.args,
 			env: &args.env,
-			debug: Some((library, self.debugging || args.hot_reload))
+			debug: Some((prepared.library, self.debugging || args.hot_reload))
 		};
 		let (out, inputs, files) = (self.out.clone(), self.inputs.clone(), self.files.clone());
 		let batch = journal::batch_output(self.inputs.clone());
@@ -804,15 +896,16 @@ impl Adapter {
 		)?;
 		self.pid = Some(game.pid());
 		self.game = Some(game);
+		self.launched = Some(args);
 		self.out.event(dap::ProcessEvent {
-			name: dmb.to_string_lossy().into_owned(),
+			name: prepared.dmb.to_string_lossy().into_owned(),
 			systemProcessId: self.pid.unwrap_or_default(),
 			isLocalProcess: true,
 			startMethod: "launch".to_owned()
 		});
 		self.progress_start(STARTING, "Starting the world".to_owned());
 		self.started(None);
-		Ok(Value::Null)
+		Ok(())
 	}
 
 	fn attach(&mut self, args: AttachArguments) -> Handled {
@@ -858,8 +951,9 @@ impl Adapter {
 
 	/// The world is running: connect to it, unless that's done
 	fn started(&mut self, stream: Option<Stream>) {
-		// Without debugging, there are no breakpoints to wait for
-		if !self.debugging {
+		// Without debugging, there are no breakpoints to wait for. Send the
+		// event once per session, including across relaunches.
+		if !self.debugging && !self.initialized {
 			self.initialized = true;
 			self.out.event(InitializedEvent);
 		}
@@ -893,9 +987,12 @@ impl Adapter {
 					let _ = inputs.send(Input::Connected { generation, stream });
 					return;
 				}
-				// The launched world's exit is heard about anyway
-				if !launched && !local::alive(pid) {
-					let _ = inputs.send(Input::ProcessGone);
+				// The launched process has its own exit event. A restart
+				// connects to the replacement process.
+				if !local::alive(pid) {
+					if !launched {
+						let _ = inputs.send(Input::ProcessGone);
+					}
 					return;
 				}
 				std::thread::sleep(CONNECT_INTERVAL);
@@ -951,6 +1048,7 @@ impl Adapter {
 		// A responding world either recovered from failed shutdown or started
 		// anew.
 		self.shutting_down = false;
+		self.rebooting = false;
 		self.send_output();
 		self.give_macros();
 		self.follow_reloads();
@@ -977,7 +1075,7 @@ impl Adapter {
 				// disconnection.
 				None => {
 					self.hot_reload = false;
-					self.code = None;
+					self.drop_code();
 				}
 			}
 		}
@@ -1009,10 +1107,20 @@ impl Adapter {
 		match self.request(&AuxRequest::Reloader { who }) {
 			Ok(AuxResponse::Reloader(Err(why))) => {
 				self.out.console(format!("Hot reload disabled: {}", why));
+				self.reload_state("off", Some(why));
 				false
 			}
 			_ => true
 		}
+	}
+
+	/// Stop the source worker, ignore its queued events and end its progress.
+	fn drop_code(&mut self) {
+		self.code = None;
+		self.code_worker += 1;
+		self.progress_end(READING);
+		self.progress_end(RELOADING);
+		self.forget_refusals();
 	}
 
 	/// Resolve and parse the project source for hot reload.
@@ -1020,7 +1128,7 @@ impl Adapter {
 	fn start_code(&mut self, settings: CodeSettings) {
 		// The world's command line says which .dmb it runs
 		let dmb = match self.request(&AuxRequest::WorldInfo) {
-			Ok(AuxResponse::WorldInfo { args, cwd }) => local::world_dmb(&args, &cwd),
+			Ok(AuxResponse::WorldInfo { args, cwd, .. }) => local::world_dmb(&args, &cwd),
 			_ => None
 		};
 		let dme = settings.dme.or_else(|| Some(dmb.as_ref()?.with_extension("dme")));
@@ -1032,6 +1140,7 @@ impl Adapter {
 		}
 		let Some(dme) = dme.filter(|dme| dme.is_file()) else {
 			self.out.console("Hot reload disabled: project .dme not found");
+			self.reload_state("off", Some("project .dme not found".to_owned()));
 			self.code_read = true;
 			return;
 		};
@@ -1044,8 +1153,10 @@ impl Adapter {
 			defines: settings.defines.iter().map(|define| code::parse_define(define)).collect(),
 			hot_reload: settings.hot_reload
 		};
-		self.progress_start(READING, "Parsing project source".to_owned());
-		self.code = Some(code::start(options, self.out.clone(), self.inputs.clone()));
+		self.progress_start(READING, "Reading source for hot reload".to_owned());
+		self.reload_state("reading", None);
+		self.code_worker += 1;
+		self.code = Some(code::start(options, self.out.clone(), self.inputs.clone(), self.code_worker));
 	}
 
 	fn code_event(&mut self, event: code::Event) {
@@ -1066,6 +1177,7 @@ impl Adapter {
 			}
 			code::Event::Failed(e) => {
 				self.out.console(format!("Hot reload disabled: could not parse source: {}", e));
+				self.reload_state("off", Some(format!("could not parse source: {}", e)));
 				self.code_read = true;
 				self.code = None;
 				self.say_ready();
@@ -1082,8 +1194,13 @@ impl Adapter {
 			}
 			code::Event::Watching => {
 				self.watching = true;
+				self.reload_state("active", None);
 				self.say_ready();
 			}
+			code::Event::Reloading => self.reloading(),
+			code::Event::Looked => self.looked(),
+			code::Event::Refusals(refusals) => self.outstanding(refusals),
+			code::Event::Outdated(files) => self.outdated(files),
 			code::Event::Reload {
 				request,
 				summary,
@@ -1106,8 +1223,17 @@ impl Adapter {
 					let _ = code.send(code::Command::Reloaded(applied));
 				}
 			}
-			code::Event::NotReloaded { summary, errors, warnings } => self.journal_reload(false, summary, errors, warnings),
-			code::Event::NothingChanged { warnings } => self.journal_reload(true, "no runtime changes".to_owned(), vec![], warnings),
+			code::Event::NotReloaded { refused, warnings, .. } if !refused.is_empty() => self.refused(refused, warnings),
+			code::Event::NotReloaded {
+				summary, errors, warnings, ..
+			} => {
+				self.reload_state("failed", Some(summary.clone()));
+				self.journal_reload(false, summary, errors, warnings);
+			}
+			code::Event::NothingChanged { warnings } => {
+				self.reload_state("reloaded", Some("no changes to the running code".to_owned()));
+				self.journal_reload(true, "no runtime changes".to_owned(), vec![], warnings);
+			}
 			code::Event::Macros(macros) => {
 				self.macros = Some(macros);
 				self.give_macros();
@@ -1120,12 +1246,20 @@ impl Adapter {
 				world
 			} => {
 				let applied = self.debuggee.as_ref().is_some_and(|d| d.generation == world) && self.reload_skin(request, &file, &images, restored);
+				match applied {
+					true => self.reload_state("reloaded", Some(format!("skin {}", file.display()))),
+					false => self.reload_state("failed", Some(format!("skin {}", file.display())))
+				}
 				if let Some(code) = &self.code {
 					let _ = code.send(code::Command::Reloaded(applied));
 				}
 			}
 			code::Event::Script { request, restored, world } => {
 				let applied = self.debuggee.as_ref().is_some_and(|d| d.generation == world) && self.reload_script(request, restored);
+				match applied {
+					true => self.reload_state("reloaded", Some("client script".to_owned())),
+					false => self.reload_state("failed", Some("client script".to_owned()))
+				}
 				if let Some(code) = &self.code {
 					let _ = code.send(code::Command::Reloaded(applied));
 				}
@@ -1150,12 +1284,14 @@ impl Adapter {
 				let why = unexpected(other);
 				self.notes(&notes);
 				self.out.console(format!("Hot reload failed: {}", why));
+				self.reload_state("failed", Some(why.clone()));
 				self.journal_reload(false, "reload failed".to_owned(), vec![why], notes);
 				return false;
 			}
 			Err(e) => {
 				self.notes(&notes);
 				self.out.console(format!("Hot reload failed: {}", e));
+				self.reload_state("failed", Some(e.clone()));
 				self.journal_reload(false, "reload failed".to_owned(), vec![e], notes);
 				return false;
 			}
@@ -1198,8 +1334,10 @@ impl Adapter {
 		let took = self.reload_started.take().map_or(0, |started| started.elapsed().as_millis());
 		if result.applied {
 			self.out.console(format!("Hot reload: {} in {} ms", summary, took));
+			self.reload_state("reloaded", Some(summary.clone()));
 		} else {
 			self.out.console("Hot reload failed:");
+			self.reload_state("failed", Some(result.errors.first().cloned().unwrap_or_default()));
 		}
 		for e in &result.errors {
 			self.out.console(format!("    {}", e));
@@ -1248,6 +1386,7 @@ impl Adapter {
 		let _ = self.ack(&AuxRequest::Configured);
 		self.catch_up_on_pause();
 		self.configured = true;
+		self.announce_world();
 		self.say_ready();
 	}
 
@@ -1333,7 +1472,7 @@ impl Adapter {
 			// Shutdown ends the session when the process exits. Suppress
 			// reconnect messages while its socket still accepts and immediately
 			// closes connections.
-			if !self.shutting_down {
+			if !self.shutting_down && !self.rebooting {
 				self.out.console(format!("Debug server disconnected ({}); waiting to reconnect", reason));
 				self.progress_start(RESTARTING, "Waiting to reconnect".to_owned());
 			}
@@ -1420,6 +1559,11 @@ impl Adapter {
 			return Ok(Value::Null);
 		};
 		if self.ending {
+			// Stop during restart shutdown cancels the relaunch.
+			if self.relaunching.take().is_some() {
+				self.progress_end(RESTARTING);
+				self.out.console("Restart cancelled: the world is stopping");
+			}
 			return Ok(Value::Null);
 		}
 		self.ending = true;
@@ -1430,7 +1574,7 @@ impl Adapter {
 			.as_mut()
 			.is_some_and(|debuggee| debuggee.eval_unanswered("world.Del()".to_owned()).is_ok());
 		if asked {
-			self.out.console("Requested shutdown through world/Del()");
+			self.out.console("Stopping the world");
 			let inputs = self.inputs.clone();
 			let launched = self.game.is_some();
 			std::thread::spawn(move || {
@@ -1492,6 +1636,9 @@ impl Adapter {
 			// filter's default, here as in the worlds after a reboot
 			self.catch_runtimes()?;
 			self.ack(&AuxRequest::Configured)?;
+			self.catch_up_on_pause();
+			self.announce_world();
+			return Ok(Value::Null);
 		}
 		self.catch_up_on_pause();
 		Ok(Value::Null)
@@ -1868,7 +2015,7 @@ impl Adapter {
 			Ok(None) => Breakpoint {
 				id: Some(id),
 				verified: false,
-				message: Some(format!("there's no {}", name)),
+				message: Some(format!("proc not found: {}", name)),
 				..Default::default()
 			},
 			Err(e) => Breakpoint {
@@ -2801,7 +2948,7 @@ fn unexpected(response: AuxResponse) -> String {
 /// Default arguments passed after the `.dmb` unless overridden.
 pub fn default_args(server: Server) -> Vec<String> {
 	match server {
-		Server::DreamDaemon if cfg!(windows) => vec!["-trusted".to_owned(), "-close".to_owned()],
+		Server::DreamDaemonGui if cfg!(windows) => vec!["-trusted".to_owned(), "-close".to_owned()],
 		_ => vec!["-trusted".to_owned()]
 	}
 }

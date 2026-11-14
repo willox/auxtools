@@ -17,7 +17,7 @@ fn told_after_reboot() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	let set = world.function_breakpoints(&["/proc/sc_added"]).remove(0);
 	assert_eq!(set["verified"], false, "{}", set);
 	super::reloading::edit(

@@ -51,11 +51,6 @@
 		],
 		"commands": [
 			{
-				"command": "auxtools.debugDreamSeeker",
-				"title": "Debug in DreamSeeker",
-				"category": "auxtools"
-			},
-			{
 				"command": "auxtools.debugDreamDaemon",
 				"title": "Debug in DreamDaemon",
 				"category": "auxtools"
@@ -74,20 +69,43 @@
 				"command": "auxtools.reconnectClients",
 				"title": "Reconnect players",
 				"category": "auxtools"
+			},
+			{
+				"command": "auxtools.join",
+				"title": "Join with DreamSeeker",
+				"category": "auxtools"
+			},
+			{
+				"command": "auxtools.reboot",
+				"title": "Reboot world",
+				"category": "auxtools"
+			},
+			{
+				"command": "auxtools.menu",
+				"title": "Show world actions",
+				"category": "auxtools"
 			}
 		],
 		"menus": {
 			"commandPalette": [
-				{
-					"command": "auxtools.debugDreamSeeker",
-					"when": "isWindows"
-				},
 				{
 					"command": "auxtools.pickWorld",
 					"when": "false"
 				},
 				{
 					"command": "auxtools.reconnectClients",
+					"when": "debugType == auxtools"
+				},
+				{
+					"command": "auxtools.join",
+					"when": "debugType == auxtools"
+				},
+				{
+					"command": "auxtools.reboot",
+					"when": "debugType == auxtools"
+				},
+				{
+					"command": "auxtools.menu",
 					"when": "debugType == auxtools"
 				}
 			]
@@ -103,12 +121,56 @@
 				"auxtools.launcherPath": {
 					"type": "string",
 					"default": "",
-					"markdownDescription": "Path to a custom `auxtools` launcher."
+					"markdownDescription": "Optional launcher override. Leave empty to use the bundled `auxtools` launcher."
 				},
 				"auxtools.debugLibrary": {
 					"type": "string",
 					"default": "",
-					"markdownDescription": "Path to a custom `debug_server.dll` or `libdebug_server.so`."
+					"markdownDescription": "Optional `debug_server.dll` or `libdebug_server.so` override. Leave empty to use the library bundled with the extension."
+				},
+				"auxtools.addToTerminalPath": {
+					"type": "boolean",
+					"default": true,
+					"markdownDescription": "Add the launcher directory to VS Code terminals' `PATH` so `auxtools` commands are available."
+				},
+				"auxtools.autoJoin": {
+					"type": "boolean",
+					"default": true,
+					"markdownDescription": "Join launched worlds with DreamSeeker automatically (Windows). Clients reconnect after reboot."
+				},
+				"auxtools.closeDreamSeeker": {
+					"type": "boolean",
+					"default": true,
+					"markdownDescription": "Close clients opened by the extension when their world process exits."
+				},
+				"auxtools.notifications": {
+					"type": "object",
+					"markdownDescription": "Show notifications by category.",
+					"properties": {
+						"reconnect": {
+							"type": "boolean",
+							"description": "Offer to reconnect players after a skin or client script reload."
+						},
+						"join": {
+							"type": "boolean",
+							"description": "Offer to join when not joined automatically; offer the address if DreamSeeker is unavailable."
+						},
+						"rebuild": {
+							"type": "boolean",
+							"description": "Warn when hot reload cannot apply a change."
+						},
+						"outdated": {
+							"type": "boolean",
+							"description": "Warn about edits that may be missing from the build."
+						}
+					},
+					"additionalProperties": false,
+					"default": {
+						"reconnect": true,
+						"join": true,
+						"rebuild": true,
+						"outdated": true
+					}
 				}
 			}
 		},
@@ -134,23 +196,26 @@
 							"server": {
 								"type": "string",
 								"enum": [
-									"dreamseeker",
 									"dreamdaemon",
+									"dreamdaemon-gui",
+									"dreamseeker",
 									"dd"
 								],
 								"enumDescriptions": [
+									"Console DreamDaemon (dd.exe on Windows), with output in the Debug Console",
+									"Windowed DreamDaemon (Windows), with output in its own window",
 									"Host and join the world in DreamSeeker (Windows)",
-									"DreamDaemon",
-									"Console DreamDaemon (dd.exe on Windows), with output in the Debug Console"
+									"Alias for dreamdaemon"
 								],
-								"description": "BYOND host program. Defaults to DreamSeeker on Windows and DreamDaemon on Linux."
+								"default": "dreamdaemon",
+								"description": "BYOND host program. Default: DreamDaemon (dd.exe on Windows)."
 							},
 							"defines": {
 								"type": "array",
 								"items": {
 									"type": "string"
 								},
-								"description": "Build defines as NAME or NAME=VALUE. Must match DreamMaker for hot reload.",
+								"description": "Build defines as NAME, NAME=VALUE or DreamMaker -D arguments. Must match the build. If omitted, uses flags from the SS13 Build Flags extension if present. Use [] to disable automatic flags.",
 								"default": []
 							},
 							"hotReload": {
@@ -160,7 +225,7 @@
 							},
 							"noDebug": {
 								"type": "boolean",
-								"description": "Run without debugging. Hot reload remains available, as with Run Without Debugging.",
+								"description": "Run without debugging.",
 								"default": false
 							},
 							"sleepingThreads": {
@@ -173,12 +238,18 @@
 								"type": "string",
 								"description": "BYOND installation path. Overrides auxtools.byondPath and automatic discovery."
 							},
+							"port": {
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 65535,
+								"description": "Listening port. If omitted, DreamDaemon chooses a free port when the process starts."
+							},
 							"args": {
 								"type": "array",
 								"items": {
 									"type": "string"
 								},
-								"description": "Arguments after the .dmb, replacing the defaults: -trusted, plus -close for windowed DreamDaemon on Windows."
+								"description": "Arguments after the .dmb, replacing the defaults: -trusted, plus -close for dreamdaemon-gui on Windows."
 							},
 							"env": {
 								"type": "object",
@@ -189,7 +260,7 @@
 							},
 							"debugLibrary": {
 								"type": "string",
-								"description": "Path to a custom debug library."
+								"description": "Override auxtools.debugLibrary for this launch. If neither is set, use the library bundled with the extension."
 							}
 						}
 					},
@@ -212,7 +283,7 @@
 								"items": {
 									"type": "string"
 								},
-								"description": "Build defines as NAME or NAME=VALUE. Must match DreamMaker.",
+								"description": "Build defines as NAME, NAME=VALUE or DreamMaker -D arguments. Must match the build. If omitted, uses flags from the SS13 Build Flags extension if present. Use [] to disable automatic flags.",
 								"default": []
 							},
 							"hotReload": {
@@ -234,21 +305,11 @@
 						"type": "auxtools",
 						"request": "launch",
 						"name": "Debug world",
-						"dmb": "${workspaceFolder}/${workspaceFolderBasename}.dmb"
+						"dmb": "${workspaceFolder}/${workspaceFolderBasename}.dmb",
+						"server": "dreamdaemon"
 					}
 				],
 				"configurationSnippets": [
-					{
-						"label": "auxtools: Debug in DreamSeeker",
-						"description": "Debug the built world in DreamSeeker",
-						"body": {
-							"type": "auxtools",
-							"request": "launch",
-							"name": "Debug in DreamSeeker",
-							"dmb": "^\"\\${workspaceFolder}/${1:world}.dmb\"",
-							"server": "dreamseeker"
-						}
-					},
 					{
 						"label": "auxtools: Debug in DreamDaemon",
 						"description": "Debug the built world in DreamDaemon",

@@ -31,29 +31,15 @@ impl Adapter {
 			}
 		};
 		if restored {
-			self.out.console("Hot reload: client script restored after reboot");
 			self.journal_reload(true, "client script restored".to_owned(), vec![], vec![]);
 			return true;
 		}
-		let mut notes = vec![];
-		if reloaded.clients > 0 {
-			notes.push(if reloaded.hosted {
-				"Reboot to load the new script in Dream Seeker's host window; auxtools reconnect does this".to_owned()
-			} else {
-				format!(
-					"{} the old script until {}; run auxtools reconnect to load the new script",
-					if reloaded.clients == 1 {
-						"1 connected client keeps".to_owned()
-					} else {
-						format!("{} connected clients keep", reloaded.clients)
-					},
-					if reloaded.clients == 1 { "it reconnects" } else { "they reconnect" }
-				)
-			});
-		}
-		self.out.console("Hot reload: client script updated for new logins");
-		self.notes(&notes);
-		self.journal_reload(true, "client script".to_owned(), vec![], notes);
+		let waiting = self.waiting_clients(reloaded.clients, reloaded.hosted, "script");
+		self.out.console(format!(
+			"Hot reload: client script updated.{}",
+			waiting.iter().map(|w| format!(" {}", w)).collect::<String>()
+		));
+		self.journal_reload(true, "client script".to_owned(), vec![], waiting.into_iter().collect());
 		self.out.event(ScriptEvent {
 			clients: reloaded.clients,
 			hosted: reloaded.hosted

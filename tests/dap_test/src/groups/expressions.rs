@@ -515,7 +515,7 @@ pub fn run() {
 	assert_eq!(stale["success"], false, "{}", stale);
 	assert!(stale["message"].as_str().unwrap().starts_with("there's no frame 99"), "{}", stale);
 	assert!(
-		!world.output.contains("[auxtools]"),
+		!world.output.contains("frame 99"),
 		"the debug server had something to say in the console:\n{}",
 		world.output
 	);

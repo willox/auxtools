@@ -3120,22 +3120,10 @@ impl Server {
 			self.notify(format!("runtime error during hot reload: {}", err));
 		}
 
-		// Every client hears what changed
+		// Notify other clients that code changed. The reloading launcher
+		// reports details; the journal informs other launchers.
 		if result.applied && !request.is_empty() {
-			let skipped_count = request.removed_procs.iter().filter(|r| result.skipped.contains(&r.proc.path)).count();
 			self.broadcast(Response::CodeChanged, self.current);
-			self.notify(format!(
-				"Hot reload: new code for {} procs, new settings for {}, {} new procs, {} unlinked, {} new vars, {} new var defaults, {} new init \
-				 procs, {} moved",
-				request.procs.len(),
-				request.settings.len(),
-				request.new_procs.len(),
-				request.removed_procs.len() - skipped_count,
-				request.new_vars.len(),
-				request.var_defaults.len(),
-				request.init_procs.len(),
-				request.line_moves.len()
-			));
 		}
 
 		result
@@ -3358,7 +3346,8 @@ impl Server {
 
 			Request::WorldInfo => {
 				let (args, cwd) = crate::launched::command_line();
-				self.send_or_disconnect(Response::WorldInfo { args, cwd });
+				let port = Value::WORLD.get_number(byond_string!("port")).map_or(0, |port| port as u16);
+				self.send_or_disconnect(Response::WorldInfo { args, cwd, port });
 			}
 
 			Request::StdDef => {
@@ -3809,7 +3798,7 @@ impl Server {
 
 		waker::alive();
 		if waker::woke() {
-			self.notify("Woke world suspended by world.sleep_offline to process debugger requests");
+			self.notify("Waking world...");
 		}
 
 		// Avoid polling an empty channel on every DM instruction.

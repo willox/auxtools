@@ -62,7 +62,7 @@ pub fn run() {
 		world.run_through("middle");
 	}
 	let (_, line) = world.marks.place("leaf_1");
-	let said = "[auxtools] The condition (x.len > 3) of the breakpoint at ";
+	let said = "The condition (x.len > 3) of the breakpoint at ";
 	assert_eq!(world.count(said), 1, "expected exactly one diagnostic matching {:?}", said);
 	let place = format!("stepping.dm:{} {}runtime error: Cannot read 3.len", line, failed);
 	assert_eq!(world.count(&place), 1, "expected exactly one diagnostic matching {:?}", place);

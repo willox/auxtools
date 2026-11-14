@@ -1,6 +1,6 @@
 //! Debugging a world while its code is hot reloaded
 
-use std::{path::PathBuf, process::Command};
+use std::{path::PathBuf, process::Command, time::Duration};
 
 use serde_json::{json, Value};
 
@@ -68,6 +68,15 @@ fn reloads(output: &str) -> usize {
 		.count()
 }
 
+/// Return the last reload state the launcher reported.
+fn last_reload_state(world: &mut World) -> Value {
+	let mut last = world.event("auxtoolsReload");
+	while let Some(next) = world.event_within("auxtoolsReload", Duration::from_millis(500)) {
+		last = next;
+	}
+	last["body"].clone()
+}
+
 /// Changes a file, and waits for the world to have the change
 pub fn edit(world: &mut World, file: &str, old: &str, new: &str) {
 	let before = reloads(&world.output);
@@ -107,7 +116,7 @@ fn watched_world(name: &str) -> (World, PathBuf) {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	(world, dir)
 }
 
@@ -135,7 +144,7 @@ fn behind_the_clients_back() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	let at = world.marks.clone();
 	assert_eq!(world.eval_global("TWICE(21)"), "42");
 
@@ -413,7 +422,7 @@ fn starting_at_world_new() {
 
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	edit(&mut world, "bare.dm", "\treturn null\n", "\treturn 'reload_new.dmi'\n");
 	assert_eq!(world.eval_global("jointext(icon_states(icon_new()), \",\")"), "\"new1\"");
 	assert!(
@@ -511,7 +520,7 @@ fn override_restored_before_map() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	edit(
 		&mut world,
 		"placed.dm",
@@ -571,9 +580,9 @@ var/rb_late = rb_a
 
 /// Save a source change with no immediate runtime effect.
 fn edit_nothing_to_run(world: &mut World, file: &str, old: &str, new: &str) {
-	let before = world.count("Hot reload: no runtime changes");
+	let before = world.count("Hot reload: no changes to the running code");
 	world.marks.edit(file, old, new);
-	world.wait_count("Hot reload: no runtime changes", before + 1);
+	world.wait_count("Hot reload: no changes to the running code", before + 1);
 }
 
 /// Running globals and statics retain their values. After reboot, run
@@ -597,7 +606,7 @@ fn initializers_after_reboot() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	const VALUES: &str = "\"[rb_a] [rb_b] [rb_news] [rb_made.n] [(new /datum/rb_static).s] [rb_local()] [rb_c] [rb_seen]\"";
 	// Only initializers changed; no immediate runtime effect.
 	edit_nothing_to_run(&mut world, "inits.dm", "var/rb_a = 5\n", "var/rb_a = 7\n");
@@ -663,7 +672,7 @@ fn initializer_added_to_a_world_without() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	edit(
 		&mut world,
 		"bare.dm",
@@ -700,7 +709,7 @@ fn file_named_by_a_reload() {
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	edit(
 		&mut world,
 		"main.dm",
@@ -742,7 +751,7 @@ fn resource_files() {
 	let dir = copy_of_the_world("resources");
 	let mut world = World::launch_in(dir.clone(), json!({ "hotReload": true }));
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 	assert_eq!(world.eval_global("make_lamps()"), "\"made\"");
 	assert_eq!(world.eval_global("lamp_states()"), "\"on,off\"");
 
@@ -757,9 +766,10 @@ fn resource_files() {
 	ok("icon reload on existing and new instances");
 
 	// Restore the icon after reboot, including appearances made while loading.
+	world.drop_events("auxtoolsReload");
 	world.run("reboot");
 	world.wait_count("dap: world/New", 2);
-	world.wait_output("Hot reload: restoring resource files changed since the build");
+	world.reloaded("lamp");
 	assert_eq!(world.eval_global("states_of(early_lamp.icon)"), new);
 	assert_eq!(world.eval_global("lamp_states()"), new);
 	ok("saved icon restored after reboot");
@@ -841,7 +851,7 @@ pub fn run() {
 	let mut world = World::launch_as(json!({ "supportsInvalidatedEvent": true }), dir.clone(), json!({ "hotReload": true }));
 	world.catch_runtimes(false);
 	world.configure();
-	world.wait_output("Hot reload: watching");
+	world.wait_output("Hot reload active");
 
 	// Three lines more above the breakpoint: the client moves its mark with
 	// the text, and says where its breakpoints are now
@@ -864,12 +874,8 @@ pub fn run() {
 	assert_eq!(world.local("y"), "4");
 	ok("client-remapped breakpoint stays on its statement");
 
-	// What the debug server has to say comes once, as the launcher's words
-	assert_eq!(
-		world.count("[auxtools] Hot reload: new code for"),
-		1,
-		"expected exactly one reload notification"
-	);
+	// Only the launcher should summarize its reload.
+	assert_eq!(world.count("new code for"), 0, "duplicate reload summary from the debug server");
 	assert!(
 		!world.output.contains("Debug Server:"),
 		"the debug server's own output was passed on as well"
@@ -1028,7 +1034,7 @@ pub fn run() {
 
 	// Resolve a pending function breakpoint when reload adds the proc.
 	let set = world.function_breakpoints(&["/proc/later"]);
-	assert_eq!(set[0]["message"], "there's no /proc/later", "{}", set[0]);
+	assert_eq!(set[0]["message"], "proc not found: /proc/later", "{}", set[0]);
 	world.drop_events("breakpoint");
 	edit(
 		&mut world,
@@ -1083,17 +1089,47 @@ pub fn run() {
 
 	// An edit the world can't take: nothing changes, breakpoints included
 	world.break_on(&["leaf_2"]);
+	world.drop_events("auxtoolsReload");
 	world.marks.edit("stepping.dm", "\tvar/n = 1\n", "\tvar/n = 1\n\tvar/list/broken = (\n");
-	world.wait_output("Hot reload: rejected; rebuild required");
+	world.wait_output("Hot reload requires a rebuild");
+	let refused = last_reload_state(&mut world);
+	assert_eq!(refused["state"], "refused", "{}", refused);
+	assert!(!refused["problems"].as_array().unwrap().is_empty(), "{}", refused);
 	world.drop_events("breakpoint");
 	world.run("middle");
 	world.stop_on("breakpoint", "/leaf", "leaf_2");
 	world.break_on(&[]);
 	world.resume_through("middle");
 	world.marks.edit("stepping.dm", "\tvar/list/broken = (\n", "");
-	world.wait_output("Hot reload: no runtime changes");
+	world.wait_output("Hot reload: no changes to the running code");
+	let fixed = last_reload_state(&mut world);
+	assert_eq!((&fixed["state"], &fixed["problems"]), (&json!("reloaded"), &json!([])), "{}", fixed);
 	world.drop_events("breakpoint");
 	ok("rejected reload preserves code and breakpoints");
+
+	// A refusal outlasts reloads of other files, until its own file reloads.
+	let before = world.count("Hot reload requires a rebuild");
+	world.drop_events("auxtoolsReload");
+	world
+		.marks
+		.edit("stepping.dm", "/mob/player\n", "/mob/refused\n\tckey = \"someone\"\n\n/mob/player\n");
+	world.wait_count("Hot reload requires a rebuild", before + 1);
+	let refused = last_reload_state(&mut world);
+	assert_eq!(refused["state"], "refused", "{}", refused);
+	// A proc body edit reloads only its file.
+	edit(&mut world, "errors.dm", "return fail_null() + 1", "return fail_null() + 2");
+	let still = last_reload_state(&mut world);
+	assert_eq!(
+		(&still["state"], &still["problems"]),
+		(&refused["state"], &refused["problems"]),
+		"{}",
+		still
+	);
+	world.marks.edit("stepping.dm", "/mob/refused\n\tckey = \"someone\"\n\n", "");
+	let fixed = last_reload_state(&mut world);
+	assert_eq!(fixed["problems"], json!([]), "{}", fixed);
+	edit(&mut world, "errors.dm", "return fail_null() + 2", "return fail_null() + 1");
+	ok("refusal outlasts unrelated reloads");
 
 	// The next world is loaded from the .dmb, and gets the reloads again
 	world.break_on(&["leaf_2"]);

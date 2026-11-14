@@ -38,7 +38,7 @@ pub fn run() {
 	assert_eq!(set[0]["verified"], true, "{}", set[0]);
 	for (breakpoint, name) in set[1..].iter().zip(["/proc/not_there", "leaf", "/datum/thing/sub/bump#3"]) {
 		assert_eq!(breakpoint["verified"], false, "{}", breakpoint);
-		assert_eq!(breakpoint["message"], format!("there's no {}", name));
+		assert_eq!(breakpoint["message"], format!("proc not found: {}", name));
 	}
 	ok("world proc lookup and missing-proc diagnostics");
 

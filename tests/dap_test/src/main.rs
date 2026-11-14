@@ -48,6 +48,7 @@ const GROUPS: &[(&str, fn())] = &[
 	("runtimes", groups::runtimes::run),
 	("sessions", groups::sessions::run),
 	("reboots", groups::reboots::run),
+	("restarts", groups::restarts::run),
 	("reloading", groups::reloading::run),
 	("bytecode", groups::bytecode::run),
 	("skins", groups::skins::run),

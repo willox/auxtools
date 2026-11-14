@@ -610,7 +610,7 @@ dependencies = [
 [[package]]
 name = "dmasm"
 version = "0.1.0"
-source = "git+https://github.com/auxtools/dmasm?branch=master#ec2c77752548905d92678ca21c85f5f5119dbe35"
+source = "git+https://github.com/auxtools/dmasm?branch=master#c8170d33231822c5891baece9d1fbaa438c66cf1"
 dependencies = [
  "bitflags 2.13.2",
  "dreammaker",

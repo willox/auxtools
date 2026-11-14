@@ -122,7 +122,7 @@ impl Game {
 			format!(
 				"Started {} (process {})
 ",
-				launch.program.display(),
+				launch.program.file_name().unwrap_or(launch.program.as_os_str()).to_string_lossy(),
 				pid
 			)
 		);
