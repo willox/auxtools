@@ -7,6 +7,7 @@ mod code;
 mod dap;
 mod debuggee;
 mod lines;
+mod skin;
 mod stddef;
 
 fn main() {

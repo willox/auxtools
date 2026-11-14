@@ -34,6 +34,32 @@ pub fn copy_of_the_world(name: &str) -> PathBuf {
 	dir
 }
 
+/// The directory's long path. Windows can give the temporary directory by
+/// an 8.3 name (`RUNNER~1`). DreamMaker expands the path of an included
+/// `.dmf` or `.dms`, so under such a directory it rejects the file as
+/// outside the world's ("invalid file") and builds the world without it.
+#[cfg(windows)]
+pub fn long_name(dir: PathBuf) -> PathBuf {
+	use std::os::windows::ffi::{OsStrExt, OsStringExt};
+	#[link(name = "kernel32")]
+	extern "system" {
+		fn GetLongPathNameW(short: *const u16, long: *mut u16, len: u32) -> u32;
+	}
+	let short: Vec<u16> = dir.as_os_str().encode_wide().chain(Some(0)).collect();
+	let mut long = vec![0u16; 1024];
+	// SAFETY: `short` ends in a NUL, and `long` has room for `len` units
+	let len = unsafe { GetLongPathNameW(short.as_ptr(), long.as_mut_ptr(), long.len() as u32) } as usize;
+	if len == 0 || len > long.len() {
+		return dir;
+	}
+	PathBuf::from(std::ffi::OsString::from_wide(&long[..len]))
+}
+
+#[cfg(not(windows))]
+pub fn long_name(dir: PathBuf) -> PathBuf {
+	dir
+}
+
 /// How many reloads the launcher has said were done
 fn reloads(output: &str) -> usize {
 	output

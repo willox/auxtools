@@ -232,6 +232,12 @@ Breakpoints follow statements after edits from VS Code, other editors or checkou
 The VS Code extension reports unsaved files to the launcher. Other DAP clients
 that do not report this state use on-disk line numbers for new breakpoints.
 
+### Skins
+
+Saving the last `.dmf` included by the `.dme` updates the login skin and
+preserves it after reboot. Connected players need to reconnect or reboot to load
+it. New image references absent from the build require a rebuild.
+
 ## Attach to a running world
 
 Use **auxtools: Attach to a running world** to select a world started by the

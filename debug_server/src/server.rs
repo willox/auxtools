@@ -338,6 +338,8 @@ pub struct Server {
 	eval_warnings: Vec<String>,
 	/// World is loaded and waiting for launcher configuration.
 	waiting_to_start: bool,
+	/// Skin deferred until world data loads at `world/New`.
+	pending_skin: Option<SkinRequest>,
 	/// Object used as `src` for the next frameless evaluation.
 	eval_src: Option<Value>,
 	/// The number of the expression being compiled to be spawned, which is
@@ -393,6 +395,8 @@ impl Server {
 					.arg(Arg::new("proc").help("Path of the proc to disassemble (e.g. /proc/do_stuff)"))
 					.arg(Arg::new("id").help("Id of the proc to disassemble (for when multiple procs are defined with the same path)"))
 			)
+			// Test-only inspection command, omitted from help and completion.
+			.subcommand(Command::new("skin").about("Show login skin resource ID and text").hide(true))
 			.subcommand(
 				Command::new("guest_override")
 					.about("Override the CKey used by guest connections")
@@ -433,6 +437,7 @@ impl Server {
 			eval_code: HashMap::new(),
 			eval_warnings: vec![],
 			waiting_to_start: false,
+			pending_skin: None,
 			eval_src: None,
 			spawning: None,
 			spawns: VecDeque::new(),
@@ -2266,6 +2271,12 @@ impl Server {
 						}
 					}
 
+					Some(("skin", _)) => match self.evaluating(crate::skin::state) {
+						Ok(None) => "no skin".to_owned(),
+						Ok(Some((resource, text))) => format!("resource {}\n{}", resource, text),
+						Err(e) => format!("Failed: {}", e)
+					},
+
 					Some(("guest_override", matches)) => match matches.get_one::<String>("ckey").map(String::as_str) {
 						Some(ckey) => match crate::ckey_override::override_guest_ckey(ckey) {
 							Ok(()) => "Success".to_owned(),
@@ -2628,7 +2639,7 @@ impl Server {
 
 	/// Temporarily size the stub's locals table for this call. Sleeping
 	/// frames retain the locals allocated when they started.
-	fn call_with_locals(proc: &Proc, locals: &[String], args: &[&Value]) -> Result<Result<Value, Runtime>, String> {
+	pub(crate) fn call_with_locals(proc: &Proc, locals: &[String], args: &[&Value]) -> Result<Result<Value, Runtime>, String> {
 		if locals.is_empty() {
 			return Ok(proc.call(args));
 		}
@@ -2852,19 +2863,42 @@ impl Server {
 		}
 	}
 
+	/// Refuse reloads while another connected client owns them.
+	fn reloads_refused(&self) -> Option<String> {
+		let (holder, who) = self.reloader.as_ref()?;
+		(Some(*holder) != self.current && self.clients.contains_key(holder)).then(|| format!("{} already owns hot reload for this world", who))
+	}
+
+	/// Apply the skin deferred until world data loaded.
+	fn apply_pending_skin(&mut self) {
+		let Some(request) = self.pending_skin.take() else {
+			return;
+		};
+		if let Err(e) = self.evaluating(|| crate::skin::set(&request)) {
+			self.notify(format!("could not restore skin {} after reboot: {}", request.path, e));
+		}
+	}
+
+	/// Mark DM run by `work` as a debugger evaluation.
+	fn evaluating<T>(&mut self, work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+		self.in_eval = true;
+		self.eval_error = None;
+		let result = work();
+		self.in_eval = false;
+		result
+	}
+
 	fn handle_hot_reload(&mut self, request: &HotReloadRequest) {
 		// Reject reloads from clients other than the connected owner.
-		if let Some((holder, who)) = &self.reloader {
-			if Some(*holder) != self.current && self.clients.contains_key(holder) {
-				let refused = HotReloadResult {
-					applied: false,
-					errors: vec![format!("{} already owns hot reload for this world", who)],
-					warnings: vec![],
-					skipped: vec![]
-				};
-				self.send_or_disconnect(Response::HotReload(refused));
-				return;
-			}
+		if let Some(why) = self.reloads_refused() {
+			let refused = HotReloadResult {
+				applied: false,
+				errors: vec![why],
+				warnings: vec![],
+				skipped: vec![]
+			};
+			self.send_or_disconnect(Response::HotReload(refused));
+			return;
 		}
 		let result = self.hot_reload(request);
 		self.send_or_disconnect(Response::HotReload(result));
@@ -2965,6 +2999,7 @@ impl Server {
 				self.notify(format!("Hot reload: {}", warning));
 			}
 		}
+		self.apply_pending_skin();
 	}
 
 	fn handle_disassemble(&mut self, path: &str, id: u32) -> String {
@@ -3049,6 +3084,19 @@ impl Server {
 			Request::Reloader { who } => {
 				let claimed = self.claim_reloads(who);
 				self.send_or_disconnect(Response::Reloader(claimed));
+			}
+			Request::Skin(request) => {
+				let result = match self.reloads_refused() {
+					Some(why) => Err(why),
+					// The world must load its resources before allocating IDs
+					// for new files (see `world_resources`).
+					None if !crate::world_resources::is_loaded() => {
+						self.pending_skin = Some(request);
+						Ok(SkinReloaded { clients: 0, hosted: false })
+					}
+					None => self.evaluating(|| crate::skin::set(&request))
+				};
+				self.send_or_disconnect(Response::Skin(result));
 			}
 
 			Request::Status => {

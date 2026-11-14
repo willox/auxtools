@@ -34,6 +34,7 @@ use crate::{
 mod data;
 mod files;
 mod journal;
+mod skin;
 
 pub use journal::reload_by_another;
 
@@ -1104,6 +1105,18 @@ impl Adapter {
 			code::Event::Macros(macros) => {
 				self.macros = Some(macros);
 				self.give_macros();
+			}
+			code::Event::Skin {
+				request,
+				file,
+				images,
+				restored,
+				world
+			} => {
+				let applied = self.debuggee.as_ref().is_some_and(|d| d.generation == world) && self.reload_skin(request, &file, &images, restored);
+				if let Some(code) = &self.code {
+					let _ = code.send(code::Command::Reloaded(applied));
+				}
 			}
 		}
 	}

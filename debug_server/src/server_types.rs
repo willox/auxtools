@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Wire protocol version. Increment for changes incompatible with older
 /// clients or servers. Including the version in endpoint names prevents
 /// connections using incompatible message layouts.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// Shutdown notification sent before disconnecting clients; not used for
 /// reboot.
@@ -233,7 +233,10 @@ pub enum Request {
 	/// `Response::Reloader`.
 	Reloader {
 		who: String
-	}
+	},
+	/// Set the login skin from a `.dmf`. Defer until `world/New` if the world
+	/// is still loading. Respond with `Response::Skin`.
+	Skin(SkinRequest)
 }
 
 /// A `#define` of the world's code, as its preprocessor has it
@@ -382,12 +385,28 @@ pub enum Response {
 	/// Whether ownership was granted, or a diagnostic identifying the existing
 	/// owner.
 	Reloader(Result<(), String>),
+	Skin(Result<SkinReloaded, String>),
 	/// Permanent initialization failure, sent on connection instead of a
 	/// response, followed by `Disconnect`. The world continues without
 	/// the debugger for the lifetime of the process.
 	Unavailable {
 		reason: String
 	}
+}
+
+/// A new skin for the world (see `Request::Skin`)
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct SkinRequest {
+	/// The `.dmf`, as the world's process can open it
+	pub path: String
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct SkinReloaded {
+	/// Connected players retaining the old skin until reconnect.
+	pub clients: u32,
+	/// Whether Dream Seeker hosts the world
+	pub hosted: bool
 }
 
 /// Journal entry retained across reboots for the process lifetime.

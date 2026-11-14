@@ -13,6 +13,7 @@ pub mod reboots;
 pub mod reloading;
 pub mod runtimes;
 pub mod sessions;
+pub mod skins;
 pub mod stepping;
 pub mod variables;
 pub mod watches;

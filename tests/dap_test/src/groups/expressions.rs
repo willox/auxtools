@@ -102,6 +102,8 @@ fn completions(world: &mut World) {
 		pair("disassemble", "keyword")
 	]);
 	assert_eq!(offered(world, "#", Some(&frame)).len(), 5);
+	// Inspection commands are hidden from completion.
+	assert_eq!(offered(world, "#s", Some(&frame)), Vec::<(String, String)>::new());
 	ok("command completion");
 
 	// No frame: the world's, and nothing of a frame's
@@ -524,7 +526,8 @@ pub fn run() {
 		"#dis said {}",
 		disassembly
 	);
-	assert!(world.eval("#help").contains("disassemble"));
+	let help = world.eval("#help");
+	assert!(help.contains("disassemble") && !help.contains("skin"), "#help said {}", help);
 	ok("console disassembly commands");
 
 	// As a client sends its watches: all at once

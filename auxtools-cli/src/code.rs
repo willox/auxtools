@@ -13,11 +13,12 @@ use std::{
 };
 
 use auxtools_cli::server_types::{
-	HotReloadInitProc, HotReloadLines, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, Macro, ProcRef, RemovedVar
+	HotReloadInitProc, HotReloadLines, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadVarDefault, Macro, ProcRef, RemovedVar,
+	SkinRequest
 };
 use dmasm::reload::{diff, Changes, ParseOptions, ProcKey, Snapshot};
 
-use crate::{adapter::Input, dap::Output};
+use crate::{adapter::Input, dap::Output, skin::Skin};
 
 /// How often to look for changed files
 const INTERVAL: Duration = Duration::from_millis(500);
@@ -65,7 +66,18 @@ pub enum Event {
 		warnings: Vec<String>
 	},
 	/// Source macros sent after parsing and whenever reload changes them.
-	Macros(Vec<Macro>)
+	Macros(Vec<Macro>),
+	/// A new skin for `world`. The adapter replies with `Command::Reloaded`.
+	Skin {
+		request: SkinRequest,
+		/// Relative to the `.dme` directory.
+		file: PathBuf,
+		/// Files referenced by this skin but absent from the built skin.
+		images: Vec<String>,
+		/// Restore after reboot, before clients log in.
+		restored: bool,
+		world: u64
+	}
 }
 
 /// Commands from the adapter to the source worker.
@@ -135,7 +147,8 @@ struct Watching {
 	dmb_modified: Option<SystemTime>,
 	/// Current running source when it differs from `built`.
 	applied: Option<Snapshot>,
-	files: Watched
+	files: Watched,
+	skin: Skin
 }
 
 impl Code {
@@ -194,6 +207,7 @@ impl Code {
 		self.warn_of_later_edits(&files, dmb_modified);
 		let mut watching = Watching {
 			files: Watched::new(&self.root, &files, self.parse_started.get()),
+			skin: Skin::built(&self.root, built.skin()),
 			dmb_modified,
 			edited_since_built: HashSet::new(),
 			applied: None,
@@ -265,6 +279,15 @@ impl Code {
 		shown.sort();
 		self.log(format!("changed: {}", shown.join(", ")));
 
+		watching.skin.take_edit(&mut changed);
+		if !changed.is_empty() && !self.reload_code(watching, changed) {
+			return false;
+		}
+		self.reload_skin(watching, false)
+	}
+
+	/// Reload the changed DM files. Return false on adapter disconnect.
+	fn reload_code(&self, watching: &mut Watching, changed: HashSet<PathBuf>) -> bool {
 		// Reparse a single file when only its proc bodies changed.
 		if let [file] = changed.iter().collect::<Vec<_>>().as_slice() {
 			let file = (*file).clone();
@@ -305,6 +328,7 @@ impl Code {
 				return self.not_reloaded(e);
 			}
 		};
+		watching.skin.parsed(new.skin());
 		let current = watching.applied.as_ref().unwrap_or(&watching.built);
 		let mut changes = diff(current, &new, Some(&changed));
 		refuse_hidden(current, &new, &mut changes);
@@ -350,6 +374,7 @@ impl Code {
 					for file in files {
 						watching.files.add(&self.root, &file, self.parse_started.get());
 					}
+					watching.skin = Skin::built(&self.root, built.skin());
 					watching.built = built;
 				}
 				Err(e) => self.log(format!("couldn't read the code: {}", e))
@@ -362,6 +387,11 @@ impl Code {
 		// Whatever was reloaded went with the old world
 		watching.applied = None;
 		watching.built.clear_patches();
+		// Restore the skin before clients log in.
+		watching.skin.rebooted();
+		if !self.reload_skin(watching, true) {
+			return false;
+		}
 		if watching.edited_since_built.is_empty() {
 			return self.ready();
 		}
@@ -518,6 +548,35 @@ impl Code {
 				// `catch_up` will prepare them for the new world.
 				Ok(Command::Connected { world, .. }) => self.connected(world),
 				Err(_) => return None
+			}
+		}
+	}
+
+	/// Update the skin if it differs from the world's. Return false on
+	/// disconnect.
+	fn reload_skin(&self, watching: &mut Watching, restored: bool) -> bool {
+		let Some(change) = watching.skin.change(&self.root) else {
+			return true;
+		};
+		if !self.send(Event::Skin {
+			request: change.request.clone(),
+			file: change.file.clone(),
+			images: change.images.clone(),
+			restored,
+			world: self.world.get()
+		}) {
+			return false;
+		}
+		loop {
+			match self.commands.recv() {
+				Ok(Command::Reloaded(applied)) => {
+					if applied {
+						watching.skin.applied(change);
+					}
+					return true;
+				}
+				Ok(Command::Connected { world, .. }) => self.connected(world),
+				Err(_) => return false
 			}
 		}
 	}
@@ -810,6 +869,7 @@ pub fn reload_request(changes: &Changes) -> HotReloadRequest {
 fn files(snapshot: &Snapshot, dme: &Path) -> Vec<PathBuf> {
 	let mut files = snapshot.files();
 	files.push(dme.to_owned());
+	files.extend(snapshot.skin().map(Path::to_owned));
 	files
 }
 
