@@ -76,6 +76,28 @@ fn test_strings() {
 			return Err(runtime!("test_string: string_a's reference count != 1 after concat_strings"));
 		}
 
+		// Rust strings are UTF-8: "aé" has three bytes and two characters.
+		let accented = Value::from_string("a\u{e9}")?;
+		let lengths = Proc::find("/proc/text_lengths").unwrap().call(&[&accented])?.as_list()?;
+		let lengths = (1..=3)
+			.map(|i| lengths.get(i as f32).and_then(|v| v.as_number()))
+			.collect::<Result<Vec<_>, _>>()?;
+		if lengths != [3.0, 2.0, 233.0] {
+			return Err(runtime!(
+				"test_string: \"a\u{e9}\" has length, length_char and its second character {:?}, not [3, 2, 233]",
+				lengths
+			));
+		}
+
+		// DreamMaker and dmasm encode "\xff\x41" as UTF-8 ÿ followed by A.
+		// Latin-1 conversion would corrupt the second character.
+		let escaped = Value::from_string_raw(b"\xc3\xbf\x41")?;
+		let lengths = Proc::find("/proc/text_lengths").unwrap().call(&[&escaped])?.as_list()?;
+		let second = lengths.get(3.0).and_then(|v| v.as_number())?;
+		if second != 65.0 {
+			return Err(runtime!("test_string: the second character of \"\\xff\\x41\" is {}, not 65", second));
+		}
+
 		Ok(Value::from(true))
 	}
 }

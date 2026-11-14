@@ -219,7 +219,9 @@ extern "C" uint8_t get_string_id(uint32_t *out, const char *data)
 
 	BYOND_TRY
 	{
-		*out = get_string_id_byond(data, 0, 0, 1);
+		// 2: the text is UTF-8, as every string auxtools makes is; with 0 BYOND takes
+		// it for Latin-1, and "é" comes out as "Ã©"
+		*out = get_string_id_byond(data, 2, 0, 1);
 		return 1;
 	}
 	BYOND_CATCH
