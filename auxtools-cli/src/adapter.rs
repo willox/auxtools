@@ -38,6 +38,7 @@ mod journal;
 mod restart;
 mod script;
 mod skin;
+mod status;
 
 pub use journal::reload_by_another;
 
@@ -1207,7 +1208,10 @@ impl Adapter {
 					let _ = code.send(code::Command::Reloaded(applied));
 				}
 			}
-			code::Event::NotReloaded { summary, errors, warnings } => self.journal_reload(false, summary, errors, warnings),
+			code::Event::NotReloaded { refused, warnings, .. } if !refused.is_empty() => self.refused(refused, warnings),
+			code::Event::NotReloaded {
+				summary, errors, warnings, ..
+			} => self.journal_reload(false, summary, errors, warnings),
 			code::Event::NothingChanged { warnings } => self.journal_reload(true, "no runtime changes".to_owned(), vec![], warnings),
 			code::Event::Macros(macros) => {
 				self.macros = Some(macros);

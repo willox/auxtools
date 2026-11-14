@@ -1080,7 +1080,7 @@ pub fn run() {
 	// An edit the world can't take: nothing changes, breakpoints included
 	world.break_on(&["leaf_2"]);
 	world.marks.edit("stepping.dm", "\tvar/n = 1\n", "\tvar/n = 1\n\tvar/list/broken = (\n");
-	world.wait_output("Hot reload: rejected; rebuild required");
+	world.wait_output("Hot reload requires a rebuild");
 	world.drop_events("breakpoint");
 	world.run("middle");
 	world.stop_on("breakpoint", "/leaf", "leaf_2");

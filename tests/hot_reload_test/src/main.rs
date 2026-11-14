@@ -131,7 +131,8 @@ impl Source {
 		let edited: HashSet<PathBuf> = [Path::new(file).to_owned()].into_iter().collect();
 		let changes = diff(&old, self.snapshot.as_ref().unwrap(), Some(&edited));
 		assert!(!changes.refused.is_empty(), "the edit wasn't refused");
-		changes.refused
+		// Omit locations from diagnostic comparisons.
+		changes.refused.iter().map(|refusal| format!("{:#}", refusal)).collect()
 	}
 
 	/// Move the unique occurrence of `code` between file ends in a single

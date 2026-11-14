@@ -153,6 +153,21 @@ impl Output {
 		self.output("console", text.into() + "\n");
 	}
 
+	/// Write a console line linked to the source file and line.
+	pub fn console_at(&self, text: impl Into<String>, file: &std::path::Path, line: Option<u32>) {
+		self.event(OutputEvent {
+			output: text.into() + "\n",
+			category: Some("console".to_owned()),
+			source: Some(dap_types::Source {
+				name: file.file_name().map(|name| name.to_string_lossy().into_owned()),
+				path: Some(file.to_string_lossy().into_owned()),
+				..Default::default()
+			}),
+			line: line.map(i64::from),
+			..Default::default()
+		});
+	}
+
 	/// The world is ready to be used (see `Note::Ready`). A client is told
 	/// as much in other ways.
 	pub fn ready(&self) {

@@ -16,7 +16,7 @@ use auxtools_cli::server_types::{
 	HotReloadInitProc, HotReloadLines, HotReloadNewProc, HotReloadProc, HotReloadRequest, HotReloadResource, HotReloadVarDefault, Macro, ProcRef,
 	ReloadedResource, RemovedVar, ScriptRequest, SkinRequest
 };
-use dmasm::reload::{diff, Changes, ParseOptions, ProcKey, Snapshot};
+use dmasm::reload::{diff, Changes, ParseOptions, ProcKey, Refusal, Snapshot};
 
 use crate::{adapter::Input, dap::Output, resources::Resources, script::Script, skin::Skin};
 
@@ -55,10 +55,12 @@ pub enum Event {
 		notes: Vec<String>,
 		world: u64
 	},
-	/// Rejected changes and diagnostics for the journal.
+	/// Unapplied changes: `refused` changes need a rebuild; `errors` explain
+	/// source-read failures. Both are journaled.
 	NotReloaded {
 		summary: String,
 		errors: Vec<String>,
+		refused: Vec<Refusal>,
 		warnings: Vec<String>
 	},
 	/// Source edits with no runtime changes, for the journal.
@@ -99,7 +101,7 @@ pub enum Command {
 
 /// Start source worker `worker`, which tags its events with that number.
 pub fn start(mut options: Options, out: Arc<Output>, inputs: mpsc::Sender<Input>, worker: u64) -> mpsc::Sender<Command> {
-	// The client knows files by their full paths
+	// Clients use absolute source paths.
 	if let Ok(dme) = std::path::absolute(&options.dme) {
 		options.dme = dme;
 	}
@@ -344,7 +346,7 @@ impl Code {
 			match current.reload_file(&self.root, &file) {
 				Ok(reload) => {
 					watching.edited_since_built.insert(file);
-					return match self.reload(&reload.changes, current, current, vec![], false) {
+					return match self.reload(&reload.changes, current, vec![], false) {
 						None => false,
 						Some(true) => {
 							let current = match watching.applied.as_mut() {
@@ -387,7 +389,7 @@ impl Code {
 			watching.files.add(&self.root, &file, self.parse_started.get());
 		}
 
-		match self.reload(&changes, &new, watching.applied.as_ref().unwrap_or(&watching.built), vec![], false) {
+		match self.reload(&changes, watching.applied.as_ref().unwrap_or(&watching.built), vec![], false) {
 			None => false,
 			Some(true) => {
 				self.watch_named(watching);
@@ -474,7 +476,7 @@ impl Code {
 		let mut changes = diff(&watching.built, &current, Some(&watching.edited_since_built));
 		refuse_hidden(&watching.built, &current, &mut changes);
 		restarted(&mut changes);
-		let Some(applied) = self.reload(&changes, &current, &watching.built, vec![], true) else {
+		let Some(applied) = self.reload(&changes, &watching.built, vec![], true) else {
 			return false;
 		};
 		if applied {
@@ -554,7 +556,7 @@ impl Code {
 			});
 		}
 		self.reloaded_resources.borrow_mut().clear();
-		match self.reload(&changes, current, current, resources, false) {
+		match self.reload(&changes, current, resources, false) {
 			None => false,
 			Some(true) => {
 				let reloaded = self.reloaded_resources.take();
@@ -585,13 +587,18 @@ impl Code {
 
 	/// Warn that parse errors make the source baseline incomplete.
 	fn warn_of_errors(&self, built: &Snapshot) {
-		let errors = errors(built);
+		let errors = built.parse_errors();
 		if errors.is_empty() {
 			return;
 		}
-		self.log("source baseline has parse errors; definitions hidden by them require a rebuild:");
-		for error in placed(&errors, built).iter().take(5) {
-			self.out.console(format!("    {}", error));
+		self.out
+			.console("The source has parse errors. Fix them and rebuild before reloading the affected code:");
+		for (_, error) in errors.iter().take(5) {
+			let (file, line, text) = located(error);
+			match file {
+				Some(file) => self.out.console_at(format!("    {}", text), &self.root.join(file), line),
+				None => self.out.console(format!("    {}", text))
+			}
 		}
 		if errors.len() > 5 {
 			self.out.console(format!("    and {} more", errors.len() - 5));
@@ -659,23 +666,29 @@ impl Code {
 		self.send(Event::NotReloaded {
 			summary: "couldn't read the code".to_owned(),
 			errors: vec![error],
+			refused: vec![],
 			warnings: vec![]
 		})
 	}
 
-	/// Apply `changes` from `before` to `snapshot` through the adapter.
-	/// Return `None` on disconnect. When `restarted`, replace the global init
-	/// proc before global initializers run.
-	fn reload(&self, changes: &Changes, snapshot: &Snapshot, before: &Snapshot, resources: Vec<HotReloadResource>, restarted: bool) -> Option<bool> {
+	/// Apply `changes` from runtime snapshot `before` through the adapter.
+	/// Return `None` on disconnect. After reboot, install the replacement
+	/// global init proc before global initialization.
+	fn reload(&self, changes: &Changes, before: &Snapshot, resources: Vec<HotReloadResource>, restarted: bool) -> Option<bool> {
 		if !changes.refused.is_empty() {
-			self.log("rejected; rebuild required for these changes:");
-			let refused = placed(&changes.refused, snapshot);
-			for why in &refused {
-				self.out.console(format!("    {}", why));
-			}
+			// Clients use absolute source paths.
+			let refused = changes
+				.refused
+				.iter()
+				.map(|refusal| Refusal {
+					file: refusal.file.as_ref().map(|file| self.root.join(file).display().to_string()),
+					..refusal.clone()
+				})
+				.collect();
 			let refused = Event::NotReloaded {
 				summary: "rebuild required".to_owned(),
-				errors: refused,
+				errors: vec![],
+				refused,
 				warnings: changes.warnings.clone()
 			};
 			return self.send(refused).then_some(false);
@@ -914,67 +927,46 @@ fn merge(changes: &mut Changes, more: Changes) {
 	changes.refused.extend(more.refused);
 }
 
-/// Format unresolved snapshot errors without lines for comparison.
-/// Recovered const initializers are excluded by dmasm.
-fn errors(snapshot: &Snapshot) -> Vec<String> {
-	snapshot
-		.parse_errors()
-		.into_iter()
-		.map(|(error, _)| format!("parse error: {}", error))
-		.collect()
-}
-
 /// Reject additions exposed by a repaired parse error: they may already exist
 /// in the built world. Re-adding them could create unintended proc overrides.
 fn refuse_hidden(old: &Snapshot, new: &Snapshot, changes: &mut Changes) {
 	if changes.new_types.is_empty() && changes.new_procs.is_empty() && changes.new_vars.is_empty() {
 		return;
 	}
-	let mut fixed = errors(old);
-	for error in errors(new) {
-		if let Some(at) = fixed.iter().position(|e| *e == error) {
+	// Ignore line changes when matching errors; moving one does not fix it.
+	let mut fixed = old.parse_errors();
+	for (error, _) in new.parse_errors() {
+		if let Some(at) = fixed.iter().position(|(e, _)| *e == error) {
 			fixed.remove(at);
 		}
 	}
-	for error in fixed {
-		let error = error.strip_prefix("parse error: ").unwrap_or(&error);
-		changes.refused.push(format!(
-			"{}: newly visible definitions may have been hidden by this fixed parse error. Rebuild, then reboot before reloading",
-			error
-		));
+	for (_, error) in fixed {
+		let (file, line, text) = located(&error);
+		changes.refused.push(Refusal {
+			file: file.map(str::to_owned),
+			line,
+			..Refusal::new(
+				"",
+				format!(
+					"fixed parse error may have hidden definitions: {}. Rebuild and reboot before reloading",
+					text
+				)
+			)
+		});
 	}
 }
 
-/// Attach source locations to diagnostics as `file:line: message`.
-fn placed(errors: &[String], snapshot: &Snapshot) -> Vec<String> {
-	let parse_errors: Vec<(String, String)> = snapshot
-		.parse_errors()
-		.into_iter()
-		.map(|(error, placed)| (format!("parse error: {}", error), placed))
-		.collect();
-	errors
-		.iter()
-		.map(|error| {
-			if let Some((_, placed)) = parse_errors.iter().find(|(text, _)| text == error) {
-				return placed.clone();
-			}
-			// Also accept diagnostics that already include a line: `parse
-			// error: file:line: message`.
-			if let Some(placed) = error.strip_prefix("parse error: ").filter(|rest| {
-				rest.split_once(": ")
-					.and_then(|(place, _)| place.rsplit_once(':'))
-					.is_some_and(|(_, line)| line.parse::<u32>().is_ok())
-			}) {
-				return placed.to_owned();
-			}
-			let file_line = error.split_once(": doesn't compile: line ").and_then(|(proc, rest)| {
-				let (line, what) = rest.split_once(": ")?;
-				let key = snapshot.procs().find(|key| key.to_string() == proc)?;
-				Some(format!("{}:{}: {}: doesn't compile: {}", snapshot.proc_file(key)?, line, proc, what))
-			});
-			file_line.unwrap_or_else(|| error.clone())
-		})
-		.collect()
+/// Split `Snapshot::parse_errors` text into file, line and message.
+/// Keep unlocated text as the message.
+fn located(error: &str) -> (Option<&str>, Option<u32>, &str) {
+	let place = error.split_once(": ").and_then(|(place, text)| {
+		let (file, line) = place.rsplit_once(':')?;
+		Some((file, line.parse::<u32>().ok()?, text))
+	});
+	match place {
+		Some((file, line, text)) => (Some(file), Some(line), text),
+		None => (None, None, error)
+	}
 }
 
 /// Reload summary that can exclude removals skipped by the running world.

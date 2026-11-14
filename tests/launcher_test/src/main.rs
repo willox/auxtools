@@ -1503,7 +1503,7 @@ fn errored_baseline(server: &str) {
 	wait_for_text("launch", "Hot reload: watching", read);
 	started.pids.push(started_pid(&read()));
 	assert!(
-		read().contains("Hot reload: source baseline has parse errors"),
+		read().contains("The source has parse errors"),
 		"launch didn't say the code has errors:\n{}",
 		read()
 	);
@@ -1511,7 +1511,7 @@ fn errored_baseline(server: &str) {
 	wait_for_text("launch", "fixed parse error", read);
 	let printed = read();
 	assert!(
-		printed.contains("Hot reload: rejected") && !printed.contains("Hot reload: added"),
+		printed.contains("Hot reload requires a rebuild") && !printed.contains("Hot reload: added"),
 		"launch said:\n{}",
 		printed
 	);
