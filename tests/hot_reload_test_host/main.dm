@@ -128,3 +128,15 @@ var/datum/declared/declared_one = new
 	. = "[s.falloff] "
 	s.falloff = 7
 	. += "[s.falloff] [named.falloff]"
+
+// Reparented sound types use var-table built-ins. Avoid repeat and volume,
+// which new() sets from arguments.
+/sound/hr_sa
+	pan = 10
+
+/sound/hr_sb
+	priority = 5
+
+/sound/hr_st
+	parent_type = /sound/hr_sa
+	frequency = 3

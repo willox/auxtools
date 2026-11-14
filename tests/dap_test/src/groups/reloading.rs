@@ -394,11 +394,30 @@ fn starting_at_world_new() {
 	let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A parent-only change must still produce a reload.
+fn parent_changed_alone() {
+	let (mut world, dir) = watched_world("parent_changed_alone");
+	edit(
+		&mut world,
+		"main.dm",
+		"/proc/icon_built()\n",
+		"/datum/pa\n\tvar/x = 1\n\n/datum/pb\n\tvar/x = 2\n\n/datum/pt\n\tparent_type = /datum/pa\n\n/proc/icon_built()\n"
+	);
+	assert_eq!(world.eval_global("(new /datum/pt).x"), "1");
+	edit(&mut world, "main.dm", "\tparent_type = /datum/pa\n", "\tparent_type = /datum/pb\n");
+	assert_eq!(world.eval_global("(new /datum/pt).x"), "2");
+	assert_eq!(world.eval_global("istype(new /datum/pt, /datum/pb)"), "1");
+	ok("parent-only reload");
+	world.end();
+	let _ = std::fs::remove_dir_all(&dir);
+}
+
 pub fn run() {
 	saved_without_reloading();
 	built_in_taken_away();
 	behind_the_clients_back();
 	starting_at_world_new();
+	parent_changed_alone();
 
 	let dir = copy_of_the_world("reloading");
 	let mut world = World::launch_as(json!({ "supportsInvalidatedEvent": true }), dir.clone(), json!({ "hotReload": true }));

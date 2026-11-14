@@ -204,15 +204,16 @@ built code.
 Supported changes include proc bodies, new procs and verbs, removals, new types
 (including mobs), new variables and static locals, variable types and defaults,
 changes to `static`, `const` and `tmp` variable declarations,
-parameters (including `as` input types), `in` lists, prefabs and `set` statements.
+parameters (including `as` input types), `in` lists, prefabs, `set` statements
+and parent types (`parent_type`).
 Proc, verb, world proc and global proc definitions can be inserted or removed
 between existing overrides.
 
-Changes requiring a rebuild include parent types; proc declaration changes,
-such as switching between proc and verb or adding `final`; unsupported
-built-ins such as `ckey`; and removing a built-in type's own override
-(such as `/mob/layer`). The running world no longer stores the original
-built-in default needed for that reset.
+Changes requiring a rebuild include proc declaration changes (such as switching
+between proc and verb or adding `final`), unsupported built-in defaults such as
+`see_infrared`, and removing a built-in type's own override (such as
+`/mob/layer`). The last case needs BYOND's original default, which the running
+world no longer stores.
 
 Reloaded and evaluated code preserves DreamMaker's field caching: after
 `a.b.f()`, a later `a.b.x` in the same flow can use the old object even if

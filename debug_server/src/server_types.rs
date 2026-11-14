@@ -963,7 +963,9 @@ pub struct HotReloadRequest {
 	/// declaration.
 	pub removed_vars: Vec<RemovedVar>,
 	/// Inherited built-in defaults, applied after `builtin_defaults`.
-	pub builtin_inherited: Vec<dmasm::reload::BuiltinInherited>
+	pub builtin_inherited: Vec<dmasm::reload::BuiltinInherited>,
+	/// Parent changes, applied after new types and before other changes.
+	pub reparented: Vec<dmasm::reload::Reparented>
 }
 
 /// A type var declaration removed from source.
@@ -988,6 +990,7 @@ impl HotReloadRequest {
 			+ self.init_procs.len()
 			+ self.line_moves.len()
 			+ self.builtin_inherited.len()
+			+ self.reparented.len()
 	}
 
 	pub const fn is_empty(&self) -> bool {

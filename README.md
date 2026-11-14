@@ -45,7 +45,7 @@ Editors use `auxtools dap` as the debug adapter.
 
 The launcher watches source files and reloads changes when they are saved. Hot reload is enabled by default for launched worlds, including **Run Without Debugging**. Supply the same `defines` used to build the `.dmb`.
 
-Hot reload supports proc bodies, proc and verb additions, proc removals, new types and variables, variable types and defaults, `static`, `const` and `tmp` declarations, parameters and `set` statements. Changes to parent types or proc declarations, such as converting a proc to a verb, require a rebuild.
+Hot reload supports proc bodies, proc and verb additions, proc removals, new types and variables, variable types and defaults, `static`, `const` and `tmp` declarations, parameters, `set` statements and parent types. Changes to proc declarations, such as converting a proc to a verb, require a rebuild.
 
 Existing calls finish on their original bytecode. Existing instances retain their verbs and built-in values; computed defaults apply to new instances. Changed world settings and client settings stored in the world record, such as `client.control_freak`, take effect after restart.
 

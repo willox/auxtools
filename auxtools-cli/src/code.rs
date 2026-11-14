@@ -601,6 +601,17 @@ impl Summary {
 		let parts = vec![
 			("added", named(changes.new_types.iter().map(|t| t.path.clone()).collect()), "types"),
 			(
+				"reparented",
+				named(
+					changes
+						.reparented
+						.iter()
+						.map(|r| format!("{} (now under {})", r.type_path, r.parent))
+						.collect()
+				),
+				"types"
+			),
+			(
 				"recompiled users of",
 				named(changes.consts.iter().chain(&changes.retyped).cloned().collect()),
 				"vars"
@@ -790,7 +801,8 @@ pub fn reload_request(changes: &Changes) -> HotReloadRequest {
 			})
 			.collect(),
 		removed_vars: changes.warnings.iter().filter_map(|note| removed_var(note)).collect(),
-		builtin_inherited: changes.builtin_inherited.clone()
+		builtin_inherited: changes.builtin_inherited.clone(),
+		reparented: changes.reparented.clone()
 	}
 }
 

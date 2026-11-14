@@ -207,7 +207,8 @@ fn reload_request(changes: &Changes) -> Request {
 			})
 			.collect(),
 		removed_vars: vec![],
-		builtin_inherited: changes.builtin_inherited.clone()
+		builtin_inherited: changes.builtin_inherited.clone(),
+		reparented: changes.reparented.clone()
 	})
 }
 
@@ -1175,6 +1176,72 @@ fn main() {
 	assert_eq!(eval(&mut client, "(new /obj/crate/bounded).bound_width"), "8");
 	assert_eq!(eval(&mut client, "(new /obj/crate/bounded).bound_height"), "24");
 	println!("ok: var-table built-ins and bounds");
+
+	// Reparent procs, ..(), vars, New(), built-ins and type queries.
+	// Existing instances receive new procs and defaults.
+	let changes = source.edit(
+		"reload.dm",
+		"/proc/first_def()\n",
+		"/datum/hr_a\n\tvar/x = 1\n\n/datum/hr_a/proc/f()\n\treturn \"a\"\n\n/datum/hr_b\n\tvar/x = 2\n\tvar/y = 3\n\n/datum/hr_b/New()\n\ty = \
+		 4\n\n/datum/hr_b/proc/f()\n\treturn \"b\"\n\n/datum/hr_t\n\tparent_type = /datum/hr_a\n\n/datum/hr_t/f()\n\treturn \"t\" + \
+		 ..()\n\n/datum/hr_t/sub\n\n/obj/hr_oa\n\ticon_state = \"a\"\n\tlayer = 7\n\n/obj/hr_ob\n\tpixel_x = 2\n\tbound_width = 16\n\tbound_height \
+		 = 48\n\n/obj/hr_ot\n\tparent_type = /obj/hr_oa\n\tbound_width = 8\n\tstep_x = \
+		 2\n\nvar/datum/hr_t/sub/hr_kept\n\n/proc/hr_keep()\n\thr_kept = new\n\n/proc/first_def()\n"
+	);
+	reload(&mut watcher, &changes);
+	eval(&mut client, "hr_keep()");
+	assert_eq!(eval(&mut client, "hr_kept.f()"), "\"ta\"");
+	let changes = source.edit_many("reload.dm", &[
+		("\tparent_type = /datum/hr_a\n", "\tparent_type = /datum/hr_b\n"),
+		("\tparent_type = /obj/hr_oa\n", "\tparent_type = /obj/hr_ob\n")
+	]);
+	assert_eq!(changes.reparented.len(), 2, "{:?}", changes.reparented);
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /datum/hr_t/sub).f()"), "\"tb\"");
+	assert_eq!(eval(&mut client, "istype(new /datum/hr_t/sub, /datum/hr_b)"), "1");
+	assert_eq!(eval(&mut client, "istype(new /datum/hr_t/sub, /datum/hr_a)"), "0");
+	assert_eq!(eval(&mut client, "length(typesof(/datum/hr_b))"), "3");
+	assert_eq!(eval(&mut client, "length(typesof(/datum/hr_a))"), "1");
+	assert_eq!(eval(&mut client, "(new /datum/hr_t).y"), "4");
+	assert_eq!(eval(&mut client, "(new /datum/hr_t).x"), "2");
+	assert_eq!(
+		eval(
+			&mut client,
+			"\"[(new /obj/hr_ot).icon_state] [(new /obj/hr_ot).layer] [(new /obj/hr_ot).pixel_x]\""
+		),
+		"\" 3 2\""
+	);
+	// Explicit bounds and steps override the new parent's.
+	assert_eq!(
+		eval(
+			&mut client,
+			"\"[(new /obj/hr_ot).bound_width] [(new /obj/hr_ot).bound_height] [(new /obj/hr_ot).step_x]\""
+		),
+		"\"8 48 2\""
+	);
+	// Existing instances use new procs and defaults but ran the old New().
+	assert_eq!(eval(&mut client, "hr_kept.f()"), "\"tb\"");
+	assert_eq!(
+		eval(&mut client, "\"[istype(hr_kept, /datum/hr_b)] [hr_kept.x] [hr_kept.y]\""),
+		"\"1 2 3\""
+	);
+	// and back again
+	let changes = source.edit("reload.dm", "\tparent_type = /datum/hr_b\n", "\tparent_type = /datum/hr_a\n");
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, "(new /datum/hr_t/sub).f()"), "\"ta\"");
+	assert_eq!(eval(&mut client, "length(typesof(/datum/hr_a))"), "3");
+	assert_eq!(eval(&mut client, "(new /datum/hr_t).x"), "1");
+	println!("ok: parent type change");
+
+	// Reparent sound types: retain explicit var-table built-ins and copy
+	// inherited defaults from the new parent.
+	let sound = "\"[(new /sound/hr_st).pan] [(new /sound/hr_st).frequency] [(new /sound/hr_st).priority]\"";
+	assert_eq!(eval(&mut client, sound), "\"10 3 0\"");
+	let changes = source.edit("main.dm", "\tparent_type = /sound/hr_sa\n", "\tparent_type = /sound/hr_sb\n");
+	assert_eq!(changes.reparented.len(), 1, "{:?}", changes.reparented);
+	reload(&mut watcher, &changes);
+	assert_eq!(eval(&mut client, sound), "\"0 3 5\"");
+	println!("ok: sound parent change");
 
 	// A type's const: the code that uses it is compiled again
 	assert_eq!(eval(&mut client, "kept_limits.max_doubled()"), "6");

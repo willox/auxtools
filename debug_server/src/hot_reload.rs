@@ -23,7 +23,7 @@ use auxtools::{
 };
 use dmasm::{
 	assembler::AssembleEnv as _,
-	reload::{BuiltinInherited, ConstValue, InList, NewType, NewVar, ProcSettings, Redeclared, RemovedProc},
+	reload::{BuiltinInherited, ConstValue, InList, NewType, NewVar, ProcSettings, Redeclared, RemovedProc, Reparented},
 	Instruction, Node, Opcode
 };
 
@@ -35,6 +35,8 @@ use crate::{
 
 #[path = "reload_inherit.rs"]
 mod inherit;
+#[path = "reload_reparent.rs"]
+mod reparent;
 
 /// A reload, checked and assembled, ready to apply.
 #[derive(Default)]
@@ -67,7 +69,9 @@ pub struct Prepared {
 	/// New prefab instances and init proc entries, in ID allocation order.
 	instances: Vec<(u32, runtime_tables::Instance, ProcEntryWords)>,
 	/// Inherited built-in defaults as (type ID, var), parents first.
-	builtin_inherits: Vec<(u32, String)>
+	builtin_inherits: Vec<(u32, String)>,
+	/// Types with changed parents.
+	reparent: reparent::PreparedReparents
 }
 
 /// Variable to append: name string ID and initial global-slot value.
@@ -285,11 +289,7 @@ impl TypeVars {
 	fn subtree(&mut self, type_id: u32) -> Result<Vec<u32>, String> {
 		if self.parents.is_none() {
 			let count = runtime_tables::type_count()?;
-			self.parents = Some(
-				(0..count)
-					.map(|t| runtime_tables::type_field(t, type_fields::PARENT).unwrap_or(NONE))
-					.collect()
-			);
+			self.parents = Some((0..count).map(|t| reparent::parent_of(t).unwrap_or(NONE)).collect());
 		}
 		let parents = self.parents.as_ref().unwrap();
 		Ok((0..parents.len() as u32)
@@ -445,7 +445,8 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		init_procs,
 		line_moves,
 		removed_vars,
-		builtin_inherited
+		builtin_inherited,
+		reparented
 	} = request;
 	runtime_tables::available().map_err(|e| vec![format!("hot reloading isn't available on this build of BYOND: {}", e)])?;
 
@@ -470,6 +471,8 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 
 	let mut pending = Pending::default();
 	let mut type_vars = TypeVars::default();
+	let mut staged = StagedProcs::default();
+	reparent::prepare(reparented, &mut type_vars, &mut staged, &mut prepared, &mut errors);
 
 	// Reserve IDs in allocation order so new code can refer to staged
 	// additions.
@@ -493,7 +496,6 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		}
 	}
 
-	let mut staged = StagedProcs::default();
 	for removed in removed_procs {
 		// An already removed proc must not block subsequent reloads.
 		if Proc::overrides(removed.proc.path.as_str()).is_empty() {
@@ -671,6 +673,7 @@ pub fn prepare(request: &HotReloadRequest, warnings: &mut Vec<String>, skipped: 
 		}
 	}
 
+	reparent::finish();
 	if errors.is_empty() {
 		Ok(prepared)
 	} else {
@@ -1029,7 +1032,7 @@ fn type_path(type_id: u32) -> String {
 fn type_and_ancestors(type_id: u32) -> Vec<u32> {
 	let mut out = vec![type_id];
 	let mut at = type_id;
-	while let Ok(parent) = runtime_tables::type_field(at, type_fields::PARENT) {
+	while let Ok(parent) = reparent::parent_of(at) {
 		if parent == NONE || out.contains(&parent) {
 			break;
 		}
@@ -1876,12 +1879,13 @@ fn prepare_var_default(default: &HotReloadVarDefault, type_vars: &mut TypeVars, 
 /// Commit a prepared reload. Temporarily remove affected breakpoints,
 /// then restore them at their remapped source lines and update their metadata.
 pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
-	prepared: Prepared,
+	mut prepared: Prepared,
 	breakpoints: &mut HashMap<(raw_types::procs::ProcId, u16), BTreeMap<K, T>>,
 	moved_breakpoints: &mut MovedBreakpoints<K>,
 	warnings: &mut Vec<String>
 ) {
 	code_changed();
+	reparent::apply_tree(&mut prepared.reparent);
 	// The id each new var really got, if it got one
 	let mut got = HashMap::new();
 	for new in &prepared.new_vars {
@@ -2060,6 +2064,7 @@ pub fn apply<K: Ord + std::hash::Hash + Copy, T>(
 	for (type_id, field, words) in prepared.type_fields {
 		let _ = runtime_tables::set_type_field(type_id, field, words);
 	}
+	reparent::apply_builtins(&prepared.reparent, warnings);
 	for (type_id, writes) in &prepared.builtin_writes {
 		if let Err(e) = write_builtins(*type_id, writes) {
 			warnings.push(format!("couldn't set a built-in var: {}", e));
@@ -2743,6 +2748,13 @@ impl dmasm::assembler::AssembleEnv for ReloadEnv<'_> {
 			_ => {}
 		}
 
+		// Resolve type statics and consts on their declaring type first.
+		// Reparented code may have referenced a different var with the same
+		// name.
+		if let Some(id) = scope.filter(|s| s.starts_with('/')).and_then(|ty| declared_global(ty, &shown)) {
+			return Some(id);
+		}
+
 		// Prefer the same-named variable already referenced by this proc.
 		if let Some([id]) = self.proc_globals.get(name).map(Vec::as_slice) {
 			return Some(*id);
@@ -2770,6 +2782,23 @@ impl dmasm::assembler::AssembleEnv for ReloadEnv<'_> {
 			scope.filter(|s| !s.is_empty()).unwrap_or("the world")
 		));
 		None
+	}
+}
+
+/// The static or const var `name` that type `path` declares, if it's one.
+fn declared_global(path: &str, name: &str) -> Option<u32> {
+	let type_id = find_type(path).ok()?;
+	let name = StringRef::new(name).ok()?.get_id().0;
+	let declared = runtime_tables::misc_words(runtime_tables::type_field(type_id, type_fields::DECLARED_VARS).ok()?)?;
+	// (flags 1 static, 2 const)
+	let found: Vec<u32> = declared
+		.chunks(2)
+		.filter(|c| c.len() == 2 && c[1] & 3 != 0 && runtime_tables::variable_name(c[0]) == Some(name))
+		.map(|c| c[0])
+		.collect();
+	match found[..] {
+		[id] => Some(id),
+		_ => None
 	}
 }
 

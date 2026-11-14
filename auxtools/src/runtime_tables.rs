@@ -1623,3 +1623,224 @@ pub fn set_type_byte(type_id: u32, offset: usize, value: u8) -> Result<(), Strin
 	}
 	Ok(())
 }
+
+/// All proc-name map buckets as (key, procs, no_link), sorted by key.
+pub fn name_map_entries(type_id: u32) -> Result<Vec<(u32, Vec<u32>, u8)>, String> {
+	unsafe {
+		Ok(buckets(name_map(type_id)?)
+			.iter()
+			.map(|bucket| {
+				let ids = if bucket.ids.is_null() {
+					vec![]
+				} else {
+					std::slice::from_raw_parts(bucket.ids, bucket.count as usize).to_vec()
+				};
+				(bucket.key, ids, bucket.no_link)
+			})
+			.collect())
+	}
+}
+
+/// Preallocated proc-name map. [`NameMapPlan::write`] cannot fail;
+/// dropping an unwritten plan releases its buffers.
+pub struct NameMapPlan {
+	map: *mut ProcNameMap,
+	buckets: *mut ProcNameBucket,
+	count: u16,
+	written: bool
+}
+
+/// Allocate a proc-name map from `entries` in any order, omitting empty
+/// entries. Accepts the output of [`name_map_entries`].
+pub fn plan_name_map(type_id: u32, entries: &[(u32, Vec<u32>, u8)]) -> Result<NameMapPlan, String> {
+	let functions = functions()?;
+	let map = name_map(type_id)?;
+	let mut entries: Vec<&(u32, Vec<u32>, u8)> = entries.iter().filter(|(_, ids, _)| !ids.is_empty()).collect();
+	entries.sort_by_key(|(key, ..)| *key);
+	let size = entries.len().max(1) * std::mem::size_of::<ProcNameBucket>();
+	unsafe {
+		let buckets = (functions.crt_realloc)(std::ptr::null_mut(), size) as *mut ProcNameBucket;
+		if buckets.is_null() {
+			return Err("out of memory for a proc name map".to_owned());
+		}
+		let mut plan = NameMapPlan {
+			map,
+			buckets,
+			count: 0,
+			written: false
+		};
+		for (key, ids, no_link) in entries {
+			let buffer = (functions.alloc_shared)(ids.len() * 4) as *mut u32;
+			if buffer.is_null() {
+				return Err("out of memory for a proc name map entry".to_owned());
+			}
+			std::ptr::copy_nonoverlapping(ids.as_ptr(), buffer, ids.len());
+			buckets.add(plan.count as usize).write(ProcNameBucket {
+				key: *key,
+				ids: buffer,
+				count: ids.len() as u16,
+				no_link: *no_link
+			});
+			plan.count += 1;
+		}
+		Ok(plan)
+	}
+}
+
+impl NameMapPlan {
+	/// Install the map and release the old shared buffers. Retain the old
+	/// bucket array, as with type matrices.
+	pub fn write(mut self) {
+		let Ok(functions) = functions() else {
+			return;
+		};
+		unsafe {
+			let old_ids: Vec<*mut u32> = buckets(self.map).iter().map(|bucket| bucket.ids).collect();
+			(*self.map).buckets = self.buckets;
+			(*self.map).count = self.count;
+			for ids in old_ids {
+				if !ids.is_null() {
+					(functions.free_shared)(ids as *mut c_void);
+				}
+			}
+		}
+		self.written = true;
+	}
+}
+
+impl Drop for NameMapPlan {
+	fn drop(&mut self) {
+		if self.written {
+			return;
+		}
+		if let Ok(functions) = functions() {
+			unsafe {
+				for at in 0..self.count as usize {
+					(functions.free_shared)((*self.buckets.add(at)).ids as *mut c_void);
+				}
+			}
+		}
+	}
+}
+
+/// Prepared parents and type preorder. [`ParentPlan::write`] cannot fail.
+pub struct ParentPlan {
+	changes: Vec<(u32, u32)>,
+	order: Vec<u32>,
+	places: Vec<(u32, u32)>
+}
+
+/// Recompute parents and the preorder used by `istype` and `typesof`,
+/// visiting children by ascending ID as BYOND does. Leave other inherited
+/// state unchanged.
+pub fn plan_parents(changes: &[(u32, u32)]) -> Result<ParentPlan, String> {
+	use type_fields::*;
+	let functions = functions()?;
+	let count = type_count()? as usize;
+	for &(type_id, parent) in changes {
+		if type_id as usize >= count || parent as usize >= count {
+			return Err(format!("type {} or parent {} does not exist", type_id, parent));
+		}
+	}
+	unsafe {
+		let word = |id: usize, offset: usize| (*functions.type_table).add(id * functions.type_stride + offset) as *mut u32;
+		let mut parents: Vec<u32> = (0..count).map(|id| *word(id, PARENT)).collect();
+		for &(type_id, parent) in changes {
+			parents[type_id as usize] = parent;
+		}
+		let mut children: Vec<Vec<u32>> = vec![vec![]; count];
+		let mut roots = vec![];
+		for (id, &parent) in parents.iter().enumerate() {
+			if (parent as usize) < count && parent as usize != id {
+				children[parent as usize].push(id as u32);
+			} else {
+				roots.push(id as u32);
+			}
+		}
+		// (type, place, end) in the new preorder
+		let mut order = Vec::with_capacity(count);
+		let mut places = vec![(0u32, 0u32); count];
+		// (type, next child to visit)
+		let mut stack: Vec<(u32, usize)> = vec![];
+		for root in roots {
+			places[root as usize].0 = order.len() as u32;
+			order.push(root);
+			stack.push((root, 0));
+			while let Some(top) = stack.last_mut() {
+				let (id, next) = *top;
+				match children[id as usize].get(next) {
+					Some(&child) => {
+						top.1 += 1;
+						places[child as usize].0 = order.len() as u32;
+						order.push(child);
+						stack.push((child, 0));
+					}
+					None => {
+						places[id as usize].1 = order.len() as u32;
+						stack.pop();
+					}
+				}
+			}
+		}
+		if order.len() != count {
+			return Err(format!(
+				"type hierarchy contains a cycle: preorder includes {} of {} types",
+				order.len(),
+				count
+			));
+		}
+		Ok(ParentPlan {
+			changes: changes.to_vec(),
+			order,
+			places
+		})
+	}
+}
+
+impl ParentPlan {
+	pub fn write(&self) {
+		use type_fields::*;
+		let Ok(functions) = functions() else {
+			return;
+		};
+		unsafe {
+			let word = |id: usize, offset: usize| (*functions.type_table).add(id * functions.type_stride + offset) as *mut u32;
+			for &(type_id, parent) in &self.changes {
+				*word(type_id as usize, PARENT) = parent;
+			}
+			let preorder = *functions.preorder;
+			for (at, &id) in self.order.iter().enumerate() {
+				*preorder.add(at) = id;
+				*word(id as usize, PREORDER) = self.places[id as usize].0;
+				*word(id as usize, PREORDER_END) = self.places[id as usize].1;
+			}
+		}
+	}
+}
+
+/// Copy a type's transform (`TRANSFORM`, 6 floats) or colour matrix
+/// (`COLOR_MATRIX`, 20), or clear it. Each type owns its copy, as at load.
+/// Retain the old allocation because readers may still reference it.
+pub fn copy_type_matrix(type_id: u32, from: u32, offset: usize) -> Result<(), String> {
+	use type_fields::*;
+	let size = match offset {
+		TRANSFORM => 6 * 4,
+		COLOR_MATRIX => 20 * 4,
+		_ => return Err(format!("+{:#x} isn't a type's matrix", offset))
+	};
+	let functions = functions()?;
+	unsafe {
+		let source = type_field(from, offset)? as *const u8;
+		let copy = if source.is_null() {
+			0
+		} else {
+			let copy = (functions.crt_realloc)(std::ptr::null_mut(), size) as *mut u8;
+			if copy.is_null() {
+				return Err("out of memory copying a type's matrix".to_owned());
+			}
+			std::ptr::copy_nonoverlapping(source, copy, size);
+			copy as u32
+		};
+		set_type_field(type_id, offset, copy)
+	}
+}
